@@ -14,6 +14,28 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from config.settings import get_settings
+
+# ─── Sentry (error tracking) — init BEFORE FastAPI() so the SDK wraps it ────
+_settings_boot = get_settings()
+if _settings_boot.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+    from sentry_sdk.integrations.asyncio import AsyncioIntegration
+
+    sentry_sdk.init(
+        dsn=_settings_boot.sentry_dsn,
+        environment=_settings_boot.app_env,
+        traces_sample_rate=_settings_boot.sentry_traces_sample_rate,
+        send_default_pii=True,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            StarletteIntegration(transaction_style="endpoint"),
+            AsyncioIntegration(),
+        ],
+    )
+
 from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.admin import router as admin_router

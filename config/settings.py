@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:8000"
     allowed_origins: str = "http://localhost:3000"
 
+    # Sentry (error tracking) — empty string disables it
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.1  # 10% of requests traced
+
     # Supabase
     supabase_url: str = "https://ubycfticfuatoafzsrfv.supabase.co"
     supabase_service_role_key: str = ""

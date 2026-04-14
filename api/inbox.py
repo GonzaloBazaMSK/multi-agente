@@ -644,6 +644,64 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
     return {"status": "ok", "media_url": media_url, "timestamp": msg.timestamp.isoformat()}
 
 
+# ─── AI Assist (Respond.io-style prompts inline) ─────────────────────────────
+
+AI_ASSIST_PROMPTS = {
+    "tone_formal":     "Reescribí el siguiente mensaje en un tono profesional y formal, manteniendo el idioma original. Devolvé SOLO el texto reescrito, sin comentarios.",
+    "tone_friendly":   "Reescribí el siguiente mensaje en un tono amigable y cercano, manteniendo el idioma original. Devolvé SOLO el texto reescrito, sin comentarios.",
+    "tone_empathetic": "Reescribí el siguiente mensaje con un tono empático y comprensivo, manteniendo el idioma original. Devolvé SOLO el texto reescrito, sin comentarios.",
+    "tone_direct":     "Reescribí el siguiente mensaje de forma directa y concisa, sin rodeos. Mantené el idioma original. Devolvé SOLO el texto reescrito, sin comentarios.",
+    "translate_es":    "Traducí el siguiente texto al español rioplatense natural. Devolvé SOLO la traducción, sin comentarios.",
+    "translate_en":    "Traducí el siguiente texto al inglés natural. Devolvé SOLO la traducción, sin comentarios.",
+    "translate_pt":    "Traducí el siguiente texto al portugués brasileño natural. Devolvé SOLO la traducción, sin comentarios.",
+    "fix":             "Corregí ortografía, gramática y puntuación del siguiente texto, manteniendo el idioma, el tono y el significado. Devolvé SOLO el texto corregido, sin comentarios.",
+    "rephrase":        "Reescribí el siguiente texto con otras palabras, manteniendo el significado, el idioma y el tono. Devolvé SOLO el texto reescrito, sin comentarios.",
+    "simplify":        "Simplificá el siguiente texto para que sea más fácil de leer y entender, manteniendo el idioma y el tono. Devolvé SOLO el texto simplificado, sin comentarios.",
+}
+
+
+class AIAssistRequest(BaseModel):
+    text: str
+    action: str
+
+
+@router.post("/ai-assist")
+async def ai_assist(req: AIAssistRequest, user: dict = Depends(get_current_user)):
+    """
+    Reformatea el texto del compositor usando el LLM.
+    Acciones soportadas: tone_{formal,friendly,empathetic,direct},
+    translate_{es,en,pt}, fix, rephrase, simplify.
+    """
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="Texto vacío")
+    if req.action not in AI_ASSIST_PROMPTS:
+        raise HTTPException(status_code=400, detail=f"Acción desconocida: {req.action}")
+
+    from openai import AsyncOpenAI
+    from config.settings import get_settings
+    settings = get_settings()
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.4,
+            max_tokens=500,
+            messages=[
+                {"role": "system", "content": AI_ASSIST_PROMPTS[req.action]},
+                {"role": "user", "content": req.text},
+            ],
+        )
+        rewritten = resp.choices[0].message.content.strip()
+        if rewritten.startswith(('"', "'")) and rewritten.endswith(('"', "'")):
+            rewritten = rewritten[1:-1].strip()
+        logger.info("ai_assist_ok", action=req.action, input_len=len(req.text), output_len=len(rewritten))
+        return {"text": rewritten}
+    except Exception as e:
+        logger.error("ai_assist_failed", action=req.action, error=str(e))
+        raise HTTPException(status_code=500, detail="Error del LLM, probá de nuevo.")
+
+
 # ─── Labels ───────────────────────────────────────────────────────────────────
 
 @router.get("/labels")

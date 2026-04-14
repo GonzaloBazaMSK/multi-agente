@@ -8,26 +8,29 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #1a1020;
-  --surface: #261e2e;
-  --surface2: #322838;
-  --surface3: #3d2f48;
-  --border: rgba(255,100,150,0.12);
-  --primary: #ff2d78;
-  --primary-dark: #e0206a;
-  --green: #22c55e;
+  /* Respond.io-style dark theme (black + indigo accent) */
+  --bg: #0b0d11;
+  --surface: #14171c;
+  --surface2: #1b1f26;
+  --surface3: #252a33;
+  --border: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.10);
+  --primary: #6366f1;
+  --primary-dark: #4f46e5;
+  --primary-soft: rgba(99,102,241,0.12);
+  --green: #10b981;
   --red: #ef4444;
   --yellow: #f59e0b;
   --orange: #fb923c;
   --purple: #a78bfa;
   --blue: #60a5fa;
-  --text: #f0e8f4;
-  --text2: #9a8ea8;
-  --text3: #6b5a7a;
-  --bot-bubble: #322838;
-  --user-bubble: #5c1a3a;
-  --human-bubble: #1a3322;
-  --radius: 12px;
+  --text: #e6e8ec;
+  --text2: #a0a4ad;
+  --text3: #6b7280;
+  --bot-bubble: #1b1f26;
+  --user-bubble: #312e81;
+  --human-bubble: #065f46;
+  --radius: 10px;
 }
 
 body {
@@ -761,6 +764,76 @@ body {
   color: var(--text3); cursor: pointer; font-size: 12px; padding: 0; }
 .note-del:hover { color: var(--red); }
 .note-input-area { display: flex; gap: 5px; margin-top: 8px; }
+
+/* ── AI Prompts bar (Respond.io style) ── */
+.ai-prompts-bar {
+  position: relative;
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 8px 12px 0 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.ai-prompt-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.ai-prompt-chip:hover { background: var(--surface3); color: var(--text); border-color: var(--border-strong); }
+.ai-prompt-chip.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.ai-prompt-chip:disabled { opacity: 0.5; cursor: wait; }
+.ai-chip-icon { font-size: 13px; line-height: 1; }
+
+.ai-menu {
+  position: absolute;
+  top: -4px;
+  left: 12px;
+  transform: translateY(-100%);
+  background: var(--surface2);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  z-index: 50;
+  min-width: 180px;
+}
+.ai-menu-item {
+  display: block; width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+.ai-menu-item:hover { background: var(--primary-soft); color: var(--primary); }
+.ai-menu-sub { font-size: 11px; color: var(--text3); display: block; margin-top: 2px; }
+
+.ai-spinner {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 0 8px;
+  color: var(--primary);
+}
+.ai-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--primary);
+  animation: aiDot 0.9s infinite ease-in-out;
+}
+.ai-dot:nth-child(2) { animation-delay: 0.15s; }
+.ai-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes aiDot {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
 .note-input { flex: 1; background: var(--surface3); border: 1px solid var(--border);
   border-radius: 6px; color: var(--text); font-size: 12px; padding: 6px 8px;
   outline: none; font-family: inherit; resize: none; }
@@ -1342,6 +1415,29 @@ body {
           <div class="hsm-loading">Cargando plantillas...</div>
         </div>
         <div class="hsm-preview" id="hsmPreview" style="display:none"></div>
+      </div>
+
+      <!-- AI Prompts bar (Respond.io style) -->
+      <div class="ai-prompts-bar" id="aiPromptsBar">
+        <button class="ai-prompt-chip" data-ai-group="tone" onclick="toggleAIMenu('tone', this)" title="Cambiar tono">
+          <span class="ai-chip-icon">✨</span><span>Tono</span>
+        </button>
+        <button class="ai-prompt-chip" data-ai-group="translate" onclick="toggleAIMenu('translate', this)" title="Traducir">
+          <span class="ai-chip-icon">🌐</span><span>Traducir</span>
+        </button>
+        <button class="ai-prompt-chip" onclick="runAIAssist('fix', this)" title="Corregir ortografía y gramática">
+          <span class="ai-chip-icon">✏️</span><span>Corregir</span>
+        </button>
+        <button class="ai-prompt-chip" onclick="runAIAssist('rephrase', this)" title="Reescribir">
+          <span class="ai-chip-icon">🔄</span><span>Reescribir</span>
+        </button>
+        <button class="ai-prompt-chip" onclick="runAIAssist('simplify', this)" title="Simplificar">
+          <span class="ai-chip-icon">💡</span><span>Simplificar</span>
+        </button>
+        <div class="ai-menu" id="aiMenu" style="display:none"></div>
+        <div class="ai-spinner" id="aiSpinner" style="display:none">
+          <span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span>
+        </div>
       </div>
 
       <div class="reply-area disabled" id="replyArea">
@@ -2807,6 +2903,84 @@ async function assignConv(sessionId, agentId, agentName) {
     applyFilters();
     showToast(`Asignado a ${agentName}`, 'success');
   } catch(e) { showToast('Error de red', 'error'); }
+}
+
+// ── AI Prompts (Respond.io-style inline rewrites) ──
+const AI_MENUS = {
+  tone: [
+    { action: 'tone_formal',     label: 'Formal',     hint: 'Profesional, respetuoso' },
+    { action: 'tone_friendly',   label: 'Amigable',   hint: 'Cercano, conversacional' },
+    { action: 'tone_empathetic', label: 'Empático',   hint: 'Comprensivo, cálido' },
+    { action: 'tone_direct',     label: 'Directo',    hint: 'Conciso, sin rodeos' },
+  ],
+  translate: [
+    { action: 'translate_es', label: 'Español',    hint: 'Rioplatense natural' },
+    { action: 'translate_en', label: 'Inglés',     hint: 'English' },
+    { action: 'translate_pt', label: 'Portugués',  hint: 'Português do Brasil' },
+  ],
+};
+
+function toggleAIMenu(group, chipEl) {
+  const menu = document.getElementById('aiMenu');
+  const wasOpen = menu.style.display !== 'none' && menu.dataset.group === group;
+  if (wasOpen) { menu.style.display = 'none'; chipEl.classList.remove('active'); return; }
+  document.querySelectorAll('.ai-prompt-chip.active').forEach(c => c.classList.remove('active'));
+  menu.innerHTML = AI_MENUS[group].map(opt => `
+    <button class="ai-menu-item" onclick="runAIAssist('${opt.action}', null); toggleAIMenu('${group}', document.querySelector('[data-ai-group=${group}]'))">
+      <span>${opt.label}</span>
+      <span class="ai-menu-sub">${opt.hint}</span>
+    </button>`).join('');
+  menu.dataset.group = group;
+  menu.style.display = 'block';
+  chipEl.classList.add('active');
+}
+
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('aiMenu');
+  if (!menu || menu.style.display === 'none') return;
+  if (e.target.closest('.ai-menu') || e.target.closest('.ai-prompt-chip')) return;
+  menu.style.display = 'none';
+  document.querySelectorAll('.ai-prompt-chip.active').forEach(c => c.classList.remove('active'));
+});
+
+async function runAIAssist(action, chipEl) {
+  const input = document.getElementById('replyInput');
+  const text = (input.value || '').trim();
+  if (!text) {
+    showToast('Escribí algo primero para aplicarle IA', 'warning');
+    return;
+  }
+  const spinner = document.getElementById('aiSpinner');
+  const chips = document.querySelectorAll('.ai-prompt-chip');
+  spinner.style.display = 'inline-flex';
+  chips.forEach(c => c.disabled = true);
+  try {
+    const res = await fetch(`${API}/inbox/ai-assist`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Token': SESSION_TOKEN,
+      },
+      body: JSON.stringify({ text, action }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} ${errText}`);
+    }
+    const data = await res.json();
+    if (data.text) {
+      input.value = data.text;
+      input.focus();
+      input.dispatchEvent(new Event('input'));
+      showToast('Texto actualizado', 'success');
+    }
+  } catch (e) {
+    console.error('[AI assist]', e);
+    showToast('Error al procesar con IA', 'error');
+  } finally {
+    spinner.style.display = 'none';
+    chips.forEach(c => c.disabled = false);
+  }
 }
 
 async function sendReply() {

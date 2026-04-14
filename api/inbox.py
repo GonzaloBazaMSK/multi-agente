@@ -796,6 +796,35 @@ async def send_attachment_by_url(
     return {"status": "ok", "timestamp": msg.timestamp.isoformat()}
 
 
+# ─── TTS (text-to-speech para voice notes del agente humano) ────────────────
+
+class TTSRequest(BaseModel):
+    text: str
+    voice: str = "nova"
+    format: str = "mp3"  # mp3 para widget, opus->ogg si WhatsApp
+
+
+@router.post("/tts/generate")
+async def tts_generate(req: TTSRequest, user: dict = Depends(get_current_user)):
+    """Genera audio TTS desde texto, sube a R2, retorna metadata del adjunto
+    lista para agregar a PENDING_ATTACHMENTS en el frontend."""
+    if not req.text or len(req.text.strip()) < 2:
+        raise HTTPException(400, "Texto vacío o muy corto")
+    if len(req.text) > 4000:
+        raise HTTPException(400, "Texto supera 4000 caracteres")
+
+    from integrations import tts
+    if not tts.is_enabled():
+        raise HTTPException(503, "TTS no configurado (falta OPENAI_API_KEY)")
+
+    result = await tts.synthesize_to_r2(req.text, voice=req.voice, output_format=req.format)
+    if not result:
+        raise HTTPException(500, "Error generando audio")
+
+    logger.info("tts_attachment_created", user=user.get("email"), voice=req.voice, size=result["size"])
+    return result
+
+
 # ─── AI Assist (Respond.io-style prompts inline) ─────────────────────────────
 
 AI_ASSIST_PROMPTS = {

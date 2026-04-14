@@ -1621,6 +1621,9 @@ body {
         <button class="ai-prompt-chip" onclick="runAIAssist('simplify', this)" title="Simplificar">
           <span class="ai-chip-icon">💡</span><span>Simplificar</span>
         </button>
+        <button class="ai-prompt-chip" onclick="generateTTS(this)" title="Generar nota de voz IA con el texto del compositor">
+          <span class="ai-chip-icon">🔊</span><span>Nota de voz IA</span>
+        </button>
         <div class="ai-menu" id="aiMenu" style="display:none"></div>
         <div class="ai-spinner" id="aiSpinner" style="display:none">
           <span class="ai-dot"></span><span class="ai-dot"></span><span class="ai-dot"></span>
@@ -3789,6 +3792,44 @@ document.addEventListener('click', (e) => {
   menu.style.display = 'none';
   document.querySelectorAll('.ai-prompt-chip.active').forEach(c => c.classList.remove('active'));
 });
+
+async function generateTTS(chipEl) {
+  const input = document.getElementById('replyInput');
+  const text = (input.value || '').trim();
+  if (!text) {
+    showToast('Escribí primero el texto que querés convertir a voz', 'warning');
+    return;
+  }
+  if (text.length > 4000) {
+    showToast('Texto demasiado largo (máx. 4000 chars)', 'warning');
+    return;
+  }
+  const spinner = document.getElementById('aiSpinner');
+  const chips = document.querySelectorAll('.ai-prompt-chip');
+  spinner.style.display = 'inline-flex';
+  chips.forEach(c => c.disabled = true);
+  try {
+    const res = await fetch(`${API}/inbox/tts/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': SESSION_TOKEN },
+      body: JSON.stringify({ text, voice: 'nova', format: 'mp3' }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || ('HTTP ' + res.status));
+    }
+    const att = await res.json();
+    PENDING_ATTACHMENTS.push(att);
+    renderAttachedPreview();
+    showToast('Nota de voz lista — se enviará al hacer Send', 'success');
+  } catch (e) {
+    console.error('[tts]', e);
+    showToast('Error al generar nota de voz: ' + e.message, 'error');
+  } finally {
+    spinner.style.display = 'none';
+    chips.forEach(c => c.disabled = false);
+  }
+}
 
 async function runAIAssist(action, chipEl) {
   const input = document.getElementById('replyInput');

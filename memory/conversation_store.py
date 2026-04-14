@@ -1,11 +1,30 @@
-import json
+"""
+Store de conversaciones con arquitectura cache + durable.
+
+Redis       → cache caliente (fast reads, TTL, pub/sub, estructuras auxiliares)
+Postgres    → source of truth durable (Supabase, sin TTL)
+
+Flujo:
+  save()    → escribe Redis (sync) + Postgres (async background, no bloqueante)
+  get()     → intenta Redis; si miss y Postgres está habilitado, lee Postgres
+              y rehidrata Redis para futuros reads.
+  delete()  → borra en ambos.
+
+Si Postgres está desactivado (DATABASE_URL vacío), el módulo se comporta como
+antes: solo Redis.
+"""
+from __future__ import annotations
+
+import asyncio
+
 import redis.asyncio as aioredis
-from functools import lru_cache
+import structlog
+
+from memory import postgres_store
 from models.conversation import Conversation, UserProfile
-from models.message import Message, MessageRole
+from models.message import Message
 from config.settings import get_settings
 from config.constants import CONVERSATION_TTL, Channel
-import structlog
 
 logger = structlog.get_logger(__name__)
 
@@ -20,23 +39,48 @@ class ConversationStore:
     def _index_key(self, channel: str, external_id: str) -> str:
         return f"idx:{channel}:{external_id}"
 
+    # ─── Lectura ──────────────────────────────────────────────────────────
+
     async def get(self, conversation_id: str) -> Conversation | None:
         raw = await self._redis.get(self._key(conversation_id))
-        if not raw:
-            return None
-        try:
-            return Conversation.model_validate_json(raw)
-        except Exception:
-            logger.warning("corrupt_conversation", conversation_id=conversation_id)
-            return None
+        if raw:
+            try:
+                return Conversation.model_validate_json(raw)
+            except Exception:
+                logger.warning("corrupt_conversation_in_redis", conversation_id=conversation_id)
+
+        # Fallback Postgres
+        if postgres_store.is_enabled():
+            try:
+                conv = await postgres_store.get_conversation(conversation_id)
+                if conv:
+                    await self._write_redis(conv)  # rehidrata cache
+                    logger.info("conv_rehydrated_from_pg", conversation_id=conversation_id)
+                    return conv
+            except Exception as e:
+                logger.warning("postgres_read_failed", conversation_id=conversation_id, error=str(e))
+        return None
 
     async def get_by_external(self, channel: Channel, external_id: str) -> Conversation | None:
         conv_id = await self._redis.get(self._index_key(channel.value, external_id))
-        if not conv_id:
-            return None
-        return await self.get(conv_id.decode())
+        if conv_id:
+            return await self.get(conv_id.decode())
 
-    async def save(self, conversation: Conversation) -> None:
+        # Fallback Postgres
+        if postgres_store.is_enabled():
+            try:
+                conv = await postgres_store.get_by_external(channel, external_id)
+                if conv:
+                    await self._write_redis(conv)
+                    logger.info("conv_rehydrated_from_pg_by_external", channel=channel.value, external_id=external_id)
+                    return conv
+            except Exception as e:
+                logger.warning("postgres_read_failed", error=str(e))
+        return None
+
+    # ─── Escritura ────────────────────────────────────────────────────────
+
+    async def _write_redis(self, conversation: Conversation) -> None:
         pipe = self._redis.pipeline()
         pipe.setex(
             self._key(conversation.id),
@@ -49,6 +93,20 @@ class ConversationStore:
             conversation.id,
         )
         await pipe.execute()
+
+    async def save(self, conversation: Conversation) -> None:
+        # Redis primero (bloqueante — si falla, la app lo ve)
+        await self._write_redis(conversation)
+
+        # Postgres en background (best effort, no bloquea el request)
+        if postgres_store.is_enabled():
+            asyncio.create_task(self._save_to_postgres(conversation))
+
+    async def _save_to_postgres(self, conversation: Conversation) -> None:
+        try:
+            await postgres_store.save_conversation(conversation)
+        except Exception as e:
+            logger.error("postgres_write_failed", conversation_id=conversation.id, error=str(e))
 
     async def get_or_create(
         self,
@@ -80,6 +138,17 @@ class ConversationStore:
         pipe.delete(self._key(conversation_id))
         pipe.delete(self._index_key(channel, external_id))
         await pipe.execute()
+
+        if postgres_store.is_enabled():
+            try:
+                pool = await postgres_store.get_pool()
+                async with pool.acquire() as conn:
+                    await conn.execute(
+                        "delete from public.conversations where id = $1",
+                        __import__("uuid").UUID(conversation_id),
+                    )
+            except Exception as e:
+                logger.warning("postgres_delete_failed", conversation_id=conversation_id, error=str(e))
 
 
 _store: ConversationStore | None = None

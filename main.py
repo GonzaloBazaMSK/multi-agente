@@ -71,6 +71,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("redis_connection_failed", error=str(e))
 
+    # Postgres: pool + schema idempotente
+    from memory import postgres_store
+    if postgres_store.is_enabled():
+        try:
+            await postgres_store.ensure_schema()
+            logger.info("postgres_connected")
+        except Exception as e:
+            logger.error("postgres_init_failed", error=str(e))
+
     # Iniciar listener de Redis Pub/Sub para SSE cross-worker
     import asyncio
     from api.inbox import start_pubsub_listener

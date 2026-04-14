@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     pinecone_index_name: str = "cursos-medicos"
     pinecone_environment: str = "us-east-1"
 
-    # Redis
+    # Redis (cache caliente)
     redis_url: str = "redis://localhost:6379/0"
+
+    # Postgres (durable store, Supabase) — empty disables dual-write
+    database_url: str = ""
 
     # Zoho
     zoho_client_id: str = ""

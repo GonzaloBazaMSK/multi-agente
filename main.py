@@ -264,7 +264,11 @@ def create_app() -> FastAPI:
     async def serve_dashboard_page():
         """Dashboard de métricas para administradores."""
         html_file = Path(__file__).parent / "widget" / "dashboard.html"
-        return FileResponse(str(html_file), media_type="text/html")
+        return FileResponse(
+            str(html_file),
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
+        )
 
     @app.get("/admin/test-agent-ui")
     async def serve_test_agent_page():

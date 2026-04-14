@@ -1503,7 +1503,9 @@ body {
       <input class="search-input" id="searchInput" placeholder="Buscar nombre, email, teléfono…" oninput="applyFilters()">
     </div>
 
-    <div class="filters">
+    <!-- Tabs duplicados removidos: ahora viven dentro del menú '🧰 Filtros' unificado.
+         Mantenemos los elementos escondidos para no romper badges que se actualizan via JS. -->
+    <div class="filters" style="display:none">
       <button class="filter-btn active" data-filter="all" onclick="setFilter('all',this)">Todos <span class="filter-badge" id="badge-all">0</span></button>
       <button class="filter-btn unread-tab" data-filter="unread" onclick="setFilter('unread',this)">No leídos <span class="filter-badge" id="badge-unread">0</span></button>
       <button class="filter-btn queue-tab" data-filter="queue" onclick="setFilter('queue',this)">En cola <span class="filter-badge" id="badge-queue">0</span></button>
@@ -1597,7 +1599,6 @@ body {
         <div style="flex:1"></div>
         <input id="msgSearchInput" type="text" placeholder="Buscar en mensajes..." oninput="filterMessages(this.value)"
           style="background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:4px 10px;color:var(--text);font-size:12px;width:180px;outline:none;">
-        <button class="panel-tab" onclick="downloadConv()" style="color:var(--primary);gap:4px" title="Descargar JSON">⬇️ JSON</button>
       </div>
 
       <div class="messages" id="messages" style="display:flex"></div>
@@ -2006,6 +2007,123 @@ function buildQueueFilter(userQueues, userRole) {
   const all = Object.values(ALL_QUEUES_BY_AREA).flat();
   availableQueues = (userRole === 'agente' && userQueues && userQueues.length > 0) ? userQueues : all;
 }
+
+// ── Conversation actions menu (⚡ Tomar/Asignar/Clasificar/Cerrar/Descargar) ──
+function toggleConvActionsMenu(btnEl, sessionId) {
+  let existing = document.getElementById('convActionsMenu');
+  if (existing) { existing.remove(); return; }
+  const conv = conversations.find(c => c.session_id === sessionId);
+  if (!conv) return;
+
+  const isHandedOff = conv.bot_disabled || conv.status === 'handed_off';
+  const isClosed = conv.status === 'closed';
+  const canAssign = currentUser.role === 'admin' || currentUser.role === 'supervisor';
+  const rect = btnEl.getBoundingClientRect();
+
+  const menu = document.createElement('div');
+  menu.id = 'convActionsMenu';
+  menu.className = 'filters-menu';
+  menu.style.position = 'fixed';
+  menu.style.top = (rect.bottom + 6) + 'px';
+  menu.style.right = (window.innerWidth - rect.right) + 'px';
+  menu.style.left = 'auto';
+  menu.style.minWidth = '260px';
+
+  let html = '';
+  // Tomar / Re-activar
+  if (isHandedOff) {
+    html += `<div class="fm-item" onclick="closeConvActionsMenu(); releaseConv('${sessionId}')">
+      <span class="fm-icon">🤖</span><span class="fm-label">Reactivar bot (soltar)</span></div>`;
+  } else {
+    html += `<div class="fm-item" onclick="closeConvActionsMenu(); takeoverConv('${sessionId}')">
+      <span class="fm-icon">👤</span><span class="fm-label">Tomar control (humano)</span></div>`;
+  }
+  // Asignar agente (admin/supervisor)
+  if (canAssign) {
+    html += `<div class="fm-item" onclick="openAssignSubmenu('${sessionId}', this, event)">
+      <span class="fm-icon">📌</span><span class="fm-label">Asignar a agente${conv.assigned_to_name ? ' ●' : ''}</span>
+      <span class="fm-arrow">▸</span></div>`;
+  }
+  // Clasificar (label) — submenu con las opciones de LABELS
+  html += `<div class="fm-item" onclick="openClassifySubmenu('${sessionId}', this, event)">
+    <span class="fm-icon">🏷️</span><span class="fm-label">Clasificar ${conv.label ? '(' + esc(conv.label) + ')' : ''}</span>
+    <span class="fm-arrow">▸</span></div>`;
+  html += '<div class="fm-sep"></div>';
+  // Cerrar / Reabrir
+  if (isClosed) {
+    html += `<div class="fm-item" onclick="closeConvActionsMenu(); reopenConv('${sessionId}')">
+      <span class="fm-icon">↻</span><span class="fm-label">Reabrir conversación</span></div>`;
+  } else {
+    html += `<div class="fm-item" style="color:var(--red)" onclick="closeConvActionsMenu(); openClosingModal('${sessionId}')">
+      <span class="fm-icon">✕</span><span class="fm-label">Cerrar conversación</span></div>`;
+  }
+  html += '<div class="fm-sep"></div>';
+  // Descargar conversación
+  html += `<div class="fm-item" onclick="closeConvActionsMenu(); downloadConv()">
+    <span class="fm-icon">⬇️</span><span class="fm-label">Descargar conversación (JSON)</span></div>`;
+
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  menu.dataset.open = '1';
+}
+
+function closeConvActionsMenu() {
+  const m = document.getElementById('convActionsMenu');
+  if (m) m.remove();
+  const sub = document.getElementById('convActionsSub');
+  if (sub) sub.remove();
+}
+
+function openAssignSubmenu(sessionId, itemEl, ev) {
+  if (ev) ev.stopPropagation();
+  const prev = document.getElementById('convActionsSub');
+  if (prev) prev.remove();
+  if (!agentList.length) loadAgentList().then(() => openAssignSubmenu(sessionId, itemEl));
+  const rect = itemEl.getBoundingClientRect();
+  const sub = document.createElement('div');
+  sub.id = 'convActionsSub';
+  sub.className = 'fm-sub';
+  sub.style.top = rect.top + 'px';
+  // abrir hacia la IZQUIERDA porque el menu principal está en la derecha
+  sub.style.right = (window.innerWidth - rect.left + 6) + 'px';
+  sub.style.left = 'auto';
+  let html = `<div class="fm-item" onclick="assignConv('${sessionId}',null,null); closeConvActionsMenu();"><span class="fm-icon">—</span><span class="fm-label">Sin asignar</span></div>`;
+  agentList.forEach(a => {
+    const label = a.name || a.email || 'Agente';
+    html += `<div class="fm-item" onclick="assignConv('${sessionId}','${esc(a.id)}','${esc(label)}'); closeConvActionsMenu();">
+      <span class="fm-icon">👤</span><span class="fm-label">${esc(label)}</span></div>`;
+  });
+  sub.innerHTML = html;
+  document.body.appendChild(sub);
+}
+
+function openClassifySubmenu(sessionId, itemEl, ev) {
+  if (ev) ev.stopPropagation();
+  const prev = document.getElementById('convActionsSub');
+  if (prev) prev.remove();
+  const rect = itemEl.getBoundingClientRect();
+  const sub = document.createElement('div');
+  sub.id = 'convActionsSub';
+  sub.className = 'fm-sub';
+  sub.style.top = rect.top + 'px';
+  sub.style.right = (window.innerWidth - rect.left + 6) + 'px';
+  sub.style.left = 'auto';
+  let html = `<div class="fm-item" onclick="setLabel('${sessionId}', ''); closeConvActionsMenu();"><span class="fm-icon">—</span><span class="fm-label">Sin etiqueta</span></div>`;
+  Object.entries(LABELS).forEach(([key, lbl]) => {
+    html += `<div class="fm-item" onclick="setLabel('${sessionId}', '${key}'); closeConvActionsMenu();">
+      <span class="fm-icon">${lbl.emoji}</span><span class="fm-label">${lbl.label}</span></div>`;
+  });
+  sub.innerHTML = html;
+  document.body.appendChild(sub);
+}
+
+// Cerrar al click afuera
+document.addEventListener('click', (e) => {
+  const m = document.getElementById('convActionsMenu');
+  if (!m) return;
+  if (e.target.closest('#convActionsMenu') || e.target.closest('#convActionsSub') || e.target.closest('#btnConvActions')) return;
+  closeConvActionsMenu();
+});
 
 // ── Unified filters menu (Botmaker-style) ──
 function toggleMainFiltersMenu(btnEl) {
@@ -2743,35 +2861,22 @@ function renderConv(conv) {
   if (conv.phone) meta.push(conv.phone);
   document.getElementById('phMeta').textContent = meta.join(' · ');
 
-  // Actions
+  // Actions — un único botón "⚡ Acciones" que abre un menú con todas las opciones
   const actions = document.getElementById('phActions');
-  const isHandedOff = conv.bot_disabled || conv.status === 'handed_off';
-  const takeoverOrRelease = isHandedOff
-    ? `<button class="btn btn-release btn-sm" onclick="releaseConv('${conv.session_id}')">🤖 Re-activar IA</button>`
-    : `<button class="btn btn-takeover btn-sm" onclick="takeoverConv('${conv.session_id}')">👤 Tomar</button>`;
-  const crmBtnActive = crmOpen ? 'active' : '';
   const assignedLabel = conv.assigned_to_name
-    ? `<span style="font-size:10px;color:var(--primary)">● ${conv.assigned_to_name}</span>` : '';
-  const canAssign = currentUser.role === 'admin' || currentUser.role === 'supervisor';
-  const assignBtn = canAssign ? `
-    <div class="assign-wrap" id="assignWrap">
-      <button class="crm-open-btn" onclick="toggleAssignDropdown('${conv.session_id}')" title="Asignar a agente">
-        👤 Asignar${conv.assigned_to_name ? ' ●' : ''}
-      </button>
-      <div class="assign-dropdown" id="assignDropdown"></div>
-    </div>` : (conv.assigned_to_name ? `<span style="font-size:11px;color:var(--text3)">👤 ${conv.assigned_to_name}</span>` : '');
-  const isClosed = conv.status === 'closed';
-  const closeBtn = isClosed
-    ? `<button class="crm-open-btn" onclick="reopenConv('${conv.session_id}')" title="Reabrir">↻ Reabrir</button>`
-    : `<button class="crm-open-btn" style="color:var(--red);border-color:rgba(239,68,68,0.35)" onclick="openClosingModal('${conv.session_id}')" title="Cerrar conversación">✕ Cerrar</button>`;
+    ? `<span style="font-size:11px;color:var(--text2);margin-right:10px">📌 ${esc(conv.assigned_to_name)}</span>` : '';
   actions.innerHTML = `
-    ${takeoverOrRelease}
-    ${assignBtn}
-    ${closeBtn}
-    <button class="crm-open-btn" onclick="downloadConv()" title="Descargar JSON">⬇️ JSON</button>`;
+    ${assignedLabel}
+    <button class="crm-open-btn" id="btnConvActions" onclick="toggleConvActionsMenu(this, '${conv.session_id}')" style="font-weight:600">
+      ⚡ Acciones <span style="opacity:0.6">▼</span>
+    </button>
+    <div class="assign-wrap" id="assignWrap" style="display:none">
+      <div class="assign-dropdown" id="assignDropdown"></div>
+    </div>`;
 
-  // Label selector
-  renderLabelSelector(conv.session_id, conv.label || '');
+  // Ocultamos el selector visual clásico — la clasificación vive dentro del menú ⚡ Acciones
+  const phLabels = document.getElementById('phLabels');
+  if (phLabels) phLabels.style.display = 'none';
 
   // Banners
   const cls = convClass(conv);

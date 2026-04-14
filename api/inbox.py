@@ -532,22 +532,26 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
 
     store, conv = await _get_conv(session_id)
 
-    # Guardar archivo localmente
-    media_dir = Path(__file__).parent.parent / "media"
-    media_dir.mkdir(exist_ok=True)
-
-    # Determinar extensión y tipo
+    # Metadata del archivo
     original_name = getattr(file, "filename", "file")
     ext = Path(original_name).suffix.lower() or ".bin"
     content_type = getattr(file, "content_type", "application/octet-stream") or "application/octet-stream"
     media_type = content_type.split("/")[0]  # image, audio, video, application
 
     filename = f"{uuid_mod.uuid4().hex[:12]}{ext}"
-    filepath = media_dir / filename
     content = await file.read()
-    filepath.write_bytes(content)
 
-    media_url = f"media/{filename}"
+    # Subir a R2 si está configurado, si no fallback a filesystem local
+    from integrations import storage
+    if storage.is_enabled():
+        media_url = await storage.upload_bytes(f"media/{filename}", content, content_type)
+        filepath = None  # no local file when using R2
+    else:
+        media_dir = Path(__file__).parent.parent / "media"
+        media_dir.mkdir(exist_ok=True)
+        filepath = media_dir / filename
+        filepath.write_bytes(content)
+        media_url = f"media/{filename}"
 
     # Guardar en historial
     msg = Message(
@@ -575,23 +579,39 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
                 wa = WhatsAppMetaClient()
                 base_url = settings.app_base_url.rstrip("/")
 
-                send_url = f"{base_url}/{media_url}"
+                # URL pública que Meta va a leer para traer el archivo
+                send_url = media_url if media_url.startswith("http") else f"{base_url}/{media_url}"
+
                 # WhatsApp voice notes require audio/ogg;codecs=opus.
                 # Transcode webm/mp4/wav → ogg/opus so recipients hear actual audio.
                 if media_type == "audio" and not filename.endswith(".ogg"):
                     try:
-                        import subprocess
-                        ogg_filename = f"{filename.rsplit('.', 1)[0]}.ogg"
-                        ogg_filepath = media_dir / ogg_filename
-                        subprocess.run(
-                            ["ffmpeg", "-y", "-i", str(filepath),
-                             "-c:a", "libopus", "-b:a", "32k",
-                             "-ar", "48000", "-ac", "1",
-                             str(ogg_filepath)],
-                            check=True, capture_output=True, timeout=30,
-                        )
-                        send_url = f"{base_url}/media/{ogg_filename}"
-                        logger.info("audio_transcoded_for_whatsapp", original=filename, ogg=ogg_filename)
+                        import subprocess, tempfile, os
+                        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_in:
+                            tmp_in.write(content)
+                            tmp_in_path = tmp_in.name
+                        tmp_out_path = tmp_in_path.rsplit(".", 1)[0] + ".ogg"
+                        try:
+                            subprocess.run(
+                                ["ffmpeg", "-y", "-i", tmp_in_path,
+                                 "-c:a", "libopus", "-b:a", "32k",
+                                 "-ar", "48000", "-ac", "1",
+                                 tmp_out_path],
+                                check=True, capture_output=True, timeout=30,
+                            )
+                            ogg_filename = f"{filename.rsplit('.', 1)[0]}.ogg"
+                            ogg_bytes = Path(tmp_out_path).read_bytes()
+                            if storage.is_enabled():
+                                send_url = await storage.upload_bytes(f"media/{ogg_filename}", ogg_bytes, "audio/ogg")
+                            else:
+                                ogg_filepath = Path(__file__).parent.parent / "media" / ogg_filename
+                                ogg_filepath.write_bytes(ogg_bytes)
+                                send_url = f"{base_url}/media/{ogg_filename}"
+                            logger.info("audio_transcoded_for_whatsapp", original=filename, ogg=ogg_filename)
+                        finally:
+                            for p in (tmp_in_path, tmp_out_path):
+                                try: os.unlink(p)
+                                except Exception: pass
                     except Exception as e:
                         logger.warning("audio_transcode_failed", error=str(e))
 

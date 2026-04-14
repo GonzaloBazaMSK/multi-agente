@@ -87,6 +87,13 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.1  # 10% of requests traced
 
+    # Cloudflare R2 (object storage, S3-compatible) — empty disables, falls back to filesystem
+    r2_endpoint: str = ""           # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""             # msk-multiagente-media
+    r2_public_url: str = ""         # https://pub-XXXX.r2.dev
+
     # Supabase
     supabase_url: str = "https://ubycfticfuatoafzsrfv.supabase.co"
     supabase_service_role_key: str = ""

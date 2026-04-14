@@ -38,3 +38,6 @@ slowapi>=0.1.9
 
 # Observability
 sentry-sdk[fastapi]>=2.18.0
+
+# Object storage (Cloudflare R2, S3-compatible)
+boto3>=1.35.0

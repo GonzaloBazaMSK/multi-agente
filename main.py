@@ -158,12 +158,6 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok"}
 
-    @app.get("/sentry-debug")
-    async def sentry_debug():
-        """Intentional error to verify Sentry integration. Safe to keep — gated by DSN."""
-        division_by_zero = 1 / 0
-        return {"unreachable": division_by_zero}
-
     @app.get("/widget.js")
     async def serve_widget_js():
         """Script del widget embebible para WordPress."""

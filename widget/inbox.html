@@ -257,7 +257,14 @@ body {
   padding: 10px 12px; border-bottom: 1px solid rgba(46,50,73,0.6);
   cursor: pointer; transition: background 0.12s;
   display: flex; gap: 9px; align-items: flex-start; position: relative;
+  border-left: 3px solid transparent;
 }
+/* Status border colors (izquierda del card) */
+.conv-item.status-bot      { border-left-color: #6366f1; }  /* indigo */
+.conv-item.status-human    { border-left-color: var(--green); }
+.conv-item.status-queue    { border-left-color: var(--yellow); }
+.conv-item.status-unassigned { border-left-color: var(--orange); }
+.conv-item.status-closed   { border-left-color: var(--text3); opacity: 0.65; }
 .conv-item:hover { background: var(--surface2); }
 .conv-item.active { background: var(--surface3); border-left: 3px solid var(--primary); }
 
@@ -291,9 +298,11 @@ body {
   font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
   text-transform: uppercase; letter-spacing: 0.3px;
 }
-.badge-bot { background: rgba(255,45,120,0.15); color: var(--primary); }
-.badge-human { background: rgba(34,197,94,0.15); color: var(--green); }
+.badge-bot { background: rgba(99,102,241,0.15); color: var(--primary); }
+.badge-human { background: rgba(16,185,129,0.15); color: var(--green); }
 .badge-queue { background: rgba(245,158,11,0.15); color: var(--yellow); }
+.badge-unassigned { background: rgba(251,146,60,0.15); color: var(--orange); }
+.badge-closed { background: rgba(107,114,128,0.18); color: var(--text3); }
 .badge-agent { background: rgba(167,139,250,0.15); color: var(--purple); font-size: 9px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .label-pill {
   font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
@@ -1465,6 +1474,12 @@ body {
       <button class="filter-dropdown-btn" id="btnFilterLabel" onclick="toggleFilterPanel('label', this)">
         🏷️ Etiqueta <span class="caret">▶</span>
       </button>
+      <button class="filter-dropdown-btn admin-only" id="btnFilterAgent" onclick="toggleFilterPanel('agent', this)" style="display:none">
+        🎧 En atención con <span class="caret">▶</span>
+      </button>
+      <button class="filter-dropdown-btn" id="btnFilterStatus" onclick="toggleFilterPanel('status', this)">
+        📊 Estado <span class="caret">▶</span>
+      </button>
       <button class="filter-dropdown-btn" id="btnClearFilters" onclick="clearAllFilters()" style="display:none;color:var(--red);border-color:rgba(239,68,68,0.4)">
         ✕ Limpiar
       </button>
@@ -1655,6 +1670,37 @@ body {
     </div>
   </div>
 
+  <!-- Closing Notes Modal -->
+  <div class="modal-backdrop" id="closingModal" onclick="if(event.target===this) closeClosingModal()">
+    <div class="modal-card">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title">✕ Cerrar conversación</div>
+          <div class="modal-subtitle">Elegí una categoría y (opcional) dejá un resumen para reports.</div>
+        </div>
+        <button class="modal-close" onclick="closeClosingModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="snip-form-row">
+          <label class="snip-form-label">Categoría</label>
+          <div id="closingCategories" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+        </div>
+        <div class="snip-form-row">
+          <label class="snip-form-label" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Resumen <span style="color:var(--text3);text-transform:none;font-weight:400">(editable)</span></span>
+            <button class="btn-ghost" id="closingAiBtn" style="padding:3px 10px;font-size:11px" onclick="generateClosingAI()">✨ Generar con IA</button>
+          </label>
+          <textarea class="snip-form-textarea" id="closingSummary" rows="4" placeholder="Breve resumen de la conversación..."></textarea>
+          <span class="snip-form-hint" id="closingAiHint">La IA puede sugerir un resumen automático basado en la conversación.</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-ghost" onclick="closeClosingModal()">Cancelar</button>
+        <button class="btn-primary" id="closingConfirmBtn" onclick="confirmCloseConversation()">Cerrar conversación</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Snippets Admin Modal (CRUD) -->
   <div class="modal-backdrop" id="snippetsAdminModal" onclick="if(event.target===this) closeSnippetsAdmin()">
     <div class="modal-card">
@@ -1805,21 +1851,30 @@ function showToast(msg, type) {
   document.body.appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 4000);
 }
+// Backend emite timestamps en UTC. Si el string no tiene zona horaria
+// (ni Z ni +HH:MM), los tratamos como UTC para que toLocaleTimeString()
+// convierta correctamente a la zona horaria local del navegador.
+function parseISO(iso) {
+  if (!iso) return null;
+  if (typeof iso !== 'string') return new Date(iso);
+  const hasTZ = /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+  return new Date(hasTZ ? iso : iso + 'Z');
+}
 function relTime(iso) {
-  if (!iso) return '';
-  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  const d = parseISO(iso); if (!d) return '';
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
   if (diff < 60) return 'ahora';
   if (diff < 3600) return Math.floor(diff/60)+'m';
   if (diff < 86400) return Math.floor(diff/3600)+'h';
-  return new Date(iso).toLocaleDateString('es',{day:'2-digit',month:'2-digit'});
+  return d.toLocaleDateString('es',{day:'2-digit',month:'2-digit'});
 }
 function fmtTime(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+  const d = parseISO(iso); if (!d) return '';
+  return d.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
 }
 function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'});
+  const d = parseISO(iso); if (!d) return '';
+  return d.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long'});
 }
 function renderMd(text) {
   let h = esc(text);
@@ -1839,7 +1894,12 @@ function renderMd(text) {
   return h;
 }
 function convClass(conv) {
-  if (conv.bot_disabled) return 'human';
+  if (conv.status === 'closed') return 'closed';
+  if (conv.bot_disabled) {
+    // humano controla; si no hay agente asignado explícitamente, queda "sin asignar"
+    if (!conv.assigned_to_name && !conv.agent_name) return 'unassigned';
+    return 'human';
+  }
   if (conv.status === 'handed_off') return 'queue';
   return 'bot';
 }
@@ -1892,7 +1952,7 @@ const LABEL_OPTIONS = {
   seguimiento:'📞 Seguimiento', no_interesa:'🚫 No interesa',
 };
 
-let activeFilters = { queues: [], channel: null, label: null };
+let activeFilters = { queues: [], channel: null, label: null, agents: [], status: null };
 let availableQueues = [];
 let openFilterType = null;
 
@@ -1966,7 +2026,64 @@ function buildPanelHTML(type) {
     }
     return html;
   }
+  if (type === 'agent') {
+    if (!agentList.length) return '<div style="padding:12px;color:var(--text3);font-size:12px">Cargando agentes…</div>';
+    let html = '';
+    if (activeFilters.agents.length) {
+      html += `<div class="fp-item" onclick="clearAgentFilter()"><span class="check"></span>— Todos los agentes</div>`;
+    }
+    html += `<div class="fp-item ${activeFilters.agents.includes('__unassigned__') ? 'selected' : ''}" onclick="toggleAgentFilter('__unassigned__', this)">
+      <span class="check">${activeFilters.agents.includes('__unassigned__') ? '✓' : ''}</span>— Sin asignar
+    </div>`;
+    agentList.forEach(a => {
+      const label = a.name || a.email || 'Agente';
+      const sel = activeFilters.agents.includes(a.id);
+      html += `<div class="fp-item ${sel?'selected':''}" onclick="toggleAgentFilter('${esc(a.id)}', this)">
+        <span class="check">${sel?'✓':''}</span>${esc(label)}
+      </div>`;
+    });
+    return html;
+  }
+  if (type === 'status') {
+    const opts = [
+      { k: 'active',     label: '🟢 Activas' },
+      { k: 'bot',        label: '🤖 Con bot' },
+      { k: 'human',      label: '✋ En atención humana' },
+      { k: 'queue',      label: '⏳ En cola (esperando agente)' },
+      { k: 'unassigned', label: '🟠 Sin agente' },
+      { k: 'closed',     label: '✓ Cerradas' },
+    ];
+    let html = '';
+    if (activeFilters.status) {
+      html += `<div class="fp-item" onclick="setStatusFilter(null)"><span class="check"></span>— Todos</div>`;
+    }
+    opts.forEach(o => {
+      const sel = activeFilters.status === o.k;
+      html += `<div class="fp-item ${sel?'selected':''}" onclick="setStatusFilter('${o.k}')">
+        <span class="check">${sel?'✓':''}</span>${o.label}
+      </div>`;
+    });
+    return html;
+  }
   return '';
+}
+
+function toggleAgentFilter(agentId, itemEl) {
+  const idx = activeFilters.agents.indexOf(agentId);
+  if (idx >= 0) activeFilters.agents.splice(idx, 1);
+  else activeFilters.agents.push(agentId);
+  document.getElementById('filterPanel').innerHTML = buildPanelHTML('agent');
+  updateFilterUI();
+}
+function clearAgentFilter() {
+  activeFilters.agents = [];
+  closeFilterPanel();
+  updateFilterUI();
+}
+function setStatusFilter(s) {
+  activeFilters.status = s;
+  closeFilterPanel();
+  updateFilterUI();
 }
 
 function toggleFpCategory(el) {
@@ -2001,7 +2118,8 @@ function closeFilterPanel() {
 }
 
 function clearAllFilters() {
-  activeFilters = { queues: [], channel: null, label: null };
+  activeFilters = { queues: [], channel: null, label: null, agents: [], status: null };
+  closeFilterPanel();
   updateFilterUI();
 }
 
@@ -2009,17 +2127,24 @@ function removeFilter(type, value) {
   if (type === 'queue') activeFilters.queues = activeFilters.queues.filter(q => q !== value);
   else if (type === 'channel') activeFilters.channel = null;
   else if (type === 'label') activeFilters.label = null;
+  else if (type === 'agent') activeFilters.agents = activeFilters.agents.filter(a => a !== value);
+  else if (type === 'status') activeFilters.status = null;
   updateFilterUI();
 }
 
 function updateFilterUI() {
-  const hasFilters = activeFilters.queues.length > 0 || activeFilters.channel || activeFilters.label;
+  const hasFilters = activeFilters.queues.length > 0 || activeFilters.channel || activeFilters.label
+    || activeFilters.agents.length > 0 || activeFilters.status;
   document.getElementById('btnClearFilters').style.display = hasFilters ? '' : 'none';
 
   // Update button styles
   document.getElementById('btnFilterQueue').classList.toggle('has-filter', activeFilters.queues.length > 0);
   document.getElementById('btnFilterChannel').classList.toggle('has-filter', !!activeFilters.channel);
   document.getElementById('btnFilterLabel').classList.toggle('has-filter', !!activeFilters.label);
+  const agentBtn = document.getElementById('btnFilterAgent');
+  if (agentBtn) agentBtn.classList.toggle('has-filter', activeFilters.agents.length > 0);
+  const statusBtn = document.getElementById('btnFilterStatus');
+  if (statusBtn) statusBtn.classList.toggle('has-filter', !!activeFilters.status);
 
   // Render active chips
   const container = document.getElementById('activeFilters');
@@ -2032,6 +2157,14 @@ function updateFilterUI() {
   }
   if (activeFilters.label) {
     chips += `<span class="af-chip">${LABEL_OPTIONS[activeFilters.label]} <span class="rm" onclick="removeFilter('label')">×</span></span>`;
+  }
+  activeFilters.agents.forEach(aid => {
+    let name = aid === '__unassigned__' ? 'Sin asignar' : (agentList.find(a => a.id === aid)?.name || 'Agente');
+    chips += `<span class="af-chip">🎧 ${esc(name)} <span class="rm" onclick="removeFilter('agent','${aid}')">×</span></span>`;
+  });
+  if (activeFilters.status) {
+    const statusLabels = { active: 'Activas', bot: 'Con bot', human: 'En atención', queue: 'En cola', unassigned: 'Sin agente', closed: 'Cerradas' };
+    chips += `<span class="af-chip">📊 ${statusLabels[activeFilters.status]} <span class="rm" onclick="removeFilter('status')">×</span></span>`;
   }
   container.innerHTML = chips;
   container.classList.toggle('visible', hasFilters);
@@ -2066,7 +2199,17 @@ function applyFilters() {
     if (activeFilters.queues.length > 0 && !activeFilters.queues.includes(conv.queue)) return false;
     if (activeFilters.channel && conv.channel !== activeFilters.channel) return false;
     if (activeFilters.label && conv.label !== activeFilters.label) return false;
+    if (activeFilters.agents.length > 0) {
+      const assigned = conv.assigned_to || null;
+      const wantUnassigned = activeFilters.agents.includes('__unassigned__');
+      const matchesAgent = assigned && activeFilters.agents.includes(assigned);
+      if (!(wantUnassigned && !assigned) && !matchesAgent) return false;
+    }
     const cls = convClass(conv);
+    if (activeFilters.status) {
+      if (activeFilters.status === 'active' && cls === 'closed') return false;
+      if (activeFilters.status !== 'active' && cls !== activeFilters.status) return false;
+    }
     if (activeFilter === 'unread' && !(unreadCounts[conv.session_id] > 0)) return false;
     if (activeFilter === 'queue' && cls !== 'queue') return false;
     if (activeFilter === 'human' && cls !== 'human') return false;
@@ -2123,9 +2266,11 @@ function renderList(list) {
     const lbl = conv.label ? LABELS[conv.label] : null;
 
     let statusBadge = '';
-    if (cls === 'human') statusBadge = `<span class="status-badge badge-human">Atendiendo</span>`;
-    else if (cls === 'queue') statusBadge = `<span class="status-badge badge-queue">En cola</span>`;
-    else statusBadge = `<span class="status-badge badge-bot">Bot</span>`;
+    if (cls === 'closed')          statusBadge = `<span class="status-badge badge-closed">✓ Cerrada</span>`;
+    else if (cls === 'human')      statusBadge = `<span class="status-badge badge-human">Atendiendo</span>`;
+    else if (cls === 'unassigned') statusBadge = `<span class="status-badge badge-unassigned">Sin asignar</span>`;
+    else if (cls === 'queue')      statusBadge = `<span class="status-badge badge-queue">En cola</span>`;
+    else                           statusBadge = `<span class="status-badge badge-bot">Bot</span>`;
 
     let agentBadge = conv.agent_name && cls === 'human'
       ? `<span class="status-badge badge-agent" title="${esc(conv.agent_name)}">👤 ${esc(conv.agent_name)}</span>` : '';
@@ -2140,7 +2285,7 @@ function renderList(list) {
     const preview = conv.last_message ? esc(conv.last_message) : '<em style="color:var(--text3)">Sin mensajes</em>';
 
     return `
-      <div class="conv-item ${isActive?'active':''}" onclick="handleConvClick(event,'${conv.session_id}')">
+      <div class="conv-item status-${cls} ${isActive?'active':''}" onclick="handleConvClick(event,'${conv.session_id}')">
         <input type="checkbox" class="bulk-checkbox" data-sid="${conv.session_id}" onclick="event.stopPropagation();bulkToggleOne('${conv.session_id}',this.checked)" ${bulkSelected.has(conv.session_id)?'checked':''}>
         <div class="avatar">
           ${flag(conv.country)}
@@ -2470,9 +2615,14 @@ function renderConv(conv) {
       </button>
       <div class="assign-dropdown" id="assignDropdown"></div>
     </div>` : (conv.assigned_to_name ? `<span style="font-size:11px;color:var(--text3)">👤 ${conv.assigned_to_name}</span>` : '');
+  const isClosed = conv.status === 'closed';
+  const closeBtn = isClosed
+    ? `<button class="crm-open-btn" onclick="reopenConv('${conv.session_id}')" title="Reabrir">↻ Reabrir</button>`
+    : `<button class="crm-open-btn" style="color:var(--red);border-color:rgba(239,68,68,0.35)" onclick="openClosingModal('${conv.session_id}')" title="Cerrar conversación">✕ Cerrar</button>`;
   actions.innerHTML = `
     ${takeoverOrRelease}
     ${assignBtn}
+    ${closeBtn}
     <button class="crm-open-btn" onclick="downloadConv()" title="Descargar JSON">⬇️ JSON</button>`;
 
   // Label selector
@@ -3411,6 +3561,125 @@ async function deleteSnippet(id, shortcut) {
   } catch (e) {
     console.error('[snippets] delete failed', e);
     showToast('Error al borrar', 'error');
+  }
+}
+
+// ── Closing Notes (cierre con categoría + resumen IA) ──
+const CLOSING_CATEGORIES = [
+  { k: 'venta_cerrada',    l: '💰 Venta cerrada',   h: 'El cliente pagó o confirmó compra' },
+  { k: 'descartado',       l: '❌ Lead descartado',  h: 'No calificó o no está interesado' },
+  { k: 'info',             l: 'ℹ️ Info entregada',   h: 'Entrega de información sin conversión' },
+  { k: 'soporte_resuelto', l: '🔧 Soporte resuelto', h: 'Consulta resuelta exitosamente' },
+  { k: 'derivado',         l: '🔀 Derivado humano',  h: 'Pasado a otro equipo/canal' },
+  { k: 'otro',             l: '📝 Otro',             h: 'Sin categoría específica' },
+];
+let closingSelectedCategory = null;
+let closingSessionId = null;
+
+function openClosingModal(sessionId) {
+  closingSessionId = sessionId;
+  closingSelectedCategory = null;
+  document.getElementById('closingSummary').value = '';
+  document.getElementById('closingAiHint').textContent = 'La IA puede sugerir un resumen automático basado en la conversación.';
+  document.getElementById('closingAiBtn').disabled = false;
+  renderClosingCategories();
+  document.getElementById('closingModal').classList.add('open');
+  // Auto-generar resumen IA al abrir (best effort)
+  generateClosingAI(true);
+}
+function closeClosingModal() {
+  document.getElementById('closingModal').classList.remove('open');
+  closingSessionId = null;
+}
+function renderClosingCategories() {
+  const wrap = document.getElementById('closingCategories');
+  wrap.innerHTML = CLOSING_CATEGORIES.map(c => {
+    const sel = closingSelectedCategory === c.k;
+    return `<div onclick="selectClosingCategory('${c.k}')" style="
+        cursor:pointer; padding:10px 12px;
+        border:1px solid ${sel ? 'var(--primary)' : 'var(--border)'};
+        background:${sel ? 'var(--primary-soft)' : 'var(--surface2)'};
+        border-radius:10px; transition:all 0.15s;">
+      <div style="font-size:13px;font-weight:600;color:${sel?'var(--primary)':'var(--text)'}">${c.l}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">${c.h}</div>
+    </div>`;
+  }).join('');
+}
+function selectClosingCategory(k) {
+  closingSelectedCategory = k;
+  renderClosingCategories();
+}
+async function generateClosingAI(silent) {
+  if (!closingSessionId) return;
+  const btn = document.getElementById('closingAiBtn');
+  const hint = document.getElementById('closingAiHint');
+  btn.disabled = true;
+  hint.textContent = 'Generando resumen…';
+  try {
+    const r = await fetch(`${API}/inbox/conversations/${closingSessionId}/close-summary`, {
+      method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    // Solo pre-rellenar si el textarea está vacío (no pisar ediciones del agente)
+    const ta = document.getElementById('closingSummary');
+    if (!ta.value.trim() && data.summary) ta.value = data.summary;
+    if (!closingSelectedCategory && data.category) {
+      closingSelectedCategory = data.category;
+      renderClosingCategories();
+    }
+    hint.textContent = 'Resumen generado por IA. Editá si hace falta.';
+  } catch (e) {
+    console.error('[closing summary]', e);
+    if (!silent) hint.textContent = 'Error al generar, podés escribir manualmente.';
+    else hint.textContent = 'No se pudo generar automático. Click en "Generar con IA" para reintentar.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function confirmCloseConversation() {
+  if (!closingSessionId) return;
+  if (!closingSelectedCategory) {
+    showToast('Elegí una categoría', 'warning');
+    return;
+  }
+  const summary = document.getElementById('closingSummary').value.trim();
+  const btn = document.getElementById('closingConfirmBtn');
+  btn.disabled = true; btn.textContent = 'Cerrando...';
+  try {
+    const r = await fetch(`${API}/inbox/conversations/${closingSessionId}/close`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Session-Token': SESSION_TOKEN },
+      body: JSON.stringify({
+        resolution: closingSelectedCategory,
+        category: closingSelectedCategory,
+        summary: summary,
+      }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    showToast('Conversación cerrada', 'success');
+    closeClosingModal();
+    await loadConversations();
+    if (activeSessionId === closingSessionId) await loadConv(activeSessionId);
+  } catch (e) {
+    console.error('[close]', e);
+    showToast('Error al cerrar', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Cerrar conversación';
+  }
+}
+
+async function reopenConv(sessionId) {
+  if (!confirm('¿Reabrir esta conversación?')) return;
+  try {
+    const r = await fetch(`${API}/inbox/conversations/${sessionId}/reopen`, {
+      method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    showToast('Conversación reabierta', 'success');
+    await loadConversations();
+    if (activeSessionId === sessionId) await loadConv(sessionId);
+  } catch (e) {
+    showToast('Error al reabrir', 'error');
   }
 }
 
@@ -4662,15 +4931,17 @@ function showBulkLabelMenu(btn) {
   setTimeout(() => document.addEventListener('click', closeBulkDropdowns, { once: true }), 10);
 }
 
-function showBulkAssignMenu(btn) {
+async function showBulkAssignMenu(btn) {
   closeBulkDropdowns();
   if (!bulkSelected.size) { showToast('Seleccioná al menos una conversación', 'warning'); return; }
+  if (!agentList.length) await loadAgentList();
   const dd = document.createElement('div');
   dd.className = 'bulk-dropdown';
   dd.innerHTML = `<div class="bulk-dropdown-item" onclick="executeBulkAssign('','')">— Sin asignar</div>`
-    + agentList.map(a =>
-      `<div class="bulk-dropdown-item" onclick="executeBulkAssign('${esc(a.id||a.username)}','${esc(a.display_name||a.username)}')">👤 ${esc(a.display_name||a.username)}</div>`
-    ).join('');
+    + agentList.map(a => {
+        const label = a.name || a.email || 'Agente';
+        return `<div class="bulk-dropdown-item" onclick="executeBulkAssign('${esc(a.id)}','${esc(label.replace(/\\'/g, ''))}')">👤 ${esc(label)}</div>`;
+      }).join('');
   const rect = btn.getBoundingClientRect();
   dd.style.top = (rect.bottom + 4) + 'px';
   dd.style.left = rect.left + 'px';

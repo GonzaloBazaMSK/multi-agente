@@ -13,6 +13,7 @@ Endpoints:
 import asyncio
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
@@ -178,6 +179,8 @@ class LabelRequest(BaseModel):
 
 class CloseRequest(BaseModel):
     resolution: str = ""  # won, lost, resolved, spam, other
+    category: str = ""    # venta_cerrada, descartado, info, soporte_resuelto, derivado, otro
+    summary: str = ""     # closing notes summary (editable por el agente)
 
 
 class BulkLabelRequest(BaseModel):
@@ -643,6 +646,74 @@ async def send_media(session_id: str, request: Request, user: dict = Depends(get
 
     logger.info("inbox_media_sent", session_id=session_id, agent=agent_name, media_type=media_type)
     return {"status": "ok", "media_url": media_url, "timestamp": msg.timestamp.isoformat()}
+
+
+# ─── Closing summary IA ──────────────────────────────────────────────────────
+
+CLOSING_CATEGORIES = [
+    ("venta_cerrada",   "💰 Venta cerrada",    "El cliente pagó o confirmó compra"),
+    ("descartado",      "❌ Lead descartado",   "No calificó o no está interesado"),
+    ("info",            "ℹ️ Info entregada",    "Entrega de información sin conversión"),
+    ("soporte_resuelto","🔧 Soporte resuelto",  "Consulta resuelta exitosamente"),
+    ("derivado",        "🔀 Derivado humano",   "Pasado a otro equipo/canal"),
+    ("otro",            "📝 Otro",              "Sin categoría específica"),
+]
+
+
+@router.get("/closing-categories")
+async def get_closing_categories(user: dict = Depends(get_current_user)):
+    return [{"key": k, "label": l, "hint": h} for k, l, h in CLOSING_CATEGORIES]
+
+
+@router.post("/conversations/{session_id}/close-summary")
+async def generate_closing_summary(session_id: str, user: dict = Depends(get_current_user)):
+    """Genera con IA un resumen de 2-3 líneas de la conversación + sugerencia de categoría."""
+    store, conv = await _get_conv(session_id)
+
+    if not conv.messages:
+        return {"summary": "Conversación sin mensajes.", "category": "otro"}
+
+    # Últimos 40 mensajes (suficiente contexto, no muy caro)
+    recent = conv.messages[-40:]
+    transcript = "\n".join(
+        f"[{m.role.value}] {m.content[:300]}" for m in recent if m.content
+    )
+    if not transcript.strip():
+        return {"summary": "Sin contenido de texto para resumir.", "category": "otro"}
+
+    categories_str = ", ".join(k for k, _, _ in CLOSING_CATEGORIES)
+    system = (
+        "Sos un asistente que resume conversaciones de atención al cliente para MSK Latam "
+        "(venta de cursos médicos online). Recibís el transcript y devolvés un JSON con dos campos: "
+        "'summary' (2-3 líneas concisas, en español rioplatense, qué pidió el cliente y cómo terminó) "
+        f"y 'category' (uno de: {categories_str}). "
+        "Devolvé SOLO JSON válido, sin backticks ni comentarios."
+    )
+
+    from openai import AsyncOpenAI
+    from config.settings import get_settings
+    settings = get_settings()
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=400,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"Transcript:\n{transcript}"},
+            ],
+        )
+        data = json.loads(resp.choices[0].message.content)
+        logger.info("closing_summary_ok", session_id=session_id, category=data.get("category"))
+        return {
+            "summary": data.get("summary", "").strip(),
+            "category": data.get("category", "otro"),
+        }
+    except Exception as e:
+        logger.error("closing_summary_failed", session_id=session_id, error=str(e))
+        return {"summary": "", "category": "otro"}
 
 
 # ─── Send attachment by URL (para snippets) ──────────────────────────────────
@@ -1851,10 +1922,35 @@ async def close_conversation(session_id: str, req: CloseRequest, user: dict = De
     if req.resolution:
         await store._redis.set(f"conv_resolution:{session_id}", req.resolution, ex=86400*90)
 
+    # Closing notes (categoría + summary), persistidos en conv.context y Redis
+    if req.category or req.summary:
+        conv.context["closing_note"] = {
+            "category": req.category,
+            "summary": req.summary,
+            "closed_by": user.get("name") or user.get("email") or "",
+            "closed_at": datetime.utcnow().isoformat(),
+        }
+        # Guardar en Redis para queries rápidas de reports
+        await store._redis.set(
+            f"closing_note:{session_id}",
+            json.dumps({
+                "category": req.category,
+                "summary": req.summary,
+                "closed_by": user.get("name") or user.get("email") or "",
+            }),
+            ex=86400 * 180,
+        )
+        await store.save(conv)
+
     # Track close time for metrics
     await store._redis.set(f"conv_closed_at:{session_id}", str(time.time()), ex=86400*30)
 
-    broadcast_event({"type": "conv_closed", "session_id": session_id, "resolution": req.resolution})
+    broadcast_event({
+        "type": "conv_closed",
+        "session_id": session_id,
+        "resolution": req.resolution,
+        "category": req.category,
+    })
 
     from utils.conv_events import log_action
     await log_action(session_id, f"Conversación cerrada — {req.resolution or 'sin resolución'}")

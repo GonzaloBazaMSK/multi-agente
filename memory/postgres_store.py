@@ -42,13 +42,15 @@ async def get_pool() -> asyncpg.Pool:
     global _pool
     if _pool is None:
         settings = get_settings()
-        # statement_cache_size=0 es requerido por PgBouncer transaction mode
+        # statement_cache_size=0 es requerido por PgBouncer transaction mode.
+        # ssl="require" — Supabase pooler exige TLS.
         _pool = await asyncpg.create_pool(
             settings.database_url,
             min_size=1,
             max_size=10,
             statement_cache_size=0,
             command_timeout=10,
+            ssl="require",
         )
         logger.info("postgres_pool_created")
     return _pool

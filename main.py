@@ -36,6 +36,9 @@ if _settings_boot.sentry_dsn:
         ],
     )
 
+# NOTE: api.lifecycle existe pero no se registra por ahora — el Kanban + Reports
+# ya cubren el use case. Se puede activar en el futuro si el equipo crece.
+# from api.lifecycle import router as lifecycle_router
 from api.reports import router as reports_router
 from api.test_agent import router as test_agent_router
 from api.webhooks import router as webhooks_router
@@ -239,12 +242,6 @@ def create_app() -> FastAPI:
     async def serve_dashboard_page():
         """Dashboard de métricas para administradores."""
         html_file = Path(__file__).parent / "widget" / "dashboard.html"
-        return FileResponse(str(html_file), media_type="text/html")
-
-    @app.get("/admin/reports-ui")
-    async def serve_reports_page():
-        """Reports de cierres, leaderboard y funnel para supervisores."""
-        html_file = Path(__file__).parent / "widget" / "reports.html"
         return FileResponse(str(html_file), media_type="text/html")
 
     @app.get("/admin/test-agent-ui")

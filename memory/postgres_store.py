@@ -111,6 +111,28 @@ create unique index if not exists snippets_shortcut_idx on public.snippets (shor
 create index if not exists snippets_topics_idx on public.snippets using gin (topics);
 create index if not exists snippets_updated_idx on public.snippets (updated_at desc);
 
+-- Lifecycle stages: pipeline visual estilo CRM
+create table if not exists public.lifecycle_stages (
+    id uuid primary key,
+    key text not null,
+    label text not null,
+    emoji text not null default '📍',
+    color text not null default '#6366f1',
+    position integer not null,
+    is_lost boolean not null default false,
+    is_won boolean not null default false,
+    created_at timestamptz not null default now()
+);
+create unique index if not exists lifecycle_stages_key_idx on public.lifecycle_stages (key);
+
+create table if not exists public.conversation_stage (
+    conversation_id uuid primary key references public.conversations(id) on delete cascade,
+    stage_key text not null,
+    changed_by text,
+    changed_at timestamptz not null default now()
+);
+create index if not exists conv_stage_key_idx on public.conversation_stage (stage_key);
+
 create or replace function public.touch_conversation_updated_at()
 returns trigger language plpgsql as $func$
 begin

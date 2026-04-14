@@ -303,8 +303,83 @@ tbody tr:hover td { background: rgba(255,45,120,0.04); }
 
   <!-- Main -->
   <main class="main-content">
-    <div class="page-title">📊 Dashboard de métricas</div>
+    <div class="page-title">📊 Panel</div>
     <div class="page-sub" id="last-update">Cargando datos...</div>
+
+    <!-- Tabs + rango -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:12px;flex-wrap:wrap">
+      <button id="tabLive" class="rangebtn active" onclick="setTab('live')">🟢 En vivo</button>
+      <button id="tabHist" class="rangebtn" onclick="setTab('hist')">📈 Histórico</button>
+      <span style="flex:1"></span>
+      <div id="rangeFilter" style="display:none;gap:6px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text2);margin-right:4px">Rango:</span>
+        <button class="rangebtn" data-days="1"   onclick="setRange(1,this)">Hoy</button>
+        <button class="rangebtn active" data-days="7"   onclick="setRange(7,this)">7 días</button>
+        <button class="rangebtn" data-days="14"  onclick="setRange(14,this)">14 días</button>
+        <button class="rangebtn" data-days="30"  onclick="setRange(30,this)">30 días</button>
+        <button class="rangebtn" data-days="90"  onclick="setRange(90,this)">90 días</button>
+      </div>
+    </div>
+
+    <style>
+      .rangebtn { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); font-size: 12px; font-weight: 500; cursor: pointer; }
+      .rangebtn.active { background: var(--primary-soft, rgba(99,102,241,0.12)); color: var(--primary); border-color: var(--primary); }
+      .rangebtn:hover:not(.active) { color: var(--text); border-color: var(--border-strong, rgba(255,255,255,0.12)); }
+
+      /* Histórico */
+      .hist-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 12px; margin-bottom: 18px; }
+      .hist-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+      .hist-kpi-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+      .hist-kpi-value { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: -0.5px; }
+      .hist-kpi-sub { font-size: 11px; color: var(--text3); margin-top: 4px; }
+      .hist-kpi.highlight { background: linear-gradient(135deg, rgba(99,102,241,0.12), transparent); border-color: var(--primary); }
+      .hist-kpi.highlight .hist-kpi-value { color: var(--primary); }
+      .hist-kpi.green .hist-kpi-value { color: var(--green); }
+      .hist-kpi.red .hist-kpi-value { color: var(--red); }
+
+      .hist-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; margin-bottom: 14px; }
+      @media (max-width: 900px) { .hist-row { grid-template-columns: 1fr; } }
+
+      .lb { display: flex; flex-direction: column; gap: 8px; }
+      .lb-row { display: grid; grid-template-columns: 32px 1fr auto auto auto; align-items: center; gap: 12px; padding: 10px 12px; background: var(--surface2); border-radius: 8px; font-size: 13px; }
+      .lb-rank { font-weight: 800; color: var(--text3); font-size: 14px; text-align: center; }
+      .lb-name { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+      .lb-stat { font-size: 12px; color: var(--text2); text-align: right; }
+      .lb-stat b { color: var(--text); font-weight: 700; }
+      .lb-conv { padding: 2px 8px; background: rgba(99,102,241,0.15); color: var(--primary); border-radius: 4px; font-size: 11px; font-weight: 700; }
+
+      .cat-item { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+      .cat-label { min-width: 140px; font-size: 12px; color: var(--text); }
+      .cat-bar { flex: 1; height: 10px; background: var(--surface3, #252a33); border-radius: 6px; overflow: hidden; }
+      .cat-fill { height: 100%; background: var(--primary); border-radius: 6px; transition: width 0.4s; }
+      .cat-count { font-size: 12px; font-weight: 700; color: var(--text); min-width: 32px; text-align: right; }
+
+      .empty { text-align: center; padding: 26px 16px; color: var(--text3); font-size: 13px; }
+    </style>
+
+    <!-- Vista: histórico -->
+    <div id="viewHist" style="display:none">
+      <div class="hist-kpis" id="histKpis"><div class="empty">Cargando KPIs...</div></div>
+      <div class="hist-row">
+        <div class="chart-card">
+          <div class="card-title"><span class="card-title-icon">🏆</span> Leaderboard de agentes <span id="lbCount" style="font-size:11px;color:var(--text3);font-weight:400;margin-left:auto"></span></div>
+          <div id="leaderboard"><div class="empty">Cargando...</div></div>
+        </div>
+        <div class="chart-card">
+          <div class="card-title"><span class="card-title-icon">📊</span> Categorías de cierre</div>
+          <div id="categories"><div class="empty">Cargando...</div></div>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="card-title"><span class="card-title-icon">📈</span> Cierres por día</div>
+        <div style="position:relative;height:220px;width:100%;margin-top:8px">
+          <canvas id="chart-closed"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vista: en vivo (contenido actual) -->
+    <div id="viewLive">
 
     <!-- KPI Cards -->
     <div class="kpi-grid" id="kpi-grid">
@@ -398,6 +473,8 @@ tbody tr:hover td { background: rgba(255,45,120,0.04); }
         <div class="empty-state"><div class="empty-icon">💬</div>Cargando conversaciones...</div>
       </div>
     </div>
+
+    </div> <!-- /viewLive -->
   </main>
 </div>
 
@@ -407,6 +484,158 @@ if (!token) { window.location.href = '/login'; }
 
 let dailyChart = null;
 let pieChart = null;
+let closedChart = null;
+let currentTab = 'live';
+let currentDays = 7;
+
+function escHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ── Tabs ──
+function setTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabLive').classList.toggle('active', tab === 'live');
+  document.getElementById('tabHist').classList.toggle('active', tab === 'hist');
+  document.getElementById('viewLive').style.display = tab === 'live' ? '' : 'none';
+  document.getElementById('viewHist').style.display = tab === 'hist' ? '' : 'none';
+  const rf = document.getElementById('rangeFilter');
+  rf.style.display = tab === 'hist' ? 'flex' : 'none';
+  if (tab === 'hist') loadHistorical();
+}
+function setRange(days, btn) {
+  currentDays = days;
+  document.querySelectorAll('#rangeFilter .rangebtn').forEach(b => b.classList.toggle('active', b === btn));
+  loadHistorical();
+}
+
+// ── Histórico: KPIs + Leaderboard + Categorías + Timeline ──
+const CAT_META = {
+  venta_cerrada:    { label: '💰 Venta cerrada',    color: '#10b981' },
+  descartado:       { label: '❌ Lead descartado',   color: '#ef4444' },
+  info:             { label: 'ℹ️ Info entregada',    color: '#60a5fa' },
+  soporte_resuelto: { label: '🔧 Soporte resuelto',  color: '#10b981' },
+  derivado:         { label: '🔀 Derivado humano',   color: '#a78bfa' },
+  otro:             { label: '📝 Otro',              color: '#9ca3af' },
+  sin_categoria:    { label: '— Sin categoría',      color: '#6b7280' },
+};
+
+async function authFetch(url) {
+  const r = await fetch(url, { headers: { 'X-Session-Token': token } });
+  if (r.status === 401) { localStorage.removeItem('msk_session'); window.location.href = '/login'; return null; }
+  if (r.status === 403) throw new Error('Sin permisos (requiere admin o supervisor).');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+async function loadHistorical() {
+  try {
+    const [ov, lb, cat, tl] = await Promise.all([
+      authFetch(`/admin/reports/overview?days=${currentDays}`),
+      authFetch(`/admin/reports/leaderboard?days=${currentDays}`),
+      authFetch(`/admin/reports/categories?days=${currentDays}`),
+      authFetch(`/admin/reports/timeline?days=${Math.min(currentDays, 30)}`),
+    ]);
+    renderHistKpis(ov);
+    renderLeaderboard(lb);
+    renderCategories(cat);
+    renderClosedChart(tl);
+  } catch (e) {
+    document.getElementById('histKpis').innerHTML = `<div class="empty">${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderHistKpis(d) {
+  document.getElementById('histKpis').innerHTML = `
+    <div class="hist-kpi">
+      <div class="hist-kpi-label">Total conversaciones</div>
+      <div class="hist-kpi-value">${d.total}</div>
+      <div class="hist-kpi-sub">últimos ${d.days} días</div>
+    </div>
+    <div class="hist-kpi">
+      <div class="hist-kpi-label">Cerradas</div>
+      <div class="hist-kpi-value">${d.closed}</div>
+      <div class="hist-kpi-sub">${d.total ? Math.round(d.closed/d.total*100) : 0}% del total</div>
+    </div>
+    <div class="hist-kpi green">
+      <div class="hist-kpi-label">Ventas cerradas</div>
+      <div class="hist-kpi-value">${d.won}</div>
+      <div class="hist-kpi-sub">en el rango</div>
+    </div>
+    <div class="hist-kpi red">
+      <div class="hist-kpi-label">Descartados</div>
+      <div class="hist-kpi-value">${d.lost}</div>
+      <div class="hist-kpi-sub">en el rango</div>
+    </div>
+    <div class="hist-kpi highlight">
+      <div class="hist-kpi-label">Conversión</div>
+      <div class="hist-kpi-value">${d.conversion_rate}%</div>
+      <div class="hist-kpi-sub">${d.won} ventas / ${d.closed} cerradas</div>
+    </div>
+    <div class="hist-kpi">
+      <div class="hist-kpi-label">Abiertas ahora</div>
+      <div class="hist-kpi-value">${d.open_now}</div>
+      <div class="hist-kpi-sub">sin cerrar</div>
+    </div>
+    <div class="hist-kpi">
+      <div class="hist-kpi-label">Mensajes</div>
+      <div class="hist-kpi-value">${d.messages}</div>
+      <div class="hist-kpi-sub">intercambiados</div>
+    </div>`;
+}
+
+function renderLeaderboard(d) {
+  document.getElementById('lbCount').textContent = `${d.rows.length} agente${d.rows.length!==1?'s':''}`;
+  if (!d.rows.length) { document.getElementById('leaderboard').innerHTML = '<div class="empty">Sin cierres registrados.</div>'; return; }
+  document.getElementById('leaderboard').innerHTML = '<div class="lb">' + d.rows.map((r, i) => `
+    <div class="lb-row">
+      <div class="lb-rank">${i < 3 ? ['🥇','🥈','🥉'][i] : '#'+(i+1)}</div>
+      <div class="lb-name">${escHtml(r.agent)}</div>
+      <div class="lb-stat"><b>${r.closed}</b> cerradas</div>
+      <div class="lb-stat" style="color:var(--green)"><b>${r.won}</b> ventas</div>
+      <span class="lb-conv">${r.conversion_rate}%</span>
+    </div>`).join('') + '</div>';
+}
+
+function renderCategories(d) {
+  if (!d.rows.length) { document.getElementById('categories').innerHTML = '<div class="empty">Sin categorías.</div>'; return; }
+  const total = d.rows.reduce((a, r) => a + r.total, 0);
+  document.getElementById('categories').innerHTML = d.rows.map(r => {
+    const meta = CAT_META[r.category] || { label: r.category, color: '#9ca3af' };
+    const pct = total ? Math.round(r.total / total * 100) : 0;
+    return `<div class="cat-item">
+      <div class="cat-label">${meta.label}</div>
+      <div class="cat-bar"><div class="cat-fill" style="width:${pct}%;background:${meta.color}"></div></div>
+      <div class="cat-count">${r.total}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderClosedChart(d) {
+  if (!d.rows.length) return;
+  const ctx = document.getElementById('chart-closed').getContext('2d');
+  if (closedChart) closedChart.destroy();
+  const labels = d.rows.map(r => {
+    const dt = new Date(r.day);
+    return String(dt.getDate()).padStart(2,'0') + '/' + String(dt.getMonth()+1).padStart(2,'0');
+  });
+  closedChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Cerradas', data: d.rows.map(r => r.closed), backgroundColor: 'rgba(99,102,241,0.7)', borderRadius: 4 },
+        { label: 'Ventas',   data: d.rows.map(r => r.won),    backgroundColor: 'rgba(16,185,129,0.85)', borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { stacked: false, ticks: { color: '#a0a4ad' }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: '#a0a4ad', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+      },
+      plugins: { legend: { labels: { color: '#a0a4ad' } } },
+    },
+  });
+}
 
 // ── Auth header display ──
 async function loadUserInfo() {

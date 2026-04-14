@@ -1487,9 +1487,9 @@ body {
       <span class="nav-icon">🗄️</span>
       <span class="nav-label">Redis</span>
     </a>
-    <a href="javascript:void(0)" onclick="openQuickRepliesManager()" class="nav-item" title="Respuestas Rápidas">
+    <a href="javascript:void(0)" onclick="openSnippetsAdminFromNav()" class="nav-item" title="Snippets (respuestas rápidas con adjuntos)">
       <span class="nav-icon">⚡</span>
-      <span class="nav-label">Rápidas</span>
+      <span class="nav-label">Snippets</span>
     </a>
     <a href="/msk" class="nav-item" title="Sitio web" target="_blank">
       <span class="nav-icon">🌐</span>
@@ -3878,6 +3878,30 @@ async function deleteSnippet(id, shortcut) {
   }
 }
 
+// ── Snippets desde el nav-rail (con migración one-time si hace falta) ──
+async function openSnippetsAdminFromNav() {
+  // Si el usuario es admin, disparar migración silenciosa por si tiene quick-replies viejos
+  if (currentUser.role === 'admin') {
+    const migratedFlag = localStorage.getItem('msk_qr_migrated');
+    if (!migratedFlag) {
+      try {
+        const r = await fetch(`${API}/inbox/quick-replies/migrate-to-snippets`, {
+          method: 'POST', headers: { 'X-Session-Token': SESSION_TOKEN },
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (data.migrated > 0) {
+            showToast(`Migrados ${data.migrated} snippets desde Respuestas Rápidas`, 'success');
+          }
+          localStorage.setItem('msk_qr_migrated', '1');
+        }
+      } catch (e) { console.warn('Migration failed', e); }
+    }
+  }
+  // Abrir el admin modal
+  await openSnippetsAdmin();
+}
+
 // ── Closing Notes (cierre con categoría + resumen IA) ──
 const CLOSING_CATEGORIES = [
   { k: 'venta_cerrada',    l: '💰 Venta cerrada',   h: 'El cliente pagó o confirmó compra' },
@@ -4035,7 +4059,74 @@ document.addEventListener('click', (e) => {
   document.querySelectorAll('.ai-prompt-chip.active').forEach(c => c.classList.remove('active'));
 });
 
+// TTS: cache de voces + preferencia persistida
+let TTS_VOICES = null;
+function getSavedTTSVoice() {
+  return localStorage.getItem('msk_tts_voice') || 'alloy';
+}
+function setSavedTTSVoice(v) {
+  localStorage.setItem('msk_tts_voice', v);
+}
+
+async function loadTTSVoices() {
+  if (TTS_VOICES) return TTS_VOICES;
+  try {
+    const r = await fetch(`${API}/inbox/tts/voices`, { headers: { 'X-Session-Token': SESSION_TOKEN } });
+    if (r.ok) {
+      const d = await r.json();
+      TTS_VOICES = d.voices;
+    }
+  } catch (e) { TTS_VOICES = []; }
+  return TTS_VOICES;
+}
+
 async function generateTTS(chipEl) {
+  // Abrir submenú con voces si no está abierto
+  const existing = document.getElementById('ttsVoiceMenu');
+  if (existing) { existing.remove(); return; }
+  await loadTTSVoices();
+  const voices = TTS_VOICES || [];
+  const current = getSavedTTSVoice();
+
+  const menu = document.createElement('div');
+  menu.id = 'ttsVoiceMenu';
+  menu.className = 'ai-menu';
+  menu.style.display = 'block';
+  menu.style.minWidth = '220px';
+
+  let html = '<div style="padding:6px 10px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px">Elegí una voz + enviar</div>';
+  voices.forEach(v => {
+    const isSel = v.id === current;
+    html += `<button class="ai-menu-item" onclick="runTTS('${v.id}')" style="${isSel ? 'background:var(--primary-soft);color:var(--primary)' : ''}">
+      <span>${isSel ? '● ' : ''}${v.label}</span>
+      <span class="ai-menu-sub">${v.desc}</span>
+    </button>`;
+  });
+  menu.innerHTML = html;
+
+  // Posicionar sobre la barra de chips
+  const rect = chipEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  document.body.appendChild(menu);
+  // Cerrar al click afuera
+  setTimeout(() => {
+    document.addEventListener('click', function h(e) {
+      if (!e.target.closest('#ttsVoiceMenu') && !e.target.closest('.ai-prompt-chip')) {
+        const m = document.getElementById('ttsVoiceMenu');
+        if (m) m.remove();
+        document.removeEventListener('click', h);
+      }
+    });
+  }, 0);
+}
+
+async function runTTS(voice) {
+  const menu = document.getElementById('ttsVoiceMenu');
+  if (menu) menu.remove();
+  setSavedTTSVoice(voice);
+
   const input = document.getElementById('replyInput');
   const text = (input.value || '').trim();
   if (!text) {
@@ -4054,7 +4145,7 @@ async function generateTTS(chipEl) {
     const res = await fetch(`${API}/inbox/tts/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Session-Token': SESSION_TOKEN },
-      body: JSON.stringify({ text, voice: 'nova', format: 'mp3' }),
+      body: JSON.stringify({ text, voice: voice, format: 'mp3' }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -4063,7 +4154,7 @@ async function generateTTS(chipEl) {
     const att = await res.json();
     PENDING_ATTACHMENTS.push(att);
     renderAttachedPreview();
-    showToast('Nota de voz lista — se enviará al hacer Send', 'success');
+    showToast(`Nota de voz lista (${voice}) — se enviará al hacer Send`, 'success');
   } catch (e) {
     console.error('[tts]', e);
     showToast('Error al generar nota de voz: ' + e.message, 'error');

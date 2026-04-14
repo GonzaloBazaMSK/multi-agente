@@ -29,8 +29,18 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_VOICE = "nova"       # femenina natural — LATAM friendly
+DEFAULT_VOICE = "alloy"      # la más neutra en español, mejor default
 DEFAULT_MODEL = "tts-1"      # balance calidad/costo
+
+# Voces con mejor performance en español (de mejor a peor, subjetivo)
+VOICES_ES = [
+    {"id": "alloy",   "label": "Alloy",   "desc": "Neutra, la más limpia en español"},
+    {"id": "shimmer", "label": "Shimmer", "desc": "Femenina cálida"},
+    {"id": "nova",    "label": "Nova",    "desc": "Femenina natural"},
+    {"id": "onyx",    "label": "Onyx",    "desc": "Masculina grave"},
+    {"id": "echo",    "label": "Echo",    "desc": "Masculina suave"},
+    {"id": "fable",   "label": "Fable",   "desc": "Acento británico (evitá español)"},
+]
 
 
 def is_enabled() -> bool:

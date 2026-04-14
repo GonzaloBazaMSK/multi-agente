@@ -800,8 +800,15 @@ async def send_attachment_by_url(
 
 class TTSRequest(BaseModel):
     text: str
-    voice: str = "nova"
+    voice: str = "alloy"
     format: str = "mp3"  # mp3 para widget, opus->ogg si WhatsApp
+
+
+@router.get("/tts/voices")
+async def tts_voices(user: dict = Depends(get_current_user)):
+    """Lista las voces disponibles para el picker del compositor."""
+    from integrations.tts import VOICES_ES, DEFAULT_VOICE
+    return {"voices": VOICES_ES, "default": DEFAULT_VOICE}
 
 
 @router.post("/tts/generate")
@@ -1938,6 +1945,61 @@ async def delete_quick_reply(index: int, user: dict = Depends(require_role("admi
         replies.pop(index)
         await store._redis.set("quick_replies", json.dumps(replies))
     return {"ok": True, "count": len(replies)}
+
+
+@router.post("/quick-replies/migrate-to-snippets")
+async def migrate_quick_replies_to_snippets(user: dict = Depends(require_role("admin"))):
+    """
+    Migración one-time: copia todos los quick-replies de Redis a la tabla
+    snippets de Postgres. Idempotente (usa shortcut como clave única).
+    Categoría de quick-reply se convierte en un topic del snippet.
+    """
+    import uuid as uuid_mod
+    from memory import postgres_store
+    if not postgres_store.is_enabled():
+        raise HTTPException(503, "Postgres no configurado")
+
+    store = await get_conversation_store()
+    raw = await store._redis.get("quick_replies")
+    if not raw:
+        return {"migrated": 0, "skipped": 0, "message": "No hay quick-replies para migrar"}
+
+    replies = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+    migrated = 0
+    skipped = 0
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        for r in replies:
+            shortcut = r.get("shortcut", "")
+            if not shortcut.startswith("/"):
+                shortcut = "/" + shortcut
+            shortcut = shortcut.strip().lower()
+            if not shortcut or len(shortcut) < 2:
+                continue
+            title = r.get("title") or shortcut
+            content = r.get("content") or ""
+            topics = []
+            cat = (r.get("category") or "").strip().lower()
+            if cat and cat != "general":
+                topics.append(cat)
+            topics.append("migrado")
+
+            try:
+                await conn.execute(
+                    """insert into public.snippets
+                       (id, shortcut, title, content, topics, attachments, created_by)
+                       values ($1, $2, $3, $4, $5, '[]'::jsonb, $6)
+                       on conflict (shortcut) do nothing""",
+                    uuid_mod.uuid4(), shortcut, title, content,
+                    topics, user.get("email", "migration"),
+                )
+                migrated += 1
+            except Exception as e:
+                logger.warning("quick_reply_migration_failed", shortcut=shortcut, error=str(e))
+                skipped += 1
+
+    logger.info("quick_replies_migrated", migrated=migrated, skipped=skipped, total=len(replies))
+    return {"migrated": migrated, "skipped": skipped, "total": len(replies)}
 
 
 # ─── Close / Archive conversations ──────────────────────────────────────────

@@ -56,6 +56,7 @@ class SupervisorState(TypedDict):
     handoff_reason: str
     link_rebill_enviado: bool
     verificar_pago: bool
+    forced_agent: str  # si está seteado, saltea el clasificador LLM
 
 
 def detect_handoff_keywords(text: str) -> bool:
@@ -65,6 +66,17 @@ def detect_handoff_keywords(text: str) -> bool:
 
 async def classify_intent(state: SupervisorState) -> dict:
     """Nodo clasificador — decide qué agente usar."""
+
+    # Si el caller forzó un agente (ej: widget con botones), saltear LLM
+    if state.get("forced_agent"):
+        forced = state["forced_agent"]
+        logger.info("intent_forced", agent=forced)
+        return {
+            "current_agent": forced,
+            "handoff_requested": forced == AgentType.HUMAN.value,
+            "handoff_reason": "Derivación forzada por flujo del widget" if forced == AgentType.HUMAN.value else "",
+        }
+
     messages = state["messages"]
     last_user_msg = ""
     for m in reversed(messages):
@@ -337,6 +349,7 @@ async def route_message(
     conversation_id: str = "",
     phone: str = "",
     skip_flow: bool = False,
+    forced_agent: str | None = None,
 ) -> dict:
     """
     Punto de entrada principal para procesar un mensaje del usuario.
@@ -351,28 +364,32 @@ async def route_message(
     Returns:
         {response: str, agent_used: str, handoff_requested: bool, handoff_reason: str}
     """
-    # ── Check active flow ──
-    forced_agent = None
-    try:
-        from agents.flow_runner import run_flow_step
-        _session_key = conversation_id or phone or "unknown"
-        flow_result = None if skip_flow else await run_flow_step(_session_key, user_message)
-        if flow_result is not None:
-            if not flow_result.get("agent"):
-                # Flow handled this step directly
-                return {
-                    "response": flow_result.get("response", ""),
-                    "agent_used": "flow",
-                    "handoff_requested": bool(flow_result.get("handoff")),
-                    "handoff_reason": "Derivado por flujo" if flow_result.get("handoff") else "",
-                    "link_rebill_enviado": False,
-                    "verificar_pago": False,
-                    "phone": phone,
-                }
-            # Flow says use a specific agent — skip LLM router
-            forced_agent = flow_result.get("agent")
-    except Exception as _fe:
-        logger.warning("flow_runner_error", error=str(_fe))
+    # ── Guardar el forced_agent del parámetro antes de que el flow lo pise ──
+    _param_forced_agent = forced_agent  # puede ser None si no viene del widget
+
+    # ── Check active flow (Drawflow) — solo si no fue forzado por el caller ──
+    _flow_forced_agent: str | None = None
+    if not _param_forced_agent:
+        try:
+            from agents.flow_runner import run_flow_step
+            _session_key = conversation_id or phone or "unknown"
+            flow_result = None if skip_flow else await run_flow_step(_session_key, user_message)
+            if flow_result is not None:
+                if not flow_result.get("agent"):
+                    # Flow handled this step directly
+                    return {
+                        "response": flow_result.get("response", ""),
+                        "agent_used": "flow",
+                        "handoff_requested": bool(flow_result.get("handoff")),
+                        "handoff_reason": "Derivado por flujo" if flow_result.get("handoff") else "",
+                        "link_rebill_enviado": False,
+                        "verificar_pago": False,
+                        "phone": phone,
+                    }
+                # Flow says use a specific agent — skip LLM router
+                _flow_forced_agent = flow_result.get("agent")
+        except Exception as _fe:
+            logger.warning("flow_runner_error", error=str(_fe))
 
     supervisor = build_supervisor()
 
@@ -388,7 +405,7 @@ async def route_message(
 
     lc_messages.append(HumanMessage(content=user_message))
 
-    # Map forced_agent name to AgentType value
+    # Resolver el agente efectivo: parámetro tiene prioridad sobre el flow_runner
     _agent_name_map = {
         "ventas": AgentType.SALES.value,
         "cobranzas": AgentType.COLLECTIONS.value,
@@ -398,7 +415,8 @@ async def route_message(
         "collections": AgentType.COLLECTIONS.value,
         "post_sales": AgentType.POST_SALES.value,
     }
-    _initial_agent = _agent_name_map.get(forced_agent, AgentType.SALES.value) if forced_agent else AgentType.SALES.value
+    _effective_forced = _param_forced_agent or _flow_forced_agent
+    _initial_agent = _agent_name_map.get(_effective_forced, AgentType.SALES.value) if _effective_forced else AgentType.SALES.value
 
     initial_state: SupervisorState = {
         "messages": lc_messages,
@@ -411,6 +429,7 @@ async def route_message(
         "handoff_reason": "",
         "link_rebill_enviado": False,
         "verificar_pago": False,
+        "forced_agent": _effective_forced or "",
     }
 
     from utils.circuit_breaker import openai_breaker

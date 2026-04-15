@@ -1,6 +1,5 @@
 - [Deployment](deployment.md) — Droplet DO `68.183.156.122:/opt/multiagente` (ahora repo git tracking origin/main), flow `git push` → SSH `git pull && docker compose up -d --build`
 - [Sync workflow](sync_workflow.md) — 2 PCs (escritorio + notebook) + server sincronizados vía GitHub `GonzaloBazaMSK/multi-agente`
 - [Stack overview](stack_overview.md) — FastAPI + LangGraph + Pinecone + Redis; 4 agentes (sales, collections, post_sales, closer); canales WhatsApp Meta/Botmaker/Twilio/widget
-- [Pending: Supabase rotation](pending_supabase_rotation.md) — Rotar SUPABASE_SECRET_KEY que estuvo hardcodeada
 - [Workflow preferences](workflow_preferences.md) — Trabajar en `main` directo, nunca usar worktrees de Claude Code
 - [Language](language.md) — Español rioplatense informal

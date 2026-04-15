@@ -24,6 +24,7 @@ class ChatRequest(BaseModel):
     user_name: str = ""
     user_email: str = ""
     user_courses: str = ""
+    page_slug: str = ""   # slug del curso que está mirando el usuario (si aplica)
 
 
 class ChatResponse(BaseModel):
@@ -51,6 +52,7 @@ async def chat(req: ChatRequest):
         user_name=req.user_name,
         user_email=req.user_email,
         user_courses=req.user_courses,
+        page_slug=req.page_slug,
     )
 
     return ChatResponse(
@@ -69,6 +71,7 @@ async def chat_stream(
     user_name: str = "",
     user_email: str = "",
     user_courses: str = "",
+    page_slug: str = "",
 ):
     """
     SSE streaming — el widget recibe la respuesta palabra por palabra.
@@ -83,6 +86,7 @@ async def chat_stream(
             user_name=user_name,
             user_email=user_email,
             user_courses=user_courses,
+            page_slug=page_slug,
         )
         response = result["response"]
 

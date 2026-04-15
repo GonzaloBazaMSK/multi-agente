@@ -25,24 +25,28 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-ROUTER_SYSTEM = """Sos el clasificador de intenciones de un sistema de atención al cliente
-de una empresa de cursos médicos.
+_ROUTER_PROMPT_FALLBACK = (
+    "Clasificá la intención: ventas, cobranzas, post_venta o humano. "
+    "Respondé solo la palabra."
+)
 
-Dado el último mensaje del usuario y el historial, devolvé ÚNICAMENTE una de estas palabras:
-- ventas: el usuario quiere info de cursos, precios, inscribirse, o es un lead nuevo
-- cobranzas: el usuario tiene problemas con pagos, facturas, cargos, mora o vencimientos
-- post_venta: el usuario ya es alumno y tiene un problema técnico, de acceso, certificado o quiere dejar feedback
-- humano: el usuario explícitamente pide hablar con una persona, o el problema es urgente/complejo
 
-REGLA IMPORTANTE — CONTINUIDAD DE FLUJO:
-Si la conversación ya está en curso con un agente (ventas, cobranzas, post_venta),
-mantené ese mismo agente a menos que el usuario cambie CLARAMENTE de tema.
-Mensajes cortos, respuestas, confirmaciones o preguntas de clarificación dentro
-de un flujo activo NO deben cambiar de agente.
-Ejemplo: si estaban en ventas recolectando datos para inscripción y el usuario dice
-"¿problemas con qué?" o "¿cómo?" o "no entiendo", seguir en ventas.
-
-Respondé solo con la palabra, sin explicación."""
+def _load_router_prompt() -> str:
+    """
+    Carga el prompt del router desde su archivo en disco.
+    Se llama en cada clasificación para que los cambios del panel admin
+    se apliquen sin reiniciar el servidor.
+    """
+    try:
+        from pathlib import Path
+        import importlib.util
+        path = Path(__file__).parent / "routing" / "router_prompt.py"
+        spec = importlib.util.spec_from_file_location("router_prompt_dyn", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.ROUTER_SYSTEM_PROMPT
+    except Exception:
+        return _ROUTER_PROMPT_FALLBACK
 
 
 class SupervisorState(TypedDict):
@@ -98,6 +102,9 @@ async def classify_intent(state: SupervisorState) -> dict:
         max_tokens=10,
     )
 
+    # Cargar prompt dinámicamente (cambios del panel admin se aplican sin restart)
+    router_system = _load_router_prompt()
+
     # Últimos 6 mensajes + indicar el agente actual para continuidad
     recent = messages[-8:] if len(messages) > 8 else messages
     current = state.get("current_agent", "")
@@ -107,7 +114,7 @@ async def classify_intent(state: SupervisorState) -> dict:
         if agent_label:
             agent_hint = f"\n\nContexto: la conversación viene siendo atendida por el agente de '{agent_label}'. Mantené ese agente salvo cambio claro de tema."
 
-    system_with_hint = SystemMessage(content=ROUTER_SYSTEM + agent_hint)
+    system_with_hint = SystemMessage(content=router_system + agent_hint)
     prompt_messages = [system_with_hint] + recent
 
     response = await classifier.ainvoke(prompt_messages)

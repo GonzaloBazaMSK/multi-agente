@@ -272,18 +272,23 @@ async def process_widget_message(
             from langchain_core.messages import SystemMessage as LcSystem, HumanMessage as LcHuman
             from config.settings import get_settings
 
-            system_txt = (
-                "Sos el asistente de MSK Latam, plataforma de capacitación médica. "
-                "El usuario acaba de abrir el chat. "
-                "Generá UN saludo breve (2-3 oraciones), cálido y personalizado. "
-                "Reglas ESTRICTAS:\n"
-                "- Si sabés el nombre, usá solo el primero.\n"
-                "- Podés mencionar su profesión o especialidad si la tenés.\n"
-                "- NUNCA menciones nombres de cursos — ni los exactos ni paráfrasis.\n"
-                "- NUNCA inventes información que no esté en los datos.\n"
-                "- Invitalo a consultar sobre cursos o a explorar el catálogo.\n"
-                "- Solo el saludo, sin explicaciones."
-            )
+            # Cargar prompt dinámicamente (cambios del panel admin aplicados sin restart)
+            def _load_greeting_prompt() -> str:
+                try:
+                    from pathlib import Path
+                    import importlib.util
+                    path = Path(__file__).parent.parent / "agents" / "routing" / "greeting_prompt.py"
+                    spec = importlib.util.spec_from_file_location("greeting_prompt_dyn", path)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    return mod.GREETING_SYSTEM_PROMPT
+                except Exception:
+                    return (
+                        "Sos el asistente de MSK Latam. "
+                        "Generá un saludo breve y personalizado, sin mencionar cursos."
+                    )
+
+            system_txt = _load_greeting_prompt()
             if ctx:
                 system_txt += f"\n\nDatos del cliente:\n{ctx}"
             if page_slug:

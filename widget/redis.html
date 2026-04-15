@@ -162,8 +162,9 @@ pre { font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 12px; col
         <div class="chip" onclick="setPattern('flow:*')">flows:*</div>
         <div class="chip" onclick="setPattern('*')">Todo</div>
       </div>
-      <div class="del-pattern-wrap" style="margin-left:auto">
+      <div class="del-pattern-wrap" style="margin-left:auto;display:flex;gap:8px">
         <button class="btn btn-danger" onclick="deletePattern()">🗑️ Borrar patrón</button>
+        <button class="btn" style="background:rgba(239,68,68,0.25);color:#fca5a5;border:1px solid rgba(239,68,68,0.5);font-weight:700" onclick="flushConversations()">⚠️ Reset conversaciones</button>
       </div>
     </div>
 
@@ -341,6 +342,34 @@ async function deletePattern() {
     selectedKey = null;
     document.getElementById('valueHeader').style.display = 'none';
     document.getElementById('valueBody').innerHTML = '<div class="empty-state"><div class="icon">🗑️</div><div class="msg">Claves eliminadas</div></div>';
+    searchKeys();
+    loadStats();
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function flushConversations() {
+  if (!confirm(
+    '⚠️ RESET COMPLETO DE CONVERSACIONES\n\n' +
+    'Esto eliminará:\n' +
+    '• Todas las conversaciones (widget + WhatsApp)\n' +
+    '• Estados del menú (wflow:*)\n' +
+    '• Cache Zoho (zoho_cache:*, zoho_cursadas:*)\n' +
+    '• Etiquetas, asignaciones, eventos\n\n' +
+    'Se conservará: configuración del widget, flows, templates.\n\n' +
+    '¿Confirmar reset total?'
+  )) return;
+  try {
+    const r = await fetch('/admin/redis/flush-conversations', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-Session-Token':SESSION_TOKEN},
+    });
+    const d = await r.json();
+    alert('✅ ' + d.message + '\n\nEliminadas: ' + d.deleted + ' claves');
+    selectedKey = null;
+    document.getElementById('valueHeader').style.display = 'none';
+    document.getElementById('valueBody').innerHTML = '<div class="empty-state"><div class="icon">🧹</div><div class="msg">Redis limpio</div></div>';
     searchKeys();
     loadStats();
   } catch(e) {

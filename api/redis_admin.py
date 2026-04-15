@@ -138,6 +138,51 @@ async def delete_by_pattern(req: DeletePatternRequest, user: dict = Depends(requ
     return {"deleted": len(keys), "keys": keys}
 
 
+@router.post("/flush-conversations")
+async def flush_conversations(user: dict = Depends(require_role("admin"))):
+    """
+    Elimina TODAS las conversaciones y datos de sesión.
+    Conserva: widget:config, auth tokens, flows, templates.
+    """
+    r = await _redis()
+    patterns = [
+        "conv:*",           # Conversaciones
+        "idx:widget:*",     # Índice widget
+        "idx:whatsapp:*",   # Índice WhatsApp
+        "wflow:*",          # Estados del menú widget
+        "bot_disabled:*",   # Bot desactivado (widget)
+        "bot_disabled_wa:*",# Bot desactivado (WhatsApp)
+        "conv_events:*",    # Log de eventos
+        "conv_label:*",     # Etiquetas de leads
+        "agent_name:*",     # Nombre del agente asignado
+        "assigned_agent:*", # Asignación de agente
+        "unread:*",         # Conteo de no leídos
+        "zoho_cache:*",     # Cache cobranzas Zoho
+        "zoho_cursadas:*",  # Cache perfil Zoho Contacts
+        "datos_deudor:*",   # Datos deudor cobranzas
+        "last_seen:*",      # Última vez visto
+        "typing:*",         # Estado "escribiendo"
+        "cm_session:*",     # Sesiones internas
+    ]
+    total = 0
+    deleted_by_pattern: dict = {}
+    for pattern in patterns:
+        keys = []
+        async for key in r.scan_iter(pattern, count=500):
+            keys.append(key.decode() if isinstance(key, bytes) else key)
+        if keys:
+            await r.delete(*keys)
+            deleted_by_pattern[pattern] = len(keys)
+            total += len(keys)
+
+    logger.info("redis_flush_conversations", deleted=total, by_pattern=deleted_by_pattern, by=user.get("username"))
+    return {
+        "deleted": total,
+        "by_pattern": deleted_by_pattern,
+        "message": f"✅ {total} claves eliminadas. Redis limpio.",
+    }
+
+
 @router.get("/stats")
 async def get_stats(user: dict = Depends(require_role("admin"))):
     """Estadísticas rápidas de Redis."""

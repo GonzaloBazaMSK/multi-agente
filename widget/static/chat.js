@@ -323,6 +323,7 @@
     sendBtn.disabled = true;
 
     appendMessage("user", text);
+    lastMsgCount++; // contar mensaje de usuario inmediatamente (evita duplicados del poll)
     showTyping();
 
     try {
@@ -344,8 +345,10 @@
       const data = await res.json();
 
       hideTyping();
-      if (data.response) appendMessage("bot", data.response);
-      lastMsgCount += 1 + (data.response ? 1 : 0); // user msg + bot response
+      if (data.response) {
+        appendMessage("bot", data.response);
+        lastMsgCount++; // contar respuesta del bot
+      }
 
       if (data.handoff_requested) {
         appendMessage("bot", "📞 Un asesor humano continuará esta conversación pronto.");
@@ -524,7 +527,7 @@
   }
 
   async function pollNewMessages() {
-    if (!sessionId) return;
+    if (!sessionId || isLoading) return; // no pollear mientras se procesa un mensaje (evita duplicados)
     try {
       const res = await fetch(`${CONFIG.apiUrl}/widget/history/${sessionId}`);
       if (!res.ok) return;

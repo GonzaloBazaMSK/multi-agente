@@ -22,6 +22,7 @@ from agents.routing.widget_flow import (
     fmt_buttons,
     MAIN_BUTTONS,
 )
+from utils.conv_events import log_event, log_action, log_error
 
 logger = structlog.get_logger(__name__)
 
@@ -52,8 +53,16 @@ async def _build_user_context(
             f"Página actual del usuario: curso «{page_slug}» — "
             "puede estar interesado en este curso específico."
         )
+        await log_event(session_id, "info", {
+            "action": "page_context",
+            "detail": f"Usuario en página: {page_slug}",
+        })
 
     if not user_email:
+        await log_event(session_id, "info", {
+            "action": "usuario_anonimo",
+            "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
+        })
         return lines
 
     # 1. Perfil Supabase
@@ -61,25 +70,47 @@ async def _build_user_context(
         from integrations.supabase_client import get_customer_profile
         profile = await get_customer_profile(user_email)
         if profile:
-            if profile.get("name"):
-                lines.append(f"Nombre del cliente: {profile['name']}")
+            name_found = profile.get("name", "")
+            courses_found = profile.get("courses") or []
+            profession_found = profile.get("profession", "")
+            specialty_found = profile.get("specialty", "")
+            if name_found:
+                lines.append(f"Nombre del cliente: {name_found}")
             if profile.get("phone"):
                 lines.append(f"Teléfono: {profile['phone']}")
-            courses = profile.get("courses") or []
-            if courses:
-                lines.append(f"Cursos inscriptos: {', '.join(courses)}")
-            if profile.get("profession"):
-                lines.append(f"Profesión: {profile['profession']}")
-            if profile.get("specialty"):
-                lines.append(f"Especialidad: {profile['specialty']}")
+            if courses_found:
+                lines.append(f"Cursos inscriptos: {', '.join(courses_found)}")
+            if profession_found:
+                lines.append(f"Profesión: {profession_found}")
+            if specialty_found:
+                lines.append(f"Especialidad: {specialty_found}")
             if profile.get("interests"):
                 lines.append(f"Intereses: {profile['interests']}")
+            await log_event(session_id, "action", {
+                "action": "supabase_perfil_encontrado",
+                "detail": (
+                    f"Nombre: {name_found or '—'} | "
+                    f"Profesión: {profession_found or '—'} | "
+                    f"Especialidad: {specialty_found or '—'} | "
+                    f"Cursos Supabase: {len(courses_found)}"
+                ),
+            })
+        else:
+            await log_event(session_id, "info", {
+                "action": "supabase_no_encontrado",
+                "detail": f"No hay perfil Supabase para {user_email}",
+            })
     except Exception as e:
         logger.debug("supabase_profile_failed", error=str(e))
+        await log_error(session_id, "supabase", str(e)[:150])
 
     # Cursos pasados directamente por el widget (fast path)
     if user_courses and not any("Cursos inscriptos" in l for l in lines):
         lines.append(f"Cursos inscriptos: {user_courses}")
+        await log_event(session_id, "info", {
+            "action": "cursos_desde_widget",
+            "detail": f"Cursos recibidos del frontend: {user_courses[:120]}",
+        })
 
     # 2. Cache Zoho cobranzas (si fue buscado antes)
     try:
@@ -92,6 +123,14 @@ async def _build_user_context(
                     lines.append(f"Curso de interés (CRM): {r['curso_de_interes']}")
                 if r.get("estado_pago"):
                     lines.append(f"Estado de pago (CRM): {r['estado_pago']}")
+                await log_event(session_id, "info", {
+                    "action": "zoho_cobranzas_cache",
+                    "detail": (
+                        f"Cache cobranzas activo — "
+                        f"Curso interés: {r.get('curso_de_interes','—')} | "
+                        f"Estado pago: {r.get('estado_pago','—')}"
+                    ),
+                })
     except Exception:
         pass
 
@@ -101,6 +140,10 @@ async def _build_user_context(
         cached_cursadas = await store._redis.get(cursadas_key)
 
         if cached_cursadas is None:
+            await log_event(session_id, "info", {
+                "action": "zoho_contacts_buscando",
+                "detail": f"Buscando perfil Zoho Contacts para {user_email}…",
+            })
             from integrations.zoho.contacts import ZohoContacts
             zc = ZohoContacts()
             contact = await zc.search_by_email_with_full_profile(user_email)
@@ -152,9 +195,32 @@ async def _build_user_context(
                             "fecha_enrol": item.get("Enrollamiento", ""),
                         })
 
+                await log_event(session_id, "action", {
+                    "action": "zoho_contacts_encontrado",
+                    "detail": (
+                        f"Profesión: {profesion or '—'} | "
+                        f"Especialidad: {especialidad or '—'} | "
+                        f"Especialidades interés: {esp_interes or '—'} | "
+                        f"Cursadas encontradas: {len(cursadas_list)} | "
+                        f"Guardado en Redis (TTL 24h)"
+                    ),
+                })
+            else:
+                await log_event(session_id, "info", {
+                    "action": "zoho_contacts_no_encontrado",
+                    "detail": f"No hay contacto Zoho para {user_email} — guardando lista vacía en cache",
+                })
+
             await store._redis.setex(cursadas_key, 86400, _json.dumps(cursadas_list))
         else:
             cursadas_list = _json.loads(cached_cursadas)
+            await log_event(session_id, "info", {
+                "action": "zoho_contacts_desde_cache",
+                "detail": (
+                    f"Cache Redis activo para {user_email} — "
+                    f"{len(cursadas_list)} cursada(s) en cache (TTL 24h)"
+                ),
+            })
 
         if cursadas_list:
             todos = [c["curso"] for c in cursadas_list]
@@ -162,6 +228,7 @@ async def _build_user_context(
             lines.append(f"IMPORTANTE — No recomiendes estos cursos (ya los tiene): {', '.join(todos)}")
     except Exception as e:
         logger.debug("zoho_cursadas_failed", error=str(e))
+        await log_error(session_id, "zoho_contacts", str(e)[:150])
 
     return lines
 
@@ -260,6 +327,15 @@ async def process_widget_message(
     # INIT: saludo personalizado + botones del menú
     # ─────────────────────────────────────────────────────────────────────────
     if message_text == "__widget_init__":
+        await log_event(session_id, "info", {
+            "action": "widget_init",
+            "detail": (
+                f"Email frontend: {user_email or '(anónimo)'} | "
+                f"Nombre: {user_name or '—'} | "
+                f"Sesión nueva: {is_new}"
+            ),
+        })
+
         # Enriquecer contexto para personalizar el saludo
         ctx_lines = await _build_user_context(
             user_email, store, session_id, user_courses, page_slug
@@ -320,6 +396,15 @@ async def process_widget_message(
         # Agregar botones del menú principal
         greeting_with_buttons = fmt_buttons(greeting, MAIN_BUTTONS)
 
+        await log_event(session_id, "action", {
+            "action": "saludo_generado",
+            "detail": (
+                f"{'Personalizado (IA)' if not isinstance(greeting, str) or 'asesor' not in greeting.lower() else 'Fallback'} | "
+                f"Contexto: {len(ctx_lines)} líneas | "
+                f"Botones: {', '.join(MAIN_BUTTONS)}"
+            ),
+        })
+
         # Inicializar estado del menú en Redis
         await wflow_init(store._redis, session_id)
 
@@ -362,6 +447,11 @@ async def process_widget_message(
     # ── Respuesta directa del menú (sin agente IA) ────────────────────────────
     if wflow_result is not None and not wflow_result.get("needs_routing"):
         menu_text = wflow_result["response"]
+        await log_event(session_id, "intent", {
+            "action": "menu_respuesta",
+            "detail": f"Respuesta de menú: «{menu_text[:80]}»",
+            "agent": "menu",
+        })
         bot_msg = await _save_bot_msg(store, conversation, menu_text, "menu")
         await _broadcast({
             "type": "new_message",
@@ -388,6 +478,16 @@ async def process_widget_message(
             conversation.user_profile.email = collected_email
             await store.save(conversation)
             logger.info("widget_email_collected", session=session_id, email=collected_email)
+            await log_event(session_id, "action", {
+                "action": "email_capturado",
+                "detail": f"Email ingresado por usuario anónimo: {collected_email} → derivando a {forced_agent}",
+            })
+        if forced_agent:
+            await log_event(session_id, "intent", {
+                "action": "agente_forzado_por_menu",
+                "detail": f"Botón seleccionado → agente: {forced_agent}",
+                "agent": forced_agent,
+            })
 
     # ─────────────────────────────────────────────────────────────────────────
     # ENRIQUECIMIENTO de contexto (siempre antes de llamar al agente)
@@ -395,6 +495,12 @@ async def process_widget_message(
     user_context_lines = await _build_user_context(
         user_email, store, session_id, user_courses, page_slug
     )
+    if user_context_lines:
+        await log_event(session_id, "info", {
+            "action": "contexto_usuario_listo",
+            "detail": f"{len(user_context_lines)} líneas de contexto inyectadas al agente:\n" +
+                      "\n".join(f"  • {l}" for l in user_context_lines[:8]),
+        })
 
     logger.info(
         "widget_message_received",
@@ -403,6 +509,14 @@ async def process_widget_message(
         is_new=is_new,
         forced_agent=forced_agent,
     )
+    await log_event(session_id, "info", {
+        "action": "mensaje_recibido",
+        "detail": (
+            f"«{message_text[:80]}{'…' if len(message_text) > 80 else ''}» | "
+            f"Email: {user_email or '(anónimo)'} | "
+            f"Agente forzado: {forced_agent or 'no (clasificará IA)'}"
+        ),
+    })
 
     # ── Historial para el LLM ─────────────────────────────────────────────────
     history = conversation.get_history_for_llm(MAX_HISTORY_MESSAGES)
@@ -431,6 +545,16 @@ async def process_widget_message(
     handoff = result["handoff_requested"]
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]
+
+    await log_event(session_id, "intent", {
+        "action": "agente_respondio",
+        "detail": (
+            f"Agente: {agent_used} | "
+            f"Derivación humano: {'sí — ' + handoff_reason[:60] if handoff else 'no'} | "
+            f"Respuesta: «{response_text[:100]}{'…' if len(response_text) > 100 else ''}»"
+        ),
+        "agent": agent_used,
+    })
 
     # ── Handoff notice si viene de selección de menú ──────────────────────────
     if forced_agent and response_text:

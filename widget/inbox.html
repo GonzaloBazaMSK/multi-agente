@@ -4107,6 +4107,8 @@ async function generateTTS(chipEl) {
   // Posicionar sobre la barra de chips
   const rect = chipEl.getBoundingClientRect();
   menu.style.position = 'fixed';
+  menu.style.top = 'auto';
+  menu.style.transform = 'none';
   menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
   menu.style.left = rect.left + 'px';
   document.body.appendChild(menu);

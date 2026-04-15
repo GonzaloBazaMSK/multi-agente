@@ -36,19 +36,29 @@ async def _build_user_context(
     user_courses: str = "",
     page_slug: str = "",
     log_events: bool = True,
-) -> list[str]:
+) -> tuple[list[str], dict]:
     """
     Construye la lista de líneas de contexto del usuario a partir de:
     - Perfil Supabase (customers)
-    - Cache Zoho cobranzas (si existe)
+    - Cache Zoho cobranzas (si existe) — si no existe y hay email, la busca y cachea
     - Perfil Zoho Contacts completo (profesión, especialidad, cursadas) — cacheado 24 h
     - Cursos pasados directamente desde el widget
     - Slug de la página actual
 
+    Además:
+    - Sincroniza Zoho Contacts → Supabase customers (Zoho pisa como fuente de verdad)
+    - Cachea la ficha de cobranzas por email en `datos_deudor:{email}` (TTL 2 h)
+
     log_events=False para saludos stateless (no ensucia Redis con eventos de
     sesiones que nunca se materializan).
 
-    Retorna una lista de strings listos para inyectar en el system prompt.
+    Retorna (lines, signals):
+      lines  = strings listos para el system prompt
+      signals = {
+        "has_debt": bool,    # ficha cobranzas con saldo vencido > 0
+        "is_student": bool,  # tiene cursadas en Zoho Contacts
+        "profile_name": str, # nombre resuelto (Supabase o Zoho)
+      }
     """
     # Si log_events=False, sustituimos los helpers por no-ops locales
     if log_events:
@@ -57,6 +67,7 @@ async def _build_user_context(
         async def _noop(*_a, **_k): return None
         _log_event = _log_action = _log_error = _noop
     lines: list[str] = []
+    signals: dict = {"has_debt": False, "is_student": False, "profile_name": ""}
 
     if page_slug:
         lines.append(
@@ -73,29 +84,31 @@ async def _build_user_context(
             "action": "usuario_anonimo",
             "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
         })
-        return lines
+        return lines, signals
 
     # 1. Perfil Supabase
+    sb_profile = None  # conservar para el sync Zoho→Supabase más abajo
     try:
         from integrations.supabase_client import get_customer_profile
-        profile = await get_customer_profile(user_email)
-        if profile:
-            name_found = profile.get("name", "")
-            courses_found = profile.get("courses") or []
-            profession_found = profile.get("profession", "")
-            specialty_found = profile.get("specialty", "")
+        sb_profile = await get_customer_profile(user_email)
+        if sb_profile:
+            name_found = sb_profile.get("name", "")
+            courses_found = sb_profile.get("courses") or []
+            profession_found = sb_profile.get("profession", "")
+            specialty_found = sb_profile.get("specialty", "")
             if name_found:
                 lines.append(f"Nombre del cliente: {name_found}")
-            if profile.get("phone"):
-                lines.append(f"Teléfono: {profile['phone']}")
+                signals["profile_name"] = name_found
+            if sb_profile.get("phone"):
+                lines.append(f"Teléfono: {sb_profile['phone']}")
             if courses_found:
                 lines.append(f"Cursos inscriptos: {', '.join(courses_found)}")
             if profession_found:
                 lines.append(f"Profesión: {profession_found}")
             if specialty_found:
                 lines.append(f"Especialidad: {specialty_found}")
-            if profile.get("interests"):
-                lines.append(f"Intereses: {profile['interests']}")
+            if sb_profile.get("interests"):
+                lines.append(f"Intereses: {sb_profile['interests']}")
             await _log_event(session_id, "action", {
                 "action": "supabase_perfil_encontrado",
                 "detail": (
@@ -122,29 +135,55 @@ async def _build_user_context(
             "detail": f"Cursos recibidos del frontend: {user_courses[:120]}",
         })
 
-    # 2. Cache Zoho cobranzas (si fue buscado antes)
+    # 2. Ficha de cobranzas Zoho — SIEMPRE que tengamos email.
+    #    Cache por email (`datos_deudor:{email}`, TTL 2 h) para que:
+    #     - el agente de cobranzas la encuentre sin volver a llamar a Zoho.
+    #     - el router pueda decidir has_debt y orientar bien (ventas vs cobranzas).
     try:
-        cached_zoho = await store._redis.get(f"zoho_cache:{session_id}")
-        if cached_zoho:
-            zoho_data = _json.loads(cached_zoho)
-            if zoho_data.get("found") and zoho_data.get("record"):
-                r = zoho_data["record"]
-                if r.get("curso_de_interes"):
-                    lines.append(f"Curso de interés (CRM): {r['curso_de_interes']}")
-                if r.get("estado_pago"):
-                    lines.append(f"Estado de pago (CRM): {r['estado_pago']}")
-                await _log_event(session_id, "info", {
-                    "action": "zoho_cobranzas_cache",
-                    "detail": (
-                        f"Cache cobranzas activo — "
-                        f"Curso interés: {r.get('curso_de_interes','—')} | "
-                        f"Estado pago: {r.get('estado_pago','—')}"
-                    ),
-                })
-    except Exception:
-        pass
+        ficha_key = f"datos_deudor:{user_email}"
+        cached_ficha = await store._redis.get(ficha_key)
+        ficha = None
+        if cached_ficha:
+            try:
+                ficha = _json.loads(cached_ficha)
+            except Exception:
+                ficha = None
+
+        if ficha is None:
+            # Miss → consultar Zoho una vez y cachear. Si no hay registro,
+            # guardamos un stub "{}" para evitar N llamadas por turno.
+            from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
+            zoho_adc = ZohoAreaCobranzas()
+            ficha_raw = await zoho_adc.search_by_email(user_email) or {}
+            await store._redis.setex(ficha_key, 7200, _json.dumps(ficha_raw))
+            ficha = ficha_raw
+            await _log_event(session_id, "action", {
+                "action": "zoho_cobranzas_buscado",
+                "detail": (
+                    f"Zoho ADC consultado para {user_email} — "
+                    f"encontrado: {'sí' if ficha.get('cobranzaId') else 'no'} | "
+                    f"TTL 2 h"
+                ),
+            })
+
+        if ficha and ficha.get("cobranzaId"):
+            saldo = float(ficha.get("saldoPendiente") or 0)
+            cuotas_venc = int(ficha.get("cuotasVencidas") or 0)
+            has_debt = saldo > 0 or cuotas_venc > 0
+            signals["has_debt"] = has_debt
+            lines.append(
+                f"Estado financiero: cuotas vencidas={cuotas_venc}, "
+                f"saldo pendiente={ficha.get('moneda','')} {saldo} "
+                f"({'CON deuda' if has_debt else 'AL DÍA'})"
+            )
+            if not signals["profile_name"] and ficha.get("alumno"):
+                signals["profile_name"] = ficha["alumno"]
+    except Exception as e:
+        logger.debug("zoho_cobranzas_lookup_failed", error=str(e))
+        await _log_error(session_id, "zoho_cobranzas", str(e)[:150])
 
     # 3. Perfil Zoho Contacts (profesión, especialidad, cursadas) — cacheado por email
+    zoho_profile_for_sync: dict = {}  # se usa para sincronizar a Supabase al final
     try:
         cursadas_key = f"zoho_cursadas:{user_email}"
         cached_cursadas = await store._redis.get(cursadas_key)
@@ -184,6 +223,25 @@ async def _build_user_context(
                     lines.append(f"Intereses adicionales: {intereses_ad}")
                 if contenido:
                     lines.append(f"Contenido de interés: {contenido}")
+
+                # Guardar datos Zoho para sincronizar a Supabase
+                if profesion:
+                    zoho_profile_for_sync["profession"] = profesion
+                if especialidad:
+                    zoho_profile_for_sync["specialty"] = especialidad
+                combined_interests = ", ".join(
+                    [x for x in (esp_interes, intereses_ad, contenido) if x]
+                )
+                if combined_interests:
+                    zoho_profile_for_sync["interests"] = combined_interests
+                # nombre completo (First + Last) si lo tenemos
+                full_first = contact.get("First_Name", "")
+                full_last = contact.get("Last_Name", "")
+                full_name = (f"{full_first} {full_last}").strip()
+                if full_name and not signals.get("profile_name"):
+                    signals["profile_name"] = full_name
+                if full_name:
+                    zoho_profile_for_sync["name"] = full_name
 
                 def _curso_name(entry):
                     for fld in ("Curso", "Nombre_de_curso", "Nombre_del_curso"):
@@ -234,13 +292,70 @@ async def _build_user_context(
 
         if cursadas_list:
             todos = [c["curso"] for c in cursadas_list]
+            signals["is_student"] = True
+            zoho_profile_for_sync["courses"] = todos
             lines.append(f"Cursos del alumno ({len(todos)} total): {', '.join(todos)}")
             lines.append(f"IMPORTANTE — No recomiendes estos cursos (ya los tiene): {', '.join(todos)}")
     except Exception as e:
         logger.debug("zoho_cursadas_failed", error=str(e))
         await _log_error(session_id, "zoho_contacts", str(e)[:150])
 
-    return lines
+    # 4. Sincronizar Zoho → Supabase (Zoho pisa, es fuente de verdad)
+    #    Solo si hay datos que falten o difieran en Supabase. Best-effort,
+    #    no bloquea el flujo del agente.
+    if zoho_profile_for_sync and log_events:
+        try:
+            from integrations.supabase_client import (
+                create_customer_profile,
+                update_customer_profile,
+            )
+
+            if sb_profile and sb_profile.get("id"):
+                # Armar el diff — solo campos que cambian o están vacíos en Supabase
+                updates = {}
+                for k, v in zoho_profile_for_sync.items():
+                    if not v:
+                        continue
+                    if sb_profile.get(k) != v:
+                        updates[k] = v
+                if updates:
+                    await update_customer_profile(sb_profile["id"], updates)
+                    await _log_event(session_id, "action", {
+                        "action": "supabase_sincronizado_zoho",
+                        "detail": (
+                            f"Supabase actualizado desde Zoho — "
+                            f"campos: {', '.join(updates.keys())}"
+                        ),
+                    })
+            else:
+                # No existe el customer aún → crearlo con los datos de Zoho
+                name_sync = zoho_profile_for_sync.get("name") or signals.get("profile_name") or ""
+                courses_sync = zoho_profile_for_sync.get("courses") or []
+                created = await create_customer_profile(
+                    email=user_email,
+                    name=name_sync or "Sin nombre",
+                    courses=courses_sync,
+                )
+                # create_customer_profile no acepta profession/specialty/interests,
+                # así que hacemos un patch adicional si hubo datos extra
+                extras = {
+                    k: v for k, v in zoho_profile_for_sync.items()
+                    if k in ("profession", "specialty", "interests") and v
+                }
+                if created and created.get("id") and extras:
+                    await update_customer_profile(created["id"], extras)
+                await _log_event(session_id, "action", {
+                    "action": "supabase_creado_desde_zoho",
+                    "detail": (
+                        f"Customer creado en Supabase desde datos Zoho — "
+                        f"{user_email} | campos extra: {', '.join(extras.keys()) or '—'}"
+                    ),
+                })
+        except Exception as e:
+            logger.debug("zoho_to_supabase_sync_failed", error=str(e))
+            await _log_error(session_id, "zoho_supabase_sync", str(e)[:150])
+
+    return lines, signals
 
 
 def _build_context_block(lines: list[str]) -> str:
@@ -312,7 +427,7 @@ async def generate_greeting_stateless(
     # cada visita anónima a la página).
     ephemeral_sid = "greeting-ephemeral"
 
-    ctx_lines = await _build_user_context(
+    ctx_lines, _signals = await _build_user_context(
         user_email, store, ephemeral_sid, user_courses, page_slug,
         log_events=False,
     )
@@ -471,7 +586,7 @@ async def process_widget_message(
         })
 
         # Enriquecer contexto para personalizar el saludo
-        ctx_lines = await _build_user_context(
+        ctx_lines, _signals = await _build_user_context(
             user_email, store, session_id, user_courses, page_slug
         )
         ctx = "\n".join(ctx_lines) if ctx_lines else ""
@@ -626,7 +741,7 @@ async def process_widget_message(
     # ─────────────────────────────────────────────────────────────────────────
     # ENRIQUECIMIENTO de contexto (siempre antes de llamar al agente)
     # ─────────────────────────────────────────────────────────────────────────
-    user_context_lines = await _build_user_context(
+    user_context_lines, user_signals = await _build_user_context(
         user_email, store, session_id, user_courses, page_slug
     )
     if user_context_lines:
@@ -671,6 +786,11 @@ async def process_widget_message(
         channel="widget",
         conversation_id=conversation.id,
         phone=conversation.user_profile.phone or "",
+        email=user_email or "",
+        user_name=user_name or user_signals.get("profile_name", "") or "",
+        page_slug=page_slug or "",
+        has_debt=bool(user_signals.get("has_debt")),
+        is_student=bool(user_signals.get("is_student")),
         skip_flow=True,         # Drawflow desactivado para widget (usamos widget_flow)
         forced_agent=forced_agent,
     )
@@ -701,18 +821,8 @@ async def process_widget_message(
         if notice:
             response_text = notice + response_text
 
-    # ── Cache ficha cobranzas para próximas interacciones ─────────────────────
-    if agent_used == "cobranzas" and user_email and not handoff:
-        try:
-            from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
-            zoho = ZohoAreaCobranzas()
-            ficha = await zoho.search_by_email(user_email)
-            if ficha and ficha.get("cobranzaId"):
-                await store._redis.setex(
-                    f"datos_deudor:{session_id}", 7200, _json.dumps(ficha)
-                )
-        except Exception:
-            pass
+    # Nota: la ficha de cobranzas ya se cachea por email en _build_user_context
+    # (datos_deudor:{email}, TTL 2 h), por lo que no duplicamos la búsqueda acá.
 
     # ── Guardar respuesta del bot ─────────────────────────────────────────────
     bot_msg = await _save_bot_msg(store, conversation, response_text, agent_used)

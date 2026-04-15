@@ -56,11 +56,16 @@ class SupervisorState(TypedDict):
     channel: str
     conversation_id: str
     phone: str
+    email: str          # email del user_profile (widget logueado)
+    user_name: str      # nombre del user_profile
+    page_slug: str      # slug del curso que el usuario está viendo (widget)
+    has_debt: bool      # true si ficha cobranzas cacheada indica deuda vencida
+    is_student: bool    # true si tiene cursadas en Zoho Contacts
     handoff_requested: bool
     handoff_reason: str
     link_rebill_enviado: bool
     verificar_pago: bool
-    forced_agent: str  # si está seteado, saltea el clasificador LLM
+    forced_agent: str   # si está seteado, saltea el clasificador LLM
 
 
 def detect_handoff_keywords(text: str) -> bool:
@@ -114,7 +119,22 @@ async def classify_intent(state: SupervisorState) -> dict:
         if agent_label:
             agent_hint = f"\n\nContexto: la conversación viene siendo atendida por el agente de '{agent_label}'. Mantené ese agente salvo cambio claro de tema."
 
-    system_with_hint = SystemMessage(content=router_system + agent_hint)
+    # Señales de contexto del usuario (widget): página que está viendo,
+    # si es alumno con cursadas, si tiene deuda vencida. Permiten al
+    # clasificador desambiguar pre-compra vs cobranzas.
+    page_slug = state.get("page_slug", "") or ""
+    has_debt = bool(state.get("has_debt", False))
+    is_student = bool(state.get("is_student", False))
+    email = state.get("email", "") or ""
+    signals_hint = (
+        "\n\n[SEÑALES]\n"
+        f"page_slug: {page_slug or '(ninguno)'}\n"
+        f"has_debt: {'true' if has_debt else 'false'}\n"
+        f"is_student: {'true' if is_student else 'false'}\n"
+        f"identificado: {'sí' if email else 'no (anónimo)'}"
+    )
+
+    system_with_hint = SystemMessage(content=router_system + agent_hint + signals_hint)
     prompt_messages = [system_with_hint] + recent
 
     response = await classifier.ainvoke(prompt_messages)
@@ -195,19 +215,53 @@ async def run_sales_node(state: SupervisorState) -> dict:
 
 
 async def run_collections_node(state: SupervisorState) -> dict:
-    # Intentar cargar ficha del alumno desde Redis si existe
+    # Intentar cargar ficha del alumno desde Redis. Orden de búsqueda:
+    #   1. datos_deudor:{phone}  (legacy WhatsApp)
+    #   2. datos_deudor:{email}  (widget logueado — cacheado en widget.py)
+    # Si hay email pero no hay ficha, construimos una ficha mínima para
+    # que el prompt no caiga en la rama "pedir email al alumno".
     ficha = None
-    phone = state.get("phone", "")
-    if phone:
+    phone = state.get("phone", "") or ""
+    email = state.get("email", "") or ""
+    user_name = state.get("user_name", "") or ""
+
+    store = None
+    if phone or email:
         try:
             from memory.conversation_store import get_conversation_store
             store = await get_conversation_store()
+        except Exception:
+            store = None
+
+    import json
+    if phone and store is not None:
+        try:
             cached = await store._redis.get(f"datos_deudor:{phone}")
             if cached:
-                import json
                 ficha = json.loads(cached)
         except Exception:
             pass
+
+    if ficha is None and email and store is not None:
+        try:
+            cached = await store._redis.get(f"datos_deudor:{email}")
+            if cached:
+                data = json.loads(cached)
+                # Solo usar si es una ficha real (tiene cobranzaId).
+                # Si el stub vacío {} vino del miss de Zoho, lo ignoramos
+                # para que la heurística de "ficha mínima" aplique abajo.
+                if data and data.get("cobranzaId"):
+                    ficha = data
+        except Exception:
+            pass
+
+    # Ficha mínima: tenemos identificado al usuario (email) aunque no haya
+    # datos financieros → el prompt sabe que NO debe pedir el email otra vez.
+    if ficha is None and email:
+        ficha = {
+            "email": email,
+            "alumno": user_name or "Alumno",
+        }
 
     agent = build_collections_agent(ficha=ficha)
     result = await agent.ainvoke({"messages": state["messages"]})
@@ -355,6 +409,11 @@ async def route_message(
     channel: str = "whatsapp",
     conversation_id: str = "",
     phone: str = "",
+    email: str = "",
+    user_name: str = "",
+    page_slug: str = "",
+    has_debt: bool = False,
+    is_student: bool = False,
     skip_flow: bool = False,
     forced_agent: str | None = None,
 ) -> dict:
@@ -432,6 +491,11 @@ async def route_message(
         "channel": channel,
         "conversation_id": conversation_id,
         "phone": phone,
+        "email": email,
+        "user_name": user_name,
+        "page_slug": page_slug,
+        "has_debt": has_debt,
+        "is_student": is_student,
         "handoff_requested": False,
         "handoff_reason": "",
         "link_rebill_enviado": False,

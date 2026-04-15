@@ -182,3 +182,103 @@ async def get_auth_user_by_email(email: str) -> dict | None:
         data = resp.json()
         users = data.get("users", [])
         return users[0] if users else None
+
+
+async def list_all_customers() -> list:
+    """Lista todos los customers (paginado)."""
+    all_rows = []
+    page = 0
+    page_size = 1000
+    async with httpx.AsyncClient() as client:
+        while True:
+            resp = await client.get(
+                f"{SUPABASE_URL}/rest/v1/customers",
+                headers={**_headers(), "Range": f"{page*page_size}-{(page+1)*page_size - 1}"},
+                params={"select": "id,email"},
+                timeout=30,
+            )
+            if resp.status_code not in (200, 206):
+                break
+            data = resp.json()
+            if not isinstance(data, list) or not data:
+                break
+            all_rows.extend(data)
+            if len(data) < page_size:
+                break
+            page += 1
+    return all_rows
+
+
+async def delete_all_customers() -> int:
+    """Elimina TODOS los customers. Devuelve cantidad borrada."""
+    async with httpx.AsyncClient() as client:
+        # Primero contar
+        customers = await list_all_customers()
+        count = len(customers)
+        if count == 0:
+            return 0
+        # Delete con filtro que matchea todos
+        resp = await client.delete(
+            f"{SUPABASE_URL}/rest/v1/customers",
+            headers=_headers(),
+            params={"id": "not.is.null"},
+            timeout=60,
+        )
+        logger.info("delete_all_customers", count=count, status=resp.status_code)
+        return count
+
+
+async def list_all_auth_users() -> list:
+    """Lista todos los auth users vía admin API."""
+    all_users = []
+    page = 1
+    per_page = 1000
+    async with httpx.AsyncClient() as client:
+        while True:
+            resp = await client.get(
+                f"{SUPABASE_URL}/auth/v1/admin/users",
+                headers=_headers(),
+                params={"page": page, "per_page": per_page},
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                break
+            data = resp.json()
+            users = data.get("users", []) if isinstance(data, dict) else []
+            if not users:
+                break
+            all_users.extend(users)
+            if len(users) < per_page:
+                break
+            page += 1
+    return all_users
+
+
+async def delete_all_customer_auth_users(keep_emails: list[str] | None = None) -> int:
+    """
+    Elimina auth users excepto los emails en keep_emails (admins).
+    Devuelve cantidad borrada.
+    """
+    keep = set((e or "").lower() for e in (keep_emails or []))
+    users = await list_all_auth_users()
+    deleted = 0
+    async with httpx.AsyncClient() as client:
+        for u in users:
+            email = (u.get("email") or "").lower()
+            uid = u.get("id")
+            if not uid:
+                continue
+            if email in keep:
+                continue
+            try:
+                resp = await client.delete(
+                    f"{SUPABASE_URL}/auth/v1/admin/users/{uid}",
+                    headers=_headers(),
+                    timeout=10,
+                )
+                if resp.status_code in (200, 204):
+                    deleted += 1
+            except Exception as e:
+                logger.warning("delete_auth_user_failed", user_id=uid, error=str(e))
+    logger.info("delete_all_customer_auth_users", deleted=deleted, kept=len(keep))
+    return deleted

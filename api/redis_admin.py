@@ -146,23 +146,33 @@ async def flush_conversations(user: dict = Depends(require_role("admin"))):
     """
     r = await _redis()
     patterns = [
-        "conv:*",           # Conversaciones
-        "idx:widget:*",     # Índice widget
-        "idx:whatsapp:*",   # Índice WhatsApp
-        "wflow:*",          # Estados del menú widget
-        "bot_disabled:*",   # Bot desactivado (widget)
-        "bot_disabled_wa:*",# Bot desactivado (WhatsApp)
-        "conv_events:*",    # Log de eventos
-        "conv_label:*",     # Etiquetas de leads
-        "agent_name:*",     # Nombre del agente asignado
-        "assigned_agent:*", # Asignación de agente
-        "unread:*",         # Conteo de no leídos
-        "zoho_cache:*",     # Cache cobranzas Zoho
-        "zoho_cursadas:*",  # Cache perfil Zoho Contacts
-        "datos_deudor:*",   # Datos deudor cobranzas
-        "last_seen:*",      # Última vez visto
-        "typing:*",         # Estado "escribiendo"
-        "cm_session:*",     # Sesiones internas
+        "conv:*",                # Conversaciones
+        "idx:widget:*",          # Índice widget
+        "idx:whatsapp:*",        # Índice WhatsApp
+        "wflow:*",               # Estados del menú widget
+        "bot_disabled:*",        # Bot desactivado (widget)
+        "bot_disabled_wa:*",     # Bot desactivado (WhatsApp)
+        "conv_events:*",         # Log de eventos
+        "conv_label:*",          # Etiquetas de leads
+        "conv_queue:*",          # Cola de conversación
+        "conv_assigned:*",       # Asignación
+        "conv_assigned_name:*",  # Nombre asignado
+        "conv_enrichment:*",     # Enriquecimiento de perfil
+        "conv_notes:*",          # Notas internas
+        "closing_note:*",        # Nota de cierre
+        "frt:*",                 # First response time
+        "last_reply:*",          # Última respuesta
+        "agent_name:*",          # Nombre del agente asignado
+        "assigned_agent:*",      # Asignación de agente
+        "unread:*",              # Conteo de no leídos
+        "zoho_cache:*",          # Cache cobranzas Zoho
+        "zoho_cursadas:*",       # Cache perfil Zoho Contacts
+        "datos_deudor:*",        # Datos deudor cobranzas
+        "last_seen:*",           # Última vez visto
+        "typing:*",              # Estado "escribiendo"
+        "cm_session:*",          # Sesiones internas
+        "customer_session:*",    # Sesiones de cliente
+        "contact_sessions:*",    # Sesiones por contacto
     ]
     total = 0
     deleted_by_pattern: dict = {}
@@ -180,6 +190,81 @@ async def flush_conversations(user: dict = Depends(require_role("admin"))):
         "deleted": total,
         "by_pattern": deleted_by_pattern,
         "message": f"✅ {total} claves eliminadas. Redis limpio.",
+    }
+
+
+@router.post("/nuclear-reset")
+async def nuclear_reset(user: dict = Depends(require_role("admin"))):
+    """
+    RESET TOTAL: Redis (conversaciones + caches) + Supabase (customers + auth users).
+    Conserva: widget:config, flow:*, session:* (admin auth), perfiles de agentes (profiles).
+    """
+    from integrations import supabase_client as sb
+
+    # 1) Redis — patrones amplios (conversación + caches + sesiones de cliente)
+    r = await _redis()
+    patterns = [
+        "conv:*", "idx:widget:*", "idx:whatsapp:*", "wflow:*",
+        "bot_disabled:*", "bot_disabled_wa:*",
+        "conv_events:*", "conv_label:*", "conv_queue:*",
+        "conv_assigned:*", "conv_assigned_name:*", "conv_enrichment:*",
+        "conv_notes:*", "closing_note:*", "frt:*", "last_reply:*",
+        "agent_name:*", "assigned_agent:*", "unread:*",
+        "zoho_cache:*", "zoho_cursadas:*", "datos_deudor:*",
+        "last_seen:*", "typing:*", "cm_session:*",
+        "customer_session:*", "contact_sessions:*",
+    ]
+    redis_total = 0
+    redis_by_pattern: dict = {}
+    for pattern in patterns:
+        keys = []
+        async for key in r.scan_iter(pattern, count=500):
+            keys.append(key.decode() if isinstance(key, bytes) else key)
+        if keys:
+            await r.delete(*keys)
+            redis_by_pattern[pattern] = len(keys)
+            redis_total += len(keys)
+
+    # 2) Supabase — customers table
+    customers_deleted = 0
+    customers_error = None
+    try:
+        customers_deleted = await sb.delete_all_customers()
+    except Exception as e:
+        customers_error = str(e)
+        logger.error("nuclear_reset_customers_failed", error=customers_error)
+
+    # 3) Supabase — auth users (preservar perfiles de agentes)
+    auth_deleted = 0
+    auth_error = None
+    try:
+        profiles = await sb.list_profiles()
+        keep_emails = [p.get("email") for p in profiles if p.get("email")]
+        auth_deleted = await sb.delete_all_customer_auth_users(keep_emails=keep_emails)
+    except Exception as e:
+        auth_error = str(e)
+        logger.error("nuclear_reset_auth_failed", error=auth_error)
+
+    logger.info(
+        "nuclear_reset",
+        redis_deleted=redis_total,
+        customers_deleted=customers_deleted,
+        auth_deleted=auth_deleted,
+        by=user.get("username"),
+    )
+    return {
+        "redis": {"deleted": redis_total, "by_pattern": redis_by_pattern},
+        "supabase": {
+            "customers_deleted": customers_deleted,
+            "customers_error": customers_error,
+            "auth_users_deleted": auth_deleted,
+            "auth_error": auth_error,
+        },
+        "message": (
+            f"☢️ Reset nuclear completado — "
+            f"Redis: {redis_total} claves, "
+            f"Supabase: {customers_deleted} customers + {auth_deleted} auth users"
+        ),
     }
 
 

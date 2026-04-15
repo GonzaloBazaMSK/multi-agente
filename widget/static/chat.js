@@ -224,6 +224,11 @@
   let isLoading = false;
   let country = CONFIG.country;
   let unreadCount = 0;
+  // Conversación aún no materializada en el backend:
+  let pendingGreeting = null;          // saludo stateless ya mostrado (se persiste cuando el user mande el 1er msg)
+  let conversationMaterialized = false; // true cuando ya hay al menos un mensaje de user
+  let lastKnownEmail = CONFIG.email || "";  // para detectar cambios de login/logout
+  let greetingBubbleEl = null;         // ref al <div> del saludo, para poder reemplazarlo si cambia el login
 
   // ─── DOM refs (asignados después de mount) ────────────────────────────────
   let panel, fab, messagesEl, typingEl, inputEl, sendBtn, badge, countrySelect;
@@ -303,6 +308,7 @@
       badge.textContent = unreadCount;
       badge.style.display = "flex";
     }
+    return div;  // para poder reemplazar/quitar el bubble después (ej. refresh del saludo)
   }
 
   // ─── Mostrar botones de respuesta rápida inicial ──────────────────────────
@@ -351,28 +357,47 @@
     lastMsgCount++; // contar mensaje de usuario inmediatamente (evita duplicados del poll)
     showTyping();
 
+    // Si todavía no materializamos la conversación, mandamos el saludo
+    // pendiente para que el backend lo persista como primer bot msg.
+    const payload = {
+      session_id: sessionId,
+      message: text,
+      country: country,
+      user_email: CONFIG.email,
+      user_name: CONFIG.userName,
+      user_phone: CONFIG.userPhone,
+      user_courses: CONFIG.userCourses,
+    };
+    if (pendingGreeting) {
+      payload.initial_greeting = pendingGreeting;
+    }
+
     try {
       const res = await fetch(`${CONFIG.apiUrl}/widget/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          message: text,
-          country: country,
-          user_email: CONFIG.email,
-          user_name: CONFIG.userName,
-          user_phone: CONFIG.userPhone,
-          user_courses: CONFIG.userCourses,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
+      // Primer mensaje exitoso → conv materializada. No volvemos a mandar
+      // initial_greeting ni a dejar que el identity watcher reemplace el saludo.
+      conversationMaterialized = true;
+
       hideTyping();
       if (data.response) {
         appendMessage("bot", data.response);
         lastMsgCount++; // contar respuesta del bot
+      }
+
+      // El saludo (si estaba pendiente) se persistió en backend como primer
+      // bot msg de la conv. Lo contamos en lastMsgCount para que el poll no
+      // lo traiga como "mensaje nuevo" duplicado.
+      if (pendingGreeting) {
+        lastMsgCount++;
+        pendingGreeting = null;
       }
 
       if (data.handoff_requested) {
@@ -525,20 +550,35 @@
       if (e.key === "Escape" && isOpen) togglePanel();
     });
 
-    // Cargar historial o mostrar saludo
+    // ── Resolver estado inicial ──────────────────────────────────────────
+    // 1) Si sessionStorage tiene session_id y YA hay historial real → cargarlo
+    //    (usuario recargó la pestaña, misma conv)
+    // 2) Esperar datos del user (login async)
+    // 3) Si el user tiene email → tryResumeByEmail (trae conv previa de otro
+    //    dispositivo / sesión expirada, si existe dentro de 30 días)
+    // 4) Si nada anterior → fetchPersonalizedGreeting (STATELESS, no crea conv)
+
     const hadHistory = await loadHistory();
     if (hadHistory) {
-      // Start polling for agent messages
       lastMsgCount = messagesEl.querySelectorAll('.cm-msg').length;
+      conversationMaterialized = true;
+      lastKnownEmail = CONFIG.email || "";
       startPolling();
-    }
-    if (!hadHistory) {
-      // Esperar hasta 2s a que msk-front setee window.CM_USER / atributos de email
-      // (algunos front loguean al usuario DESPUÉS de que el script carga)
+    } else {
       await waitForUserData(2000);
-      // Siempre pedir saludo al backend (inicializa la máquina de estados del menú)
-      await fetchPersonalizedGreeting();
+      lastKnownEmail = CONFIG.email || "";
+      let resumed = false;
+      if (CONFIG.email) {
+        resumed = await tryResumeByEmail();
+        if (resumed) startPolling();
+      }
+      if (!resumed) {
+        await fetchPersonalizedGreeting();
+      }
     }
+
+    // Detectar cambios de identity (login tardío, logout, cambio de cuenta)
+    startIdentityWatcher();
   }
 
   // ─── Espera a que msk-front setee los datos del usuario ───────────────────
@@ -634,17 +674,19 @@
     } catch(e) { /* silent */ }
   }
 
-  // ─── Saludo personalizado para usuario logueado ───────────────────────────
+  // ─── Saludo stateless — NO crea conversación en el backend ─────────────────
+  // El backend solo genera el saludo (con perfil Supabase + Zoho si hay email)
+  // y lo devuelve. Lo guardamos en `pendingGreeting` y lo renderizamos.
+  // La conversación se materializa recién cuando el user manda el primer msg
+  // real (ahí le pasamos `initial_greeting` para que el backend lo persista
+  // como primer bot msg del historial).
   async function fetchPersonalizedGreeting() {
     showTyping();
     try {
-      const res = await fetch(`${CONFIG.apiUrl}/widget/chat`, {
+      const res = await fetch(`${CONFIG.apiUrl}/widget/greeting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session_id: sessionId,
-          message: "__widget_init__",
-          country: country,
           user_email: CONFIG.email,
           user_name: CONFIG.userName,
           user_courses: CONFIG.userCourses,
@@ -653,22 +695,163 @@
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
       hideTyping();
-      if (data.session_id) {
-        sessionId = data.session_id;
-        sessionStorage.setItem("cm_session_id", sessionId);
-      }
-      if (data.response) {
-        appendMessage("bot", data.response);
-      }
+      const greetingText = data.greeting || CONFIG.greeting;
+      pendingGreeting = greetingText;
+      greetingBubbleEl = appendMessage("bot", greetingText);
     } catch (err) {
       hideTyping();
-      // Fallback si el backend falla
       const fallbackGreeting = CONFIG.greeting || "¡Hola! 😊 Soy tu asistente virtual de MSK. Estoy aquí para guiarte.";
-      appendMessage("bot", fallbackGreeting);
+      pendingGreeting = fallbackGreeting;
+      greetingBubbleEl = appendMessage("bot", fallbackGreeting);
       const fallbackBtns = (CONFIG.quickReplies || "Explorar cursos 📖|Asistencia 📩 💻")
         .split('|').map(s => s.trim()).filter(Boolean);
       showQuickReplies(fallbackBtns);
       console.error("[CM Widget] greeting failed:", err);
+    }
+  }
+
+  // ─── Resume-by-email: busca conv previa de este user (últimos 30 días) ────
+  // Solo para usuarios logueados. Si existe, adopta ese session_id y carga
+  // el historial. Devuelve true si retomó, false si no hay nada.
+  async function tryResumeByEmail() {
+    if (!CONFIG.email) return false;
+    try {
+      const res = await fetch(
+        `${CONFIG.apiUrl}/widget/resume?email=${encodeURIComponent(CONFIG.email)}`
+      );
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!data.session_id || !data.messages || data.messages.length === 0) {
+        return false;
+      }
+      // Adoptamos el session_id histórico y lo guardamos en sessionStorage,
+      // pisando cualquier session_id anónimo anterior (C4/A5).
+      sessionId = data.session_id;
+      sessionStorage.setItem("cm_session_id", sessionId);
+      data.messages.forEach((m) => {
+        const role = m.role === "user" ? "user" : "bot";
+        const time = new Date(m.timestamp).toLocaleTimeString("es", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        appendMessage(role, m.content, time, m.media_url, m.media_type, m.media_mime);
+      });
+      lastMsgCount = data.messages.length;
+      conversationMaterialized = true;
+      pendingGreeting = null;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ─── Re-fetch del saludo cuando cambia el login (mid-session) ─────────────
+  // Solo aplica si todavía no se materializó la conversación — si ya hubo
+  // mensajes del user, el saludo viejo queda congelado en el historial.
+  async function refreshGreetingForNewUser() {
+    if (conversationMaterialized) return;
+    try {
+      const res = await fetch(`${CONFIG.apiUrl}/widget/greeting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_email: CONFIG.email,
+          user_name: CONFIG.userName,
+          user_courses: CONFIG.userCourses,
+        }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      pendingGreeting = data.greeting;
+      // Reemplazar el bubble del saludo (+ sus botones si tiene) en el DOM
+      if (greetingBubbleEl && greetingBubbleEl.parentNode) {
+        const next = greetingBubbleEl.nextElementSibling;
+        if (next && next.classList && next.classList.contains("cm-quick-replies")) {
+          next.remove();
+        }
+        greetingBubbleEl.remove();
+      }
+      greetingBubbleEl = appendMessage("bot", data.greeting);
+    } catch (e) { /* silent */ }
+  }
+
+  // ─── Watcher: detecta cambios de identity (login / logout / cambio user) ──
+  // Revisa window.CM_USER y localStorage.customer_user cada 1s. Si el email
+  // cambia respecto de `lastKnownEmail`, dispara acciones:
+  //   - logout (había email, ahora no) → re-fetch saludo genérico
+  //   - login (no había, ahora sí)     → re-fetch saludo + intentar resume
+  //   - cambio de cuenta (email distinto) → nuevo session_id + resume
+  function startIdentityWatcher() {
+    setInterval(async () => {
+      const storedNow = _readStoredUser();
+      const cmUser = window.CM_USER || {};
+      const currentEmail =
+        cmUser.email ||
+        (scriptEl && scriptEl.getAttribute("data-user-email")) ||
+        (storedNow && storedNow.email) ||
+        "";
+      if (currentEmail === lastKnownEmail) return;
+
+      // Hubo cambio
+      const prev = lastKnownEmail;
+      lastKnownEmail = currentEmail;
+      // Actualizar CONFIG
+      CONFIG.email = currentEmail;
+      CONFIG.userName =
+        cmUser.name ||
+        (scriptEl && scriptEl.getAttribute("data-user-name")) ||
+        (storedNow && storedNow.name) ||
+        CONFIG.userName;
+      CONFIG.userCourses =
+        cmUser.courses ||
+        (scriptEl && scriptEl.getAttribute("data-user-courses")) ||
+        (storedNow && Array.isArray(storedNow.courses) ? storedNow.courses.join(",") : "") ||
+        CONFIG.userCourses;
+
+      if (prev && currentEmail && prev !== currentEmail) {
+        // B6: cambio de cuenta → arrancar limpio
+        await resetConversationForAccountSwitch();
+        return;
+      }
+      if (!prev && currentEmail) {
+        // Login fresco
+        if (!conversationMaterialized) {
+          // Intentar retomar history del nuevo usuario
+          const resumed = await tryResumeByEmail();
+          if (!resumed) await refreshGreetingForNewUser();
+        }
+        // Si ya hay conv en curso (B4), el email se pegará automáticamente
+        // al próximo POST /widget/chat (user_email ya va en el body).
+        return;
+      }
+      if (prev && !currentEmail) {
+        // Logout
+        if (!conversationMaterialized) {
+          await refreshGreetingForNewUser();
+        }
+      }
+    }, 1000);
+  }
+
+  // ─── B6: cambio de cuenta → limpia UI y arranca nueva sesión ──────────────
+  async function resetConversationForAccountSwitch() {
+    // Stop polling si estaba activo
+    stopPolling();
+    // Limpiar DOM
+    messagesEl.innerHTML = "";
+    lastMsgCount = 0;
+    conversationMaterialized = false;
+    pendingGreeting = null;
+    greetingBubbleEl = null;
+    // Nuevo session_id
+    sessionId = generateUUID();
+    sessionStorage.setItem("cm_session_id", sessionId);
+    // Intentar resume del nuevo email
+    const resumed = await tryResumeByEmail();
+    if (!resumed) {
+      await fetchPersonalizedGreeting();
+    } else {
+      startPolling();
     }
   }
 

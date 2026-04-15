@@ -35,6 +35,7 @@ async def _build_user_context(
     session_id: str,
     user_courses: str = "",
     page_slug: str = "",
+    log_events: bool = True,
 ) -> list[str]:
     """
     Construye la lista de líneas de contexto del usuario a partir de:
@@ -44,8 +45,17 @@ async def _build_user_context(
     - Cursos pasados directamente desde el widget
     - Slug de la página actual
 
+    log_events=False para saludos stateless (no ensucia Redis con eventos de
+    sesiones que nunca se materializan).
+
     Retorna una lista de strings listos para inyectar en el system prompt.
     """
+    # Si log_events=False, sustituimos los helpers por no-ops locales
+    if log_events:
+        _log_event, _log_action, _log_error = log_event, log_action, log_error
+    else:
+        async def _noop(*_a, **_k): return None
+        _log_event = _log_action = _log_error = _noop
     lines: list[str] = []
 
     if page_slug:
@@ -53,13 +63,13 @@ async def _build_user_context(
             f"Página actual del usuario: curso «{page_slug}» — "
             "puede estar interesado en este curso específico."
         )
-        await log_event(session_id, "info", {
+        await _log_event(session_id, "info", {
             "action": "page_context",
             "detail": f"Usuario en página: {page_slug}",
         })
 
     if not user_email:
-        await log_event(session_id, "info", {
+        await _log_event(session_id, "info", {
             "action": "usuario_anonimo",
             "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
         })
@@ -86,7 +96,7 @@ async def _build_user_context(
                 lines.append(f"Especialidad: {specialty_found}")
             if profile.get("interests"):
                 lines.append(f"Intereses: {profile['interests']}")
-            await log_event(session_id, "action", {
+            await _log_event(session_id, "action", {
                 "action": "supabase_perfil_encontrado",
                 "detail": (
                     f"Nombre: {name_found or '—'} | "
@@ -96,18 +106,18 @@ async def _build_user_context(
                 ),
             })
         else:
-            await log_event(session_id, "info", {
+            await _log_event(session_id, "info", {
                 "action": "supabase_no_encontrado",
                 "detail": f"No hay perfil Supabase para {user_email}",
             })
     except Exception as e:
         logger.debug("supabase_profile_failed", error=str(e))
-        await log_error(session_id, "supabase", str(e)[:150])
+        await _log_error(session_id, "supabase", str(e)[:150])
 
     # Cursos pasados directamente por el widget (fast path)
     if user_courses and not any("Cursos inscriptos" in l for l in lines):
         lines.append(f"Cursos inscriptos: {user_courses}")
-        await log_event(session_id, "info", {
+        await _log_event(session_id, "info", {
             "action": "cursos_desde_widget",
             "detail": f"Cursos recibidos del frontend: {user_courses[:120]}",
         })
@@ -123,7 +133,7 @@ async def _build_user_context(
                     lines.append(f"Curso de interés (CRM): {r['curso_de_interes']}")
                 if r.get("estado_pago"):
                     lines.append(f"Estado de pago (CRM): {r['estado_pago']}")
-                await log_event(session_id, "info", {
+                await _log_event(session_id, "info", {
                     "action": "zoho_cobranzas_cache",
                     "detail": (
                         f"Cache cobranzas activo — "
@@ -140,7 +150,7 @@ async def _build_user_context(
         cached_cursadas = await store._redis.get(cursadas_key)
 
         if cached_cursadas is None:
-            await log_event(session_id, "info", {
+            await _log_event(session_id, "info", {
                 "action": "zoho_contacts_buscando",
                 "detail": f"Buscando perfil Zoho Contacts para {user_email}…",
             })
@@ -195,7 +205,7 @@ async def _build_user_context(
                             "fecha_enrol": item.get("Enrollamiento", ""),
                         })
 
-                await log_event(session_id, "action", {
+                await _log_event(session_id, "action", {
                     "action": "zoho_contacts_encontrado",
                     "detail": (
                         f"Profesión: {profesion or '—'} | "
@@ -206,7 +216,7 @@ async def _build_user_context(
                     ),
                 })
             else:
-                await log_event(session_id, "info", {
+                await _log_event(session_id, "info", {
                     "action": "zoho_contacts_no_encontrado",
                     "detail": f"No hay contacto Zoho para {user_email} — guardando lista vacía en cache",
                 })
@@ -214,7 +224,7 @@ async def _build_user_context(
             await store._redis.setex(cursadas_key, 86400, _json.dumps(cursadas_list))
         else:
             cursadas_list = _json.loads(cached_cursadas)
-            await log_event(session_id, "info", {
+            await _log_event(session_id, "info", {
                 "action": "zoho_contacts_desde_cache",
                 "detail": (
                     f"Cache Redis activo para {user_email} — "
@@ -228,7 +238,7 @@ async def _build_user_context(
             lines.append(f"IMPORTANTE — No recomiendes estos cursos (ya los tiene): {', '.join(todos)}")
     except Exception as e:
         logger.debug("zoho_cursadas_failed", error=str(e))
-        await log_error(session_id, "zoho_contacts", str(e)[:150])
+        await _log_error(session_id, "zoho_contacts", str(e)[:150])
 
     return lines
 
@@ -263,6 +273,94 @@ async def _save_bot_msg(store, conversation, text: str, agent: str = "bot") -> M
     return msg
 
 
+# ── Saludo stateless (no crea conversación) ──────────────────────────────────
+
+def _load_greeting_prompt() -> str:
+    try:
+        from pathlib import Path
+        import importlib.util
+        path = Path(__file__).parent.parent / "agents" / "routing" / "greeting_prompt.py"
+        spec = importlib.util.spec_from_file_location("greeting_prompt_dyn", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.GREETING_SYSTEM_PROMPT
+    except Exception:
+        return (
+            "Sos el asistente de MSK Latam. "
+            "Generá un saludo breve y personalizado, sin mencionar cursos."
+        )
+
+
+async def generate_greeting_stateless(
+    user_name: str = "",
+    user_email: str = "",
+    user_courses: str = "",
+    page_slug: str = "",
+) -> dict:
+    """
+    Genera el saludo personalizado SIN crear conversación ni loggear eventos.
+    Usado al cargar la página para mostrar el saludo en el UI del widget
+    antes de que el usuario interactúe. Solo cuando el usuario envíe su
+    primer mensaje real se materializa la conversación.
+
+    Returns:
+        {greeting: str, buttons: list[str], context_lines: int}
+    """
+    store = await get_conversation_store()
+    # Session id efímero solo como etiqueta técnica; log_events=False hace
+    # que no se escriban eventos a Redis (evita conv_events fantasmas por
+    # cada visita anónima a la página).
+    ephemeral_sid = "greeting-ephemeral"
+
+    ctx_lines = await _build_user_context(
+        user_email, store, ephemeral_sid, user_courses, page_slug,
+        log_events=False,
+    )
+    ctx = "\n".join(ctx_lines) if ctx_lines else ""
+
+    try:
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import SystemMessage as LcSystem, HumanMessage as LcHuman
+        from config.settings import get_settings
+
+        system_txt = _load_greeting_prompt()
+        if ctx:
+            system_txt += f"\n\nDatos del cliente:\n{ctx}"
+        if page_slug:
+            system_txt += (
+                f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
+                "Podés mencionarlo como 'veo que estás explorando ese curso'."
+            )
+
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=get_settings().openai_api_key,
+            temperature=0.7,
+            max_tokens=120,
+        )
+        resp = await llm.ainvoke([
+            LcSystem(content=system_txt),
+            LcHuman(content="Generá el saludo."),
+        ])
+        greeting = resp.content.strip()
+    except Exception as e:
+        logger.warning("greeting_stateless_failed", error=str(e))
+        nombre = user_name.split()[0] if user_name else ""
+        greeting = (
+            f"¡Hola{' ' + nombre if nombre else ''}! 😊 "
+            "Soy tu asistente virtual de MSK. "
+            "Estoy aquí para guiarte y brindarte la información que necesites."
+        )
+
+    greeting_with_buttons = fmt_buttons(greeting, MAIN_BUTTONS)
+    return {
+        "greeting": greeting_with_buttons,
+        "buttons": list(MAIN_BUTTONS),
+        "context_lines": len(ctx_lines),
+        "is_personalized": bool(user_email),
+    }
+
+
 # ── Handler principal ─────────────────────────────────────────────────────────
 
 async def process_widget_message(
@@ -273,9 +371,15 @@ async def process_widget_message(
     user_email: str = "",
     user_courses: str = "",
     page_slug: str = "",
+    initial_greeting: str = "",
 ) -> dict:
     """
     Procesa un mensaje del widget web.
+
+    initial_greeting: si la conversación es nueva y se pasa, se persiste
+    como primer bot msg antes del user msg. El front lo envía solo en el
+    primer mensaje real del usuario (así el saludo stateless queda en
+    histórico una vez que la conversación se materializa).
 
     Returns:
         {response: str, agent_used: str, handoff_requested: bool, session_id: str}
@@ -286,6 +390,21 @@ async def process_widget_message(
         external_id=session_id,
         country=country,
     )
+
+    # Si acabamos de crear la conv y el front envió el saludo que mostró,
+    # lo persistimos como primer bot msg para que quede en el historial
+    # y en el contexto del agente.
+    if is_new and initial_greeting and message_text != "__widget_init__":
+        try:
+            await _save_bot_msg(store, conversation, initial_greeting, "bienvenida")
+            # Inicializar estado del menú en Redis para que los botones del saludo funcionen
+            await wflow_init(store._redis, session_id)
+            await log_event(session_id, "action", {
+                "action": "saludo_persistido",
+                "detail": "Saludo stateless persistido como primer mensaje bot (conv materializada)",
+            })
+        except Exception as e:
+            logger.warning("persist_initial_greeting_failed", error=str(e))
 
     # ── Bot desactivado por agente humano ─────────────────────────────────────
     bot_disabled = await store._redis.get(f"bot_disabled:{session_id}")
@@ -318,10 +437,23 @@ async def process_widget_message(
         }
 
     # ── Actualizar perfil del usuario ─────────────────────────────────────────
-    if user_name and not conversation.user_profile.name:
-        conversation.user_profile.name = user_name
+    # B4: anónimo que se loguea mid-conversación → pegamos el email al
+    # user_profile existente y lo loggeamos. El próximo turno el agente
+    # reconstruye contexto (Supabase + Zoho) y ya personaliza respuestas.
     if user_email and not conversation.user_profile.email:
         conversation.user_profile.email = user_email
+        if user_name:
+            conversation.user_profile.name = user_name
+        await log_event(session_id, "action", {
+            "action": "email_capturado",
+            "detail": (
+                f"Usuario anónimo se identificó: {user_email}"
+                + (f" ({user_name})" if user_name else "")
+                + " — el próximo turno reconstruye contexto Supabase/Zoho."
+            ),
+        })
+    elif user_name and not conversation.user_profile.name:
+        conversation.user_profile.name = user_name
 
     # ─────────────────────────────────────────────────────────────────────────
     # INIT: saludo personalizado + botones del menú

@@ -10,7 +10,7 @@ import json
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from channels.widget import process_widget_message
+from channels.widget import process_widget_message, generate_greeting_stateless
 from memory.conversation_store import get_conversation_store
 from config.constants import Channel
 
@@ -25,6 +25,14 @@ class ChatRequest(BaseModel):
     user_email: str = ""
     user_courses: str = ""
     page_slug: str = ""   # slug del curso que está mirando el usuario (si aplica)
+    initial_greeting: str = ""   # saludo stateless a persistir si la conv se crea recién
+
+
+class GreetingRequest(BaseModel):
+    user_name: str = ""
+    user_email: str = ""
+    user_courses: str = ""
+    page_slug: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -53,6 +61,7 @@ async def chat(req: ChatRequest):
         user_email=req.user_email,
         user_courses=req.user_courses,
         page_slug=req.page_slug,
+        initial_greeting=req.initial_greeting,
     )
 
     return ChatResponse(
@@ -61,6 +70,89 @@ async def chat(req: ChatRequest):
         agent_used=result["agent_used"],
         handoff_requested=result["handoff_requested"],
     )
+
+
+@router.post("/greeting")
+async def greeting(req: GreetingRequest):
+    """
+    Genera el saludo personalizado SIN crear conversación.
+    Se llama al cargar la página; el front lo muestra en el widget.
+    La conversación recién se materializa cuando el user envía su primer
+    mensaje real (`/widget/chat` con `initial_greeting` en el body).
+    """
+    data = await generate_greeting_stateless(
+        user_name=req.user_name,
+        user_email=req.user_email,
+        user_courses=req.user_courses,
+        page_slug=req.page_slug,
+    )
+    return data
+
+
+@router.get("/resume")
+async def resume(email: str):
+    """
+    Busca una conversación previa (activa) del widget para este email.
+    Devuelve session_id + messages si existe, o {session_id: null} si no.
+    Usado al cargar la página para usuarios logueados, para retomar
+    historial sin tener que empezar de cero.
+    """
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Email inválido")
+
+    try:
+        from memory import postgres_store as pg
+        if not pg.is_enabled():
+            return {"session_id": None, "messages": []}
+        pool = await pg.get_pool()
+        async with pool.acquire() as conn:
+            # Retoma sólo conversaciones abiertas (active / handed_off)
+            # de los últimos 30 días. Cerradas o más viejas arrancan fresh.
+            row = await conn.fetchrow(
+                """
+                SELECT external_id
+                FROM public.conversations
+                WHERE channel = 'widget'
+                  AND status IN ('active', 'handed_off')
+                  AND user_profile->>'email' = $1
+                  AND updated_at > now() - interval '30 days'
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                email,
+            )
+    except Exception as e:
+        return {"session_id": None, "messages": [], "error": str(e)}
+
+    if not row:
+        return {"session_id": None, "messages": []}
+
+    session_id = row["external_id"]
+    store = await get_conversation_store()
+    conversation = await store.get_by_external(Channel.WIDGET, session_id)
+    if not conversation:
+        return {"session_id": None, "messages": []}
+
+    messages = []
+    for m in conversation.messages:
+        msg = {
+            "role": m.role.value,
+            "content": m.content,
+            "timestamp": m.timestamp.isoformat(),
+            "agent": m.metadata.get("agent", ""),
+        }
+        if m.metadata.get("media_url"):
+            msg["media_url"] = m.metadata["media_url"]
+            msg["media_type"] = m.metadata.get("media_type", "")
+            msg["media_mime"] = m.metadata.get("media_mime", "")
+            msg["media_filename"] = m.metadata.get("media_filename", "")
+        messages.append(msg)
+
+    return {
+        "session_id": session_id,
+        "messages": messages,
+        "status": conversation.status.value,
+    }
 
 
 @router.get("/chat/stream")

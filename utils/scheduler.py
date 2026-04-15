@@ -81,8 +81,31 @@ async def start_scheduler() -> None:
         coalesce=True,
     )
 
+    # Sincronización diaria del catálogo de cursos desde el WP headless.
+    # 3:30am local → baja tráfico, precios del WP ya consolidados si cambian a fin de mes.
+    s.add_job(
+        _run_courses_sync,
+        trigger=CronTrigger(hour=3, minute=30),
+        id="courses_sync",
+        name="Sincronizar catálogo de cursos MSK (todos los países habilitados)",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     s.start()
     logger.info("scheduler_started", jobs=[j.id for j in s.get_jobs()])
+
+
+async def _run_courses_sync() -> None:
+    """Wrapper para APScheduler: sincroniza todos los países habilitados."""
+    from integrations import msk_courses
+    from api.admin_courses import ENABLED_COUNTRIES
+    for c in ENABLED_COUNTRIES:
+        try:
+            await msk_courses.sync_country(c, prune=True)
+        except Exception as e:
+            logger.error("courses_sync_job_failed", country=c, error=str(e))
 
 
 async def shutdown_scheduler() -> None:

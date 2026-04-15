@@ -355,6 +355,27 @@ async def _build_user_context(
             logger.debug("zoho_to_supabase_sync_failed", error=str(e))
             await _log_error(session_id, "zoho_supabase_sync", str(e)[:150])
 
+    # Cachear perfil de ventas (profession/specialty/name/interests/courses)
+    # para que `run_sales_node` lo inyecte al system prompt del agente sin
+    # hacer round-trip a Zoho/Supabase en cada turno.
+    try:
+        if user_email and (zoho_profile_for_sync or signals.get("profile_name")):
+            sales_profile = {
+                "email": user_email,
+                "name": zoho_profile_for_sync.get("name") or signals.get("profile_name") or "",
+                "profession": zoho_profile_for_sync.get("profession", ""),
+                "specialty": zoho_profile_for_sync.get("specialty", ""),
+                "interests": zoho_profile_for_sync.get("interests", ""),
+                "courses": zoho_profile_for_sync.get("courses", []),
+            }
+            await store._redis.setex(
+                f"ventas_profile:{user_email}",
+                6 * 3600,  # TTL 6h
+                _json.dumps(sales_profile),
+            )
+    except Exception as e:
+        logger.debug("ventas_profile_cache_failed", error=str(e))
+
     return lines, signals
 
 

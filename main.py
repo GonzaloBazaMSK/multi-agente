@@ -45,6 +45,7 @@ from api.test_agent import router as test_agent_router
 from api.webhooks import router as webhooks_router
 from api.widget import router as widget_router
 from api.admin import router as admin_router
+from api.admin_courses import router as admin_courses_router
 from api.inbox import router as inbox_router
 from api.templates import router as templates_router
 from api.admin_prompts import router as admin_prompts_router
@@ -169,6 +170,7 @@ def create_app() -> FastAPI:
     app.include_router(webhooks_router)
     app.include_router(widget_router)
     app.include_router(admin_router)
+    app.include_router(admin_courses_router)
     app.include_router(inbox_router)
     app.include_router(templates_router)
     app.include_router(admin_prompts_router)

@@ -202,7 +202,28 @@ def route_after_classify(state: SupervisorState) -> Literal["ventas", "cobranzas
 async def run_sales_node(state: SupervisorState) -> dict:
     country = state.get("country", "AR")
     channel = state.get("channel", "whatsapp")
-    agent = build_sales_agent(country=country, channel=channel)
+    page_slug = state.get("page_slug", "") or ""
+    email = state.get("email", "") or ""
+
+    # Cargar perfil del usuario (cacheado por widget.py durante _build_user_context)
+    user_profile: dict | None = None
+    if email:
+        try:
+            from memory.conversation_store import get_conversation_store
+            import json as _json
+            store = await get_conversation_store()
+            raw = await store._redis.get(f"ventas_profile:{email}")
+            if raw:
+                user_profile = _json.loads(raw)
+        except Exception as e:
+            logger.debug("sales_profile_cache_miss", error=str(e))
+
+    agent = await build_sales_agent(
+        country=country,
+        channel=channel,
+        page_slug=page_slug,
+        user_profile=user_profile,
+    )
     result = await agent.ainvoke({"messages": state["messages"]})
 
     # Detectar si el agente de ventas solicitó handoff en su respuesta

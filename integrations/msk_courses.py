@@ -1,0 +1,447 @@
+"""
+Sincronización del catálogo de cursos desde el WP headless de MSK Latam.
+
+Endpoint público:
+    https://cms1.msklatam.com/wp-json/msk/v1/products-full?lang={lang}&resource=course
+
+El JSON incluye todos los cursos de un país. Extraemos:
+  - Hot columns (precio, título, cedente, etc.) para filtrar rápido
+  - raw (JSONB) para drill-down on-demand
+  - brief_md (Markdown ~800-1200 tokens) para inyectar en el prompt del
+    agente de ventas cuando el usuario está viendo un curso.
+
+El brief_md se arma desde `sections` y `kb_ai` — los perfiles_dirigidos son
+la GOLD MINE para ventas: dan dolor del cliente + beneficio del curso por
+perfil profesional.
+
+Testimonios (sections.reviews) se EXCLUYEN intencionalmente del brief.
+"""
+from __future__ import annotations
+
+import html
+import re
+from datetime import datetime
+from typing import Any, Optional
+
+import httpx
+import structlog
+
+from memory import postgres_store
+
+logger = structlog.get_logger(__name__)
+
+
+# ── Mapeo país ISO-2 → lang del WP ──────────────────────────────────────────
+LANG_BY_COUNTRY: dict[str, str] = {
+    "ar": "arg",
+    "bo": "bol",
+    "cl": "chi",
+    "co": "col",
+    "cr": "cos",
+    "ec": "ecu",
+    "es": "esp",
+    "gt": "gua",
+    "hn": "hon",
+    "mx": "mex",
+    "ni": "nic",
+    "pa": "pan",
+    "py": "par",
+    "pe": "per",
+    "sv": "sal",
+    "uy": "uru",
+    "ve": "ven",
+}
+
+COUNTRY_LABEL: dict[str, str] = {
+    "ar": "Argentina", "bo": "Bolivia", "cl": "Chile", "co": "Colombia",
+    "cr": "Costa Rica", "ec": "Ecuador", "es": "España", "gt": "Guatemala",
+    "hn": "Honduras", "mx": "México", "ni": "Nicaragua", "pa": "Panamá",
+    "py": "Paraguay", "pe": "Perú", "sv": "El Salvador", "uy": "Uruguay",
+    "ve": "Venezuela",
+}
+
+BASE_URL = "https://cms1.msklatam.com/wp-json/msk/v1/products-full"
+
+
+# ── Helpers de limpieza ─────────────────────────────────────────────────────
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"[ \t]+")
+_NL_RE = re.compile(r"\n{3,}")
+
+
+def html_to_text(s: Any) -> str:
+    """Limpia HTML → texto plano. Preserva saltos para <p>/<br>/<li>."""
+    if not s:
+        return ""
+    if not isinstance(s, str):
+        s = str(s)
+    s = s.replace("</p>", "\n").replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    s = s.replace("</li>", "\n").replace("<li>", "• ")
+    s = _TAG_RE.sub("", s)
+    s = html.unescape(s)
+    s = _WS_RE.sub(" ", s)
+    s = _NL_RE.sub("\n\n", s)
+    return s.strip()
+
+
+def _to_float(v: Any) -> Optional[float]:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(v: Any) -> Optional[int]:
+    if v is None or v == "":
+        return None
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def _primary_category(item: dict) -> Optional[str]:
+    cats = (item.get("sections", {}) or {}).get("header", {}).get("categories", []) or []
+    primary = next((c for c in cats if c.get("is_primary")), None)
+    if primary:
+        return primary.get("name")
+    return cats[0].get("name") if cats else None
+
+
+# ── Fetch ───────────────────────────────────────────────────────────────────
+
+async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
+    """Descarga todos los productos `resource=course` de un país."""
+    lang = LANG_BY_COUNTRY.get(country.lower())
+    if not lang:
+        raise ValueError(f"Unknown country: {country}")
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.get(BASE_URL, params={"lang": lang, "resource": "course"})
+        r.raise_for_status()
+        data = r.json()
+
+    # Algunos WP devuelven {"data": [...]} o directamente [...]
+    if isinstance(data, dict):
+        data = data.get("data") or data.get("products") or data.get("items") or []
+    if not isinstance(data, list):
+        logger.warning("msk_courses_unexpected_format", country=country, type=type(data).__name__)
+        return []
+
+    # Filtrar solo cursos (el endpoint a veces devuelve certificaciones también)
+    courses = [d for d in data if (d.get("resource") == "course") and d.get("slug")]
+    logger.info("msk_courses_fetched", country=country, total=len(data), courses=len(courses))
+    return courses
+
+
+# ── Brief Markdown (SIN testimonios) ────────────────────────────────────────
+
+def build_brief_md(item: dict, country: str) -> str:
+    """
+    Arma un Markdown ~800-1200 tokens con lo esencial del curso.
+    Pensado para inyectar en el system-prompt del agente de ventas.
+
+    Secciones:
+      - Título + cedente + URL
+      - Precio / cuotas / moneda
+      - Categoría
+      - De qué trata el curso (kb_ai.descripcion_y_problematica)
+      - A quién está dirigido (sections.formacion_dirigida)
+      - Perfiles objetivo (kb_ai.perfiles_dirigidos) ← GOLD para ventas
+      - Qué vas a aprender (sections.learning)
+      - Habilidades (sections.habilities)
+      - Objetivos de aprendizaje (kb_ai.objetivos_de_aprendizaje)
+      - Módulos (sections.study_plan.modules — solo títulos + resumen corto)
+      - Qué incluye (sections.with_this_course + your_course_steps)
+      - Instituciones avalantes (sections.institutions)
+      - Certificaciones adicionales (certificacion_relacionada)
+      - Equipo docente (top 5 de sections.teaching_team)
+
+    NO incluye testimonios (sections.reviews) — excluidos por política.
+    """
+    lines: list[str] = []
+
+    title = item.get("title") or "(sin título)"
+    slug = item.get("slug") or ""
+    cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or ""
+    url = item.get("link") or ""
+    if url and not url.startswith("http"):
+        url = f"https://msklatam.com/{url.lstrip('/')}"
+
+    lines.append(f"# {title}")
+    if cedente:
+        lines.append(f"**Cedente:** {cedente}")
+    if url:
+        lines.append(f"**URL:** {url}")
+    lines.append(f"**País:** {COUNTRY_LABEL.get(country.lower(), country.upper())}  ·  **Slug:** `{slug}`")
+
+    # Precio
+    prices = item.get("prices") or {}
+    currency = prices.get("currency") or ""
+    total = _to_float(prices.get("total_price")) or _to_float(prices.get("regular_price"))
+    max_inst = _to_int(prices.get("max_installments"))
+    inst_val = _to_float(prices.get("price_installments"))
+    if total:
+        price_line = f"**Precio:** {currency} {total:,.0f}"
+        if max_inst and inst_val:
+            price_line += f"  ·  **{max_inst} cuotas de {currency} {inst_val:,.2f}**"
+        lines.append(price_line)
+
+    # Datos técnicos
+    duration = item.get("duration")
+    modules_count = item.get("modules")
+    categoria = _primary_category(item) or ""
+    tech_bits = []
+    if duration:
+        tech_bits.append(f"{duration} horas")
+    if modules_count:
+        tech_bits.append(f"{modules_count} módulos")
+    if categoria:
+        tech_bits.append(f"Categoría: {categoria}")
+    if tech_bits:
+        lines.append("**Datos:** " + "  ·  ".join(tech_bits))
+
+    lines.append("")
+
+    # ── De qué trata
+    kb_ai = item.get("kb_ai") or {}
+    desc = html_to_text(kb_ai.get("descripcion_y_problematica") or (item.get("sections", {}) or {}).get("content", {}).get("content", ""))
+    if desc:
+        lines.append("## De qué trata el curso")
+        lines.append(desc)
+        lines.append("")
+
+    # ── A quién está dirigido
+    dirigida = (item.get("sections") or {}).get("formacion_dirigida") or []
+    if dirigida:
+        lines.append("## A quién está dirigido")
+        for d in dirigida:
+            step = html_to_text(d.get("step", "")) if isinstance(d, dict) else html_to_text(str(d))
+            if step:
+                lines.append(f"- {step}")
+        lines.append("")
+
+    # ── Perfiles objetivo (pain + gain) — GOLD para ventas
+    perfiles = kb_ai.get("perfiles_dirigidos") or []
+    if perfiles:
+        lines.append("## Perfiles objetivo — dolor y beneficio (usalo para vender)")
+        for p in perfiles:
+            perfil = (p.get("perfil") or "").strip()
+            problema = html_to_text(p.get("problema_actual__necesidad") or p.get("problema_actual_necesidad") or "")
+            obtiene = html_to_text(p.get("que_obtiene") or "")
+            if perfil:
+                lines.append(f"### {perfil}")
+            if problema:
+                lines.append(f"- **Dolor / necesidad:** {problema}")
+            if obtiene:
+                lines.append(f"- **Qué obtiene con este curso:** {obtiene}")
+            lines.append("")
+
+    # ── Qué vas a aprender
+    learning = (item.get("sections") or {}).get("learning") or []
+    if learning:
+        lines.append("## Qué vas a aprender")
+        for l in learning:
+            txt = html_to_text(l.get("msk_learning_content", "")) if isinstance(l, dict) else html_to_text(str(l))
+            if txt:
+                lines.append(f"- {txt}")
+        lines.append("")
+
+    # ── Habilidades
+    habs = (item.get("sections") or {}).get("habilities") or []
+    if habs:
+        names = [h.get("name", "") for h in habs if h.get("name")]
+        if names:
+            lines.append("## Habilidades que desarrolla")
+            lines.append(", ".join(names))
+            lines.append("")
+
+    # ── Objetivos de aprendizaje
+    objetivos = html_to_text(kb_ai.get("objetivos_de_aprendizaje") or "")
+    if objetivos:
+        lines.append("## Objetivos de aprendizaje")
+        # Limitar a ~1500 chars para no explotar el prompt
+        if len(objetivos) > 1500:
+            objetivos = objetivos[:1500].rsplit(" ", 1)[0] + "…"
+        lines.append(objetivos)
+        lines.append("")
+
+    # ── Módulos (solo títulos + primera oración del contenido)
+    study_plan = (item.get("sections") or {}).get("study_plan") or {}
+    modules = study_plan.get("modules") or []
+    if modules:
+        lines.append("## Plan de estudios")
+        for i, m in enumerate(modules, 1):
+            mtitle = (m.get("title") or "").strip()
+            mcontent = html_to_text(m.get("content") or "")
+            # Primera oración significativa (máx 200 chars)
+            summary = mcontent.split("\n\n")[0] if mcontent else ""
+            if len(summary) > 240:
+                summary = summary[:240].rsplit(" ", 1)[0] + "…"
+            line = f"**Módulo {i} — {mtitle}**"
+            if summary:
+                line += f": {summary}"
+            lines.append(line)
+        lines.append("")
+
+    # ── Qué incluye
+    with_course = html_to_text((item.get("sections") or {}).get("with_this_course") or "")
+    steps = (item.get("sections") or {}).get("your_course_steps") or []
+    if with_course or steps:
+        lines.append("## Qué incluye")
+        if with_course:
+            lines.append(with_course)
+        if steps:
+            for s in steps:
+                txt = html_to_text(s.get("step", "")) if isinstance(s, dict) else html_to_text(str(s))
+                if txt:
+                    lines.append(f"- {txt}")
+        lines.append("")
+
+    # ── Instituciones avalantes
+    insts = (item.get("sections") or {}).get("institutions") or []
+    if insts:
+        lines.append("## Instituciones avalantes")
+        for inst in insts[:12]:
+            t = inst.get("title", "")
+            d = html_to_text(inst.get("description", ""))
+            if t:
+                lines.append(f"- **{t}**" + (f" — {d}" if d else ""))
+        lines.append("")
+
+    # ── Certificaciones adicionales
+    certs = item.get("certificacion_relacionada") or []
+    if certs:
+        lines.append("## Certificaciones adicionales disponibles")
+        for c in certs[:10]:
+            t = html.unescape(c.get("title", ""))
+            p = _to_float(c.get("total_price")) or _to_float(c.get("regular_price"))
+            if t:
+                line = f"- {t}"
+                if p:
+                    line += f" ({c.get('currency', '')} {p:,.0f})"
+                lines.append(line)
+        lines.append("")
+
+    # ── Equipo docente (top 5 — coordinadores + autores destacados)
+    team = (item.get("sections") or {}).get("teaching_team") or []
+    if team:
+        # Priorizar coordinadores
+        coord = [t for t in team if "coordin" in (t.get("description") or "").lower()]
+        autors = [t for t in team if t not in coord]
+        top = (coord + autors)[:5]
+        if top:
+            lines.append("## Equipo docente destacado")
+            for t in top:
+                name = t.get("name", "")
+                role = t.get("description", "") or ""
+                spec = t.get("specialty", "") or ""
+                bits = [name]
+                if role:
+                    bits.append(role)
+                if spec:
+                    bits.append(spec)
+                lines.append("- " + " — ".join([b for b in bits if b]))
+            lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+# ── Transform: JSON → row para Postgres ─────────────────────────────────────
+
+def to_row(item: dict, country: str) -> dict:
+    prices = item.get("prices") or {}
+    images = item.get("featured_images") or {}
+    cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or None
+
+    url = item.get("link") or ""
+    if url and not url.startswith("http"):
+        url = f"https://msklatam.com/{url.lstrip('/')}"
+
+    raw_date = item.get("date")
+    source_updated_at: Optional[datetime] = None
+    if raw_date:
+        try:
+            source_updated_at = datetime.fromisoformat(raw_date)
+        except ValueError:
+            source_updated_at = None
+
+    brief = build_brief_md(item, country)
+
+    return {
+        "country": country.lower(),
+        "slug": item.get("slug"),
+        "product_id": _to_int(item.get("id")),
+        "title": item.get("title") or "(sin título)",
+        "categoria": _primary_category(item),
+        "cedente": cedente,
+        "duration_hours": _to_int(item.get("duration")),
+        "modules_count": _to_int(item.get("modules")),
+        "currency": prices.get("currency"),
+        "regular_price": _to_float(prices.get("regular_price")),
+        "sale_price": _to_float(prices.get("sale_price")),
+        "total_price": _to_float(prices.get("total_price")),
+        "max_installments": _to_int(prices.get("max_installments")),
+        "price_installments": _to_float(prices.get("price_installments")),
+        "is_free": bool(prices.get("is_free", False)),
+        "url": url,
+        "image_url": images.get("high") or images.get("medium") or images.get("low"),
+        "excerpt": html_to_text(item.get("excerpt") or ""),
+        "brief_md": brief,
+        "raw": item,
+        "source_cache": item.get("cache"),
+        "source_updated_at": source_updated_at,
+    }
+
+
+# ── Sync ────────────────────────────────────────────────────────────────────
+
+async def sync_country(country: str, prune: bool = True) -> dict:
+    """
+    Sincroniza todos los cursos de un país:
+      1. Fetch del WP
+      2. Upsert en public.courses
+      3. (Opcional) delete de slugs que ya no vienen
+    """
+    country = country.lower()
+    items = await fetch_country(country)
+
+    upserted = 0
+    errors: list[str] = []
+    seen_slugs: list[str] = []
+
+    for item in items:
+        try:
+            row = to_row(item, country)
+            if not row["slug"]:
+                continue
+            seen_slugs.append(row["slug"])
+            await postgres_store.upsert_course(row)
+            upserted += 1
+        except Exception as e:
+            errors.append(f"{item.get('slug')}: {e}")
+            logger.exception("course_upsert_failed", slug=item.get("slug"), country=country)
+
+    # Invalidar cache Redis de los cursos actualizados
+    try:
+        from integrations import courses_cache
+        await courses_cache.invalidate_country(country, seen_slugs)
+    except Exception as e:
+        logger.warning("course_cache_invalidate_failed", error=str(e))
+
+    deleted = 0
+    if prune and seen_slugs:
+        deleted = await postgres_store.delete_missing_courses(country, seen_slugs)
+
+    result = {
+        "country": country,
+        "fetched": len(items),
+        "upserted": upserted,
+        "deleted": deleted,
+        "errors": errors[:10],  # truncar para logs
+    }
+    logger.info("msk_courses_sync_done", **result)
+    return result

@@ -83,6 +83,138 @@ async def get_course_details(course_name: str, country: str = "AR") -> str:
 
 
 @tool
+async def get_course_deep(slug: str, country: str = "AR", section: str = "summary") -> str:
+    """
+    Lee una sección específica del JSON original de un curso sincronizado desde el WP.
+    Usar cuando el usuario pregunta por información puntual que NO está en el brief
+    inyectado en el system prompt (ej: "contame más del módulo 3", "quiénes son los
+    docentes", "qué avales tiene para mi provincia").
+
+    Args:
+        slug: Slug del curso (ej: 'cardiologia-amir'). Si el usuario está viendo
+              un curso en la web, ya sabés cuál es — usá ese slug.
+        country: Código ISO-2 de país (AR, MX, CO, PE, CL, UY, ES, etc.)
+        section: Sección a leer. Valores válidos:
+            - 'modules' → plan de estudios con los temas de cada módulo
+            - 'teaching_team' → equipo docente completo
+            - 'institutions' → instituciones avalantes detalladas
+            - 'certificacion_relacionada' → certificaciones adicionales disponibles
+            - 'learning' → qué vas a aprender
+            - 'habilities' → habilidades que desarrolla
+            - 'formacion_dirigida' → a quién está dirigido
+            - 'perfiles_dirigidos' → perfiles objetivo con dolor y beneficio
+            - 'objetivos' → objetivos de aprendizaje
+            - 'prices' → precio y cuotas
+            - 'summary' → resumen corto (default)
+    """
+    from integrations import courses_cache
+    course = await courses_cache.get_course_deep(country, slug)
+    if not course:
+        return f"No encontré el curso '{slug}' para el país {country}. Verificá el slug y el país."
+
+    raw = course.get("raw") or {}
+    sections = raw.get("sections") or {}
+    kb_ai = raw.get("kb_ai") or {}
+    section = (section or "").lower().strip()
+
+    # Importar helper local para limpieza HTML
+    from integrations.msk_courses import html_to_text
+
+    def _dump_list(items: list, formatter) -> str:
+        out = [formatter(x) for x in items]
+        out = [x for x in out if x]
+        return "\n".join(out) if out else "(sin datos)"
+
+    if section == "modules":
+        mods = (sections.get("study_plan") or {}).get("modules") or []
+        if not mods:
+            return "(sin plan de estudios)"
+        out = []
+        for i, m in enumerate(mods, 1):
+            out.append(f"### Módulo {i} — {m.get('title', '').strip()}")
+            out.append(html_to_text(m.get("content", "")))
+            out.append("")
+        return "\n".join(out).strip()
+
+    if section == "teaching_team":
+        team = sections.get("teaching_team") or []
+        return _dump_list(
+            team,
+            lambda t: f"- {t.get('name', '')}"
+                      + (f" ({t.get('description', '')})" if t.get('description') else "")
+                      + (f" — {t.get('specialty', '')}" if t.get('specialty') else "")
+        )
+
+    if section == "institutions":
+        insts = sections.get("institutions") or []
+        return _dump_list(
+            insts,
+            lambda i: f"- **{i.get('title', '')}** — {html_to_text(i.get('description', ''))}"
+        )
+
+    if section == "certificacion_relacionada":
+        certs = raw.get("certificacion_relacionada") or []
+        import html as _html
+        return _dump_list(
+            certs,
+            lambda c: f"- {_html.unescape(c.get('title', ''))}"
+                      + (f" ({c.get('currency', '')} {c.get('total_price', '')})" if c.get('total_price') else "")
+        )
+
+    if section == "learning":
+        return _dump_list(
+            sections.get("learning") or [],
+            lambda l: f"- {html_to_text(l.get('msk_learning_content', ''))}"
+        )
+
+    if section == "habilities":
+        habs = sections.get("habilities") or []
+        names = [h.get("name", "") for h in habs if h.get("name")]
+        return ", ".join(names) if names else "(sin datos)"
+
+    if section == "formacion_dirigida":
+        return _dump_list(
+            sections.get("formacion_dirigida") or [],
+            lambda d: f"- {html_to_text(d.get('step', ''))}"
+        )
+
+    if section == "perfiles_dirigidos":
+        perfiles = kb_ai.get("perfiles_dirigidos") or []
+        out = []
+        for p in perfiles:
+            out.append(f"### {p.get('perfil', '').strip()}")
+            out.append(f"**Dolor:** {html_to_text(p.get('problema_actual__necesidad', ''))}")
+            out.append(f"**Qué obtiene:** {html_to_text(p.get('que_obtiene', ''))}")
+            out.append("")
+        return "\n".join(out).strip() or "(sin datos)"
+
+    if section in ("objetivos", "objetivos_de_aprendizaje"):
+        return html_to_text(kb_ai.get("objetivos_de_aprendizaje", "")) or "(sin datos)"
+
+    if section == "prices":
+        prices = raw.get("prices") or {}
+        lines = [
+            f"Moneda: {prices.get('currency', '')}",
+            f"Precio total: {prices.get('total_price', '')}",
+            f"Cuotas máximas: {prices.get('max_installments', '')}",
+            f"Valor cuota: {prices.get('price_installments', '')}",
+            f"Gratis: {prices.get('is_free', False)}",
+        ]
+        return "\n".join(lines)
+
+    # Default: resumen + URL
+    return (
+        f"Título: {course.get('title')}\n"
+        f"Categoría: {course.get('categoria')}\n"
+        f"Cedente: {course.get('cedente')}\n"
+        f"Duración: {course.get('duration_hours')}h — {course.get('modules_count')} módulos\n"
+        f"Precio: {course.get('currency')} {course.get('total_price')} "
+        f"({course.get('max_installments')} cuotas de {course.get('price_installments')})\n"
+        f"URL: {course.get('url')}\n"
+    )
+
+
+@tool
 async def create_payment_link(
     course_id: str,
     course_name: str,

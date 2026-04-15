@@ -133,6 +133,43 @@ create table if not exists public.conversation_stage (
 );
 create index if not exists conv_stage_key_idx on public.conversation_stage (stage_key);
 
+-- ── Courses KB ──────────────────────────────────────────────────────────────
+-- Catálogo sincronizado desde cms1.msklatam.com/wp-json/msk/v1/products-full
+-- PK compuesta (country, slug) — un mismo curso vive por país con su precio.
+-- Hot columns para filtrado rápido; `brief_md` para inyectar en el prompt del
+-- agente de ventas; `raw` JSONB para drill-down on-demand (módulos, docentes).
+create table if not exists public.courses (
+    country text not null,
+    slug text not null,
+    product_id bigint,
+    title text not null,
+    categoria text,
+    cedente text,
+    duration_hours integer,
+    modules_count integer,
+    currency text,
+    regular_price numeric(14,2),
+    sale_price numeric(14,2),
+    total_price numeric(14,2),
+    max_installments integer,
+    price_installments numeric(14,2),
+    is_free boolean not null default false,
+    url text,
+    image_url text,
+    excerpt text,
+    brief_md text,
+    raw jsonb not null default '{}'::jsonb,
+    source_cache text,
+    source_updated_at timestamptz,
+    synced_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    primary key (country, slug)
+);
+
+create index if not exists courses_title_idx on public.courses (lower(title));
+create index if not exists courses_categoria_idx on public.courses (country, categoria);
+create index if not exists courses_synced_idx on public.courses (synced_at desc);
+
 create or replace function public.touch_conversation_updated_at()
 returns trigger language plpgsql as $func$
 begin
@@ -310,3 +347,109 @@ def _build_conversation(conv_row, msg_rows) -> Conversation:
         created_at=conv_row["created_at"],
         updated_at=conv_row["updated_at"],
     )
+
+
+# ─── Courses ─────────────────────────────────────────────────────────────────
+
+async def upsert_course(row: dict) -> None:
+    """Upsert de un curso. `row` debe incluir todas las hot columns + raw + brief_md."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            insert into public.courses (
+                country, slug, product_id, title, categoria, cedente,
+                duration_hours, modules_count, currency, regular_price,
+                sale_price, total_price, max_installments, price_installments,
+                is_free, url, image_url, excerpt, brief_md, raw,
+                source_cache, source_updated_at, synced_at
+            ) values (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb,
+                $21, $22, now()
+            )
+            on conflict (country, slug) do update set
+                product_id = excluded.product_id,
+                title = excluded.title,
+                categoria = excluded.categoria,
+                cedente = excluded.cedente,
+                duration_hours = excluded.duration_hours,
+                modules_count = excluded.modules_count,
+                currency = excluded.currency,
+                regular_price = excluded.regular_price,
+                sale_price = excluded.sale_price,
+                total_price = excluded.total_price,
+                max_installments = excluded.max_installments,
+                price_installments = excluded.price_installments,
+                is_free = excluded.is_free,
+                url = excluded.url,
+                image_url = excluded.image_url,
+                excerpt = excluded.excerpt,
+                brief_md = excluded.brief_md,
+                raw = excluded.raw,
+                source_cache = excluded.source_cache,
+                source_updated_at = excluded.source_updated_at,
+                synced_at = now()
+            """,
+            row["country"], row["slug"], row.get("product_id"),
+            row["title"], row.get("categoria"), row.get("cedente"),
+            row.get("duration_hours"), row.get("modules_count"),
+            row.get("currency"), row.get("regular_price"),
+            row.get("sale_price"), row.get("total_price"),
+            row.get("max_installments"), row.get("price_installments"),
+            bool(row.get("is_free", False)), row.get("url"),
+            row.get("image_url"), row.get("excerpt"),
+            row.get("brief_md"), json.dumps(row.get("raw", {}), default=str),
+            row.get("source_cache"), row.get("source_updated_at"),
+        )
+
+
+async def get_course(country: str, slug: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        r = await conn.fetchrow(
+            "select * from public.courses where country = $1 and slug = $2",
+            country.lower(), slug,
+        )
+    if not r:
+        return None
+    d = dict(r)
+    if isinstance(d.get("raw"), str):
+        d["raw"] = json.loads(d["raw"])
+    return d
+
+
+async def list_courses(country: str, limit: int = 200) -> list[dict]:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select country, slug, product_id, title, categoria, cedente,
+                   duration_hours, modules_count, currency, total_price,
+                   max_installments, price_installments, url, image_url,
+                   synced_at
+            from public.courses
+            where country = $1
+            order by title asc
+            limit $2
+            """,
+            country.lower(), limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def delete_missing_courses(country: str, keep_slugs: list[str]) -> int:
+    """Borra cursos de un país cuyo slug ya no viene del WP (curso discontinuado)."""
+    if not keep_slugs:
+        return 0
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        r = await conn.execute(
+            "delete from public.courses where country = $1 and slug <> all($2::text[])",
+            country.lower(), keep_slugs,
+        )
+    # r es "DELETE n"
+    try:
+        return int(r.split()[-1])
+    except Exception:
+        return 0

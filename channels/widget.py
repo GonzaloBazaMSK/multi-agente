@@ -276,18 +276,20 @@ async def process_widget_message(
                 "Sos el asistente de MSK Latam, plataforma de capacitación médica. "
                 "El usuario acaba de abrir el chat. "
                 "Generá UN saludo breve (2-3 oraciones), cálido y personalizado. "
-                "Si sabés el nombre, usá solo el primero. "
-                "Si conocés sus cursos, podés mencionar UNO O DOS usando el nombre EXACTO "
-                "que figura en los datos — nunca parafrasees ni inventes nombres de cursos. "
-                "Invitalo a consultar. "
-                "No listés datos. Solo el saludo, sin explicaciones."
+                "Reglas ESTRICTAS:\n"
+                "- Si sabés el nombre, usá solo el primero.\n"
+                "- Podés mencionar su profesión o especialidad si la tenés.\n"
+                "- NUNCA menciones nombres de cursos — ni los exactos ni paráfrasis.\n"
+                "- NUNCA inventes información que no esté en los datos.\n"
+                "- Invitalo a consultar sobre cursos o a explorar el catálogo.\n"
+                "- Solo el saludo, sin explicaciones."
             )
             if ctx:
                 system_txt += f"\n\nDatos del cliente:\n{ctx}"
             if page_slug:
                 system_txt += (
-                    f"\n\nEl usuario está viendo el curso «{page_slug}». "
-                    "Si es relevante, mencionalo naturalmente."
+                    f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
+                    "Podés mencionarlo como 'veo que estás explorando ese curso'."
                 )
 
             llm = ChatOpenAI(

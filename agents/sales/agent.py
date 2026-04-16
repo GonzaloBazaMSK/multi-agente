@@ -53,21 +53,36 @@ async def build_sales_agent(
         temperature=0.3,
     )
 
-    system_prompt = build_sales_prompt(country=country, channel=channel)
-
-    # Inyectar contexto del curso que está viendo el usuario
+    # --- STEP 1: resolver curso (si aplica) ---
+    course = None
     if page_slug:
         try:
             from integrations import courses_cache
             course = await courses_cache.get_course(country.lower(), page_slug)
-            if course and course.get("brief_md"):
-                system_prompt += _format_course_context(course, user_profile)
-            else:
+            if not (course and course.get("brief_md")):
                 logger.info("sales_agent_no_brief_for_slug", country=country, slug=page_slug)
+                course = None
         except Exception as e:
             logger.warning("sales_agent_brief_load_failed", error=str(e), slug=page_slug)
+            course = None
 
-    # Perfil del usuario (Zoho) — para personalizar el pitch
+    # --- STEP 2: construir HEADER prioritario con perfil del usuario ---
+    # Este bloque va ANTES del prompt maestro para que el LLM lo lea primero
+    # y no se le pierda entre 25KB de instrucciones.
+    priority_header = _build_priority_profile_header(
+        user_profile=user_profile,
+        course=course,
+    )
+
+    # --- STEP 3: ensamblar system prompt ---
+    base_prompt = build_sales_prompt(country=country, channel=channel)
+    system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
+
+    # --- STEP 4: append contexto del curso (brief completo + instrucción contextual) al final ---
+    if course:
+        system_prompt += _format_course_context(course, user_profile)
+
+    # --- STEP 5: fallback — perfil suelto cuando no hay page_slug ---
     if user_profile and not page_slug:
         prof_ctx = _format_user_profile(user_profile)
         if prof_ctx:
@@ -81,6 +96,118 @@ async def build_sales_agent(
     return agent
 
 
+def _build_priority_profile_header(
+    user_profile: Optional[dict],
+    course: Optional[dict],
+) -> str:
+    """
+    Header de MÁXIMA prioridad que se inyecta al INICIO del system prompt.
+    Su propósito: que el LLM vea los datos del usuario ANTES de los 25KB de
+    reglas/intents, para que no los ignore en el pitch.
+
+    Si no hay datos personales → retorna "" y no se agrega ruido.
+    """
+    if not user_profile:
+        return ""
+
+    name = user_profile.get("name") or user_profile.get("Full_Name") or ""
+    prof = user_profile.get("profession") or user_profile.get("Profession") or ""
+    spec = user_profile.get("specialty") or user_profile.get("Specialty") or ""
+    cargo = user_profile.get("cargo") or ""
+    lugar = user_profile.get("lugar_trabajo") or ""
+    area = user_profile.get("area_trabajo") or ""
+    colegio = user_profile.get("colegio") or ""
+    interests = user_profile.get("interests") or ""
+    courses_done = user_profile.get("courses") or []
+
+    # Si realmente no hay nada útil, no agregues nada
+    if not any([name, prof, spec, cargo, lugar, area, colegio]):
+        return ""
+
+    lines = [
+        "# 🎯 DATOS DEL USUARIO — USALOS EN CADA RESPUESTA (LEER PRIMERO)",
+        "",
+        "Este es el perfil del usuario con el que estás hablando AHORA MISMO. ",
+        "**NO es contexto opcional — es lo que te permite vender.** Usá estos datos en:",
+        "  (a) la LÍNEA DE APERTURA del pitch ('Gonzalo, para vos que sos [cargo] en [área]…')",
+        "  (b) la mención de certificaciones jurisdiccionales (nombrá SU colegio, no la lista de 5)",
+        "  (c) la adaptación del registro técnico según cargo/profesión",
+        "",
+        "## Datos del cliente",
+    ]
+
+    if name:
+        lines.append(f"- **Nombre:** {name}")
+    if prof:
+        lines.append(f"- **Profesión:** {prof}")
+    if spec:
+        lines.append(f"- **Especialidad:** {spec}")
+    if cargo:
+        lines.append(f"- **Cargo:** {cargo}")
+    if lugar:
+        lines.append(f"- **Lugar de trabajo:** {lugar}")
+    if area:
+        lines.append(f"- **Área donde trabaja:** {area}")
+    if colegio:
+        lines.append(f"- **Matrícula activa en:** {colegio}")
+    if interests:
+        lines.append(f"- **Intereses declarados:** {interests}")
+    if courses_done:
+        if isinstance(courses_done, list):
+            cs = ", ".join(str(c) for c in courses_done[:5])
+        else:
+            cs = str(courses_done)
+        lines.append(f"- **Cursos que ya hizo en MSK:** {cs}")
+
+    # Directiva crítica sobre colegio con aval jurisdiccional
+    if colegio:
+        lines.extend([
+            "",
+            "## ⚠️ REGLA CRÍTICA — Colegio con aval jurisdiccional",
+            "",
+            f"El usuario tiene matrícula activa en: **{colegio}**.",
+            "",
+            "Si ese colegio matchea con alguno de los 5 con aval jurisdiccional de MSK:",
+            "  - **COLEMEMI** — Colegio de Médicos de Misiones",
+            "  - **COLMEDCAT** — Colegio de Médicos de Catamarca",
+            "  - **CSMLP** — Consejo Superior Médico de La Pampa",
+            "  - **CMSC** — Consejo Médico de Santa Cruz",
+            "  - **CMSF1** — Colegio de Médicos de Santa Fe 1ra",
+            "",
+            "**ENTONCES, cuando hables del curso o de certificaciones, mencionalo PROACTIVAMENTE "
+            f"con el NOMBRE ESPECÍFICO del colegio del usuario** (ej: 'te suma el aval de COLEMEMI sin costo'). ",
+            "**PROHIBIDO** tirar la lista genérica de los 5 — eso se lee como que ignoraste su matrícula.",
+        ])
+
+    # Instrucción de personalización si tenemos perfil + curso
+    if course and (cargo or prof or spec or area or lugar):
+        title = course.get("title") or ""
+        lines.extend([
+            "",
+            "## ⚠️ APERTURA DEL PITCH — OBLIGATORIA",
+            "",
+            f"El usuario está viendo el curso **{title}**. Cuando presentes el curso por primera vez, ",
+            "**la primera oración debe conectar SU perfil con un beneficio concreto del curso**.",
+            "",
+            "**PROHIBIDO** arrancar con:",
+            "  - '¿A quién está dirigido?' (ya sabés quién es)",
+            "  - 'El curso está diseñado para médicos que…' (genérico, no lo personaliza)",
+            "  - Cualquier fórmula que ignore el cargo/lugar/área que tenés arriba",
+            "",
+            "**EN CAMBIO** arrancá con algo como:",
+            f"  - '{name or 'Hola'}, para vos que {(('sos ' + (cargo.lower() if cargo else prof.lower())) if (cargo or prof) else 'trabajás en el área')}"
+            f"{(' de ' + spec.lower()) if spec else ''}"
+            f"{(', en ' + lugar) if lugar else ''}, este curso te sirve especialmente porque…'",
+        ])
+
+    lines.extend([
+        "",
+        "---",
+        "",
+    ])
+    return "\n".join(lines)
+
+
 def _format_course_context(course: dict, user_profile: Optional[dict] = None) -> str:
     """Arma el bloque del curso + instrucción de venta contextualizada."""
     brief = course.get("brief_md") or ""
@@ -92,6 +219,13 @@ def _format_course_context(course: dict, user_profile: Optional[dict] = None) ->
         prof = user_profile.get("profession") or user_profile.get("Profession") or ""
         spec = user_profile.get("specialty") or user_profile.get("Specialty") or ""
         name = user_profile.get("name") or user_profile.get("Full_Name") or ""
+        cargo = user_profile.get("cargo") or ""
+        lugar = user_profile.get("lugar_trabajo") or ""
+        area = user_profile.get("area_trabajo") or ""
+        colegio = user_profile.get("colegio") or ""
+        interests = user_profile.get("interests") or ""
+        courses_done = user_profile.get("courses") or []
+
         bits = []
         if name:
             bits.append(f"se llama **{name}**")
@@ -99,8 +233,35 @@ def _format_course_context(course: dict, user_profile: Optional[dict] = None) ->
             bits.append(f"profesión: **{prof}**")
         if spec:
             bits.append(f"especialidad: **{spec}**")
+        if cargo:
+            bits.append(f"cargo: **{cargo}**")
+        if lugar:
+            bits.append(f"lugar de trabajo: **{lugar}**")
+        if area:
+            bits.append(f"área donde trabaja: **{area}**")
         if bits:
             profile_line = "- El usuario " + ", ".join(bits) + ".\n"
+
+        # Matrícula / Colegio — crítico para jurisdiccionales AR
+        if colegio:
+            profile_line += (
+                f"- **Matrícula activa en: {colegio}**. "
+                "Si matchea con uno de los 5 colegios argentinos con aval "
+                "jurisdiccional (COLEMEMI-Misiones, COLMEDCAT-Catamarca, "
+                "CSMLP-La Pampa, CMSC-Santa Cruz, CMSF1-Santa Fe), **mencionalo "
+                "proactivamente al hablar de certificaciones o del curso** "
+                "diciendo el nombre del colegio del usuario (NO la lista de 5).\n"
+            )
+
+        if interests:
+            profile_line += f"- Intereses declarados: {interests}.\n"
+
+        if courses_done:
+            if isinstance(courses_done, list):
+                cs = ", ".join(str(c) for c in courses_done[:5])
+            else:
+                cs = str(courses_done)
+            profile_line += f"- Cursos que ya realizó en MSK: {cs}.\n"
 
     return f"""
 
@@ -135,6 +296,10 @@ def _format_user_profile(user_profile: dict) -> str:
     """Contexto liviano del usuario cuando NO hay page_slug (navegación genérica)."""
     prof = user_profile.get("profession") or user_profile.get("Profession") or ""
     spec = user_profile.get("specialty") or user_profile.get("Specialty") or ""
+    cargo = user_profile.get("cargo") or ""
+    lugar = user_profile.get("lugar_trabajo") or ""
+    area = user_profile.get("area_trabajo") or ""
+    colegio = user_profile.get("colegio") or ""
     interests = user_profile.get("interests") or user_profile.get("Interests") or ""
     courses = user_profile.get("courses") or user_profile.get("Courses") or []
 
@@ -143,6 +308,20 @@ def _format_user_profile(user_profile: dict) -> str:
         bits.append(f"Profesión: {prof}")
     if spec:
         bits.append(f"Especialidad: {spec}")
+    if cargo:
+        bits.append(f"Cargo: {cargo}")
+    if lugar:
+        bits.append(f"Lugar de trabajo: {lugar}")
+    if area:
+        bits.append(f"Área donde trabaja: {area}")
+    if colegio:
+        bits.append(
+            f"Matrícula activa en: {colegio} — **si matchea con uno de los 5 "
+            "colegios AR con aval jurisdiccional (COLEMEMI-Misiones, "
+            "COLMEDCAT-Catamarca, CSMLP-La Pampa, CMSC-Santa Cruz, "
+            "CMSF1-Santa Fe), mencionalo proactivamente al hablar de "
+            "certificaciones** diciendo el nombre del colegio del usuario."
+        )
     if interests:
         bits.append(f"Intereses: {interests}")
     if courses:

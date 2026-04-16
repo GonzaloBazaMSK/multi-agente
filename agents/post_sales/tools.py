@@ -13,11 +13,13 @@ logger = structlog.get_logger(__name__)
 
 
 @tool
-async def get_student_info(phone: str = "", contact_id: str = "") -> str:
+async def get_student_info(email: str = "", phone: str = "", contact_id: str = "") -> str:
     """
     Obtiene información del alumno: cursos inscriptos, estado de acceso y pagos.
+    Prioridad de búsqueda: contact_id > email > phone.
 
     Args:
+        email: Email del alumno (forma preferida de identificación)
         phone: Teléfono del alumno (con código de país)
         contact_id: ID del contacto en Zoho (si ya se conoce)
     """
@@ -27,11 +29,13 @@ async def get_student_info(phone: str = "", contact_id: str = "") -> str:
     contact = None
     if contact_id:
         contact = await contacts.get(contact_id)
-    elif phone:
+    if not contact and email:
+        contact = await contacts.search_by_email(email)
+    if not contact and phone:
         contact = await contacts.search_by_phone(phone)
 
     if not contact:
-        return "No encontré un alumno registrado con esos datos. ¿Podés verificar el teléfono o email?"
+        return "No encontré un alumno registrado con esos datos. ¿Podés verificar el email?"
 
     name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
     c_id = contact.get("id", "")

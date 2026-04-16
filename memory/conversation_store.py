@@ -30,6 +30,9 @@ logger = structlog.get_logger(__name__)
 
 
 class ConversationStore:
+    _pg_consecutive_failures: int = 0
+    _PG_FAILURE_THRESHOLD: int = 5
+
     def __init__(self, redis_client: aioredis.Redis):
         self._redis = redis_client
 
@@ -103,10 +106,32 @@ class ConversationStore:
             asyncio.create_task(self._save_to_postgres(conversation))
 
     async def _save_to_postgres(self, conversation: Conversation) -> None:
-        try:
-            await postgres_store.save_conversation(conversation)
-        except Exception as e:
-            logger.error("postgres_write_failed", conversation_id=conversation.id, error=str(e))
+        """Write to Postgres with one automatic retry on failure."""
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                await postgres_store.save_conversation(conversation)
+                if self._pg_consecutive_failures > 0:
+                    logger.info("postgres_write_recovered",
+                                conversation_id=conversation.id,
+                                after_failures=self._pg_consecutive_failures)
+                ConversationStore._pg_consecutive_failures = 0
+                return
+            except Exception as e:
+                ConversationStore._pg_consecutive_failures += 1
+                if attempt < max_retries:
+                    logger.warning("postgres_write_retrying",
+                                   conversation_id=conversation.id,
+                                   error=str(e), attempt=attempt)
+                    await asyncio.sleep(1.0)
+                else:
+                    level = "critical" if self._pg_consecutive_failures >= self._PG_FAILURE_THRESHOLD else "error"
+                    getattr(logger, level)(
+                        "postgres_write_failed",
+                        conversation_id=conversation.id,
+                        error=str(e),
+                        consecutive_failures=self._pg_consecutive_failures,
+                    )
 
     async def get_or_create(
         self,

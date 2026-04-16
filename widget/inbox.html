@@ -2822,7 +2822,7 @@ async function loadConversations() {
 }
 
 // ─── Conversation panel ───────────────────────────────────────────────────────
-async function selectConv(sessionId) {
+async function selectConv(sessionId, skipPush) {
   activeSessionId = sessionId;
   unreadCounts[sessionId] = 0;
   switchTab('msgs'); // reset al tab de mensajes al cambiar conversación
@@ -2832,6 +2832,10 @@ async function selectConv(sessionId) {
   // Re-afirmar estado del panel según preferencia (por si algo lo cerró)
   applyCRMPanelState();
   if (crmOpen) loadContactProfile(sessionId);
+  // Deep-link: actualizar URL para compartir
+  if (!skipPush) {
+    history.pushState({sid: sessionId}, '', '/inbox-ui/' + sessionId);
+  }
 }
 
 let _loadConvCooldown = {};
@@ -3256,6 +3260,10 @@ function renderCobranzas(data, sessionId, container) {
   html += '<div style="font-size:28px">' + estadoIcon + '</div>';
   html += '<div style="font-size:14px;font-weight:700;color:' + estadoColor + ';margin-top:4px">' + esc(estadoText) + '</div>';
   html += '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + esc(c.alumno || '') + '</div>';
+  if (c.cobranzaId) {
+    var adcUrl = 'https://crm.zoho.com/crm/msklatam/tab/CustomModule20/' + c.cobranzaId;
+    html += '<a class="crm-link" href="' + adcUrl + '" target="_blank" rel="noopener" style="margin-top:6px;display:inline-block">🔗 Ver registro en Zoho CRM ↗</a>';
+  }
   html += '</div>';
 
   // Resumen financiero
@@ -5491,6 +5499,19 @@ function handleRemoteTyping(sessionId, agentName, typing) {
   }
 }
 
+// ─── Deep-link: abrir conversación por URL (/inbox-ui/{session_id}) ──────────
+function getSessionIdFromURL() {
+  var match = window.location.pathname.match(/\/inbox-ui\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
+window.addEventListener('popstate', function(e) {
+  var sid = (e.state && e.state.sid) ? e.state.sid : getSessionIdFromURL();
+  if (sid) {
+    selectConv(sid, true);
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   verifySession().then(() => { loadAgentList(); loadQuickReplies(); });
   const ri = document.getElementById('replyInput');
@@ -5504,7 +5525,11 @@ document.addEventListener('DOMContentLoaded', () => {
       onReplyInputChange();
     });
   }
-  loadConversations();
+  loadConversations().then(() => {
+    // Si la URL tiene un session_id, abrirlo automáticamente
+    var deepSid = getSessionIdFromURL();
+    if (deepSid) selectConv(deepSid, true);
+  });
   connectSSE();
   setInterval(loadConversations, 30000);
   // Desktop notifications + sound

@@ -11,6 +11,24 @@ import structlog
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/admin/redis", tags=["redis-admin"])
 
+# Prefijos protegidos — no se pueden borrar vía delete-pattern ni delete-key
+# para evitar eliminar accidentalmente sesiones de admin o config del widget.
+PROTECTED_PREFIXES = ("session:", "flow:", "widget:config")
+
+
+def _is_protected_key(key: str) -> bool:
+    """Retorna True si la clave pertenece a un prefijo protegido."""
+    return any(key.startswith(p) for p in PROTECTED_PREFIXES)
+
+
+def _pattern_hits_protected(pattern: str) -> bool:
+    """Retorna True si el patrón de glob podría borrar claves protegidas."""
+    for prefix in PROTECTED_PREFIXES:
+        # "session:*" matchea "session:", "*" matchea todo
+        if pattern == "*" or prefix.startswith(pattern.rstrip("*")):
+            return True
+    return False
+
 
 async def _redis():
     from memory.conversation_store import get_conversation_store
@@ -116,25 +134,31 @@ async def get_key(key: str, user: dict = Depends(require_role("admin"))):
 
 @router.delete("/key")
 async def delete_key(key: str, user: dict = Depends(require_role("admin"))):
-    """Elimina una clave."""
+    """Elimina una clave (excepto claves protegidas: session:*, flow:*, widget:config)."""
+    if _is_protected_key(key):
+        raise HTTPException(status_code=403, detail=f"Clave protegida — no se puede eliminar: {key}")
     r = await _redis()
     deleted = await r.delete(key)
-    logger.info("redis_admin_delete_key", key=key, deleted=deleted)
+    logger.info("redis_admin_delete_key", key=key, deleted=deleted, by=user.get("username"))
     return {"deleted": deleted, "key": key}
 
 
 @router.post("/delete-pattern")
 async def delete_by_pattern(req: DeletePatternRequest, user: dict = Depends(require_role("admin"))):
-    """Elimina todas las claves que coincidan con el patrón."""
+    """Elimina claves que coincidan con el patrón (excepto claves protegidas)."""
     if not req.pattern or req.pattern.strip() == "*":
         raise HTTPException(status_code=400, detail="Patrón demasiado amplio — especificá un prefijo")
+    if _pattern_hits_protected(req.pattern):
+        raise HTTPException(status_code=403, detail=f"El patrón '{req.pattern}' afecta claves protegidas (session:*, flow:*, widget:config)")
     r = await _redis()
     keys = []
     async for key in r.scan_iter(req.pattern, count=500):
-        keys.append(key.decode() if isinstance(key, bytes) else key)
+        k = key.decode() if isinstance(key, bytes) else key
+        if not _is_protected_key(k):
+            keys.append(k)
     if keys:
         await r.delete(*keys)
-    logger.info("redis_admin_delete_pattern", pattern=req.pattern, count=len(keys))
+    logger.info("redis_admin_delete_pattern", pattern=req.pattern, count=len(keys), by=user.get("username"))
     return {"deleted": len(keys), "keys": keys}
 
 

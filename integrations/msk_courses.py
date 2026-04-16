@@ -311,85 +311,182 @@ def build_brief_md(item: dict, country: str) -> str:
                     lines.append(f"- {txt}")
         lines.append("")
 
-    # ── Instituciones avalantes
-    # Separamos explícitamente las certificaciones JURISDICCIONALES AR
-    # (colegios/consejos médicos provinciales que exigen matrícula) del
-    # aval principal (UDIMA, internacional) y avales de otros países.
-    insts = (item.get("sections") or {}).get("institutions") or []
-    if insts:
+    # ── Instituciones avalantes / Certificaciones
+    # El WP publica avales en DOS campos que pueden estar poblados o vacíos
+    # según la versión del plugin:
+    #   - `sections.institutions` → lista con {title, description}
+    #   - `certificacion_relacionada` → lista con {title, total_price, currency}
+    # Unificamos ambas fuentes y clasificamos por heurística en 3 grupos:
+    #   1) Aval principal (UDIMA / internacional)          → aplica a TODOS
+    #   2) Jurisdiccionales AR (colegios/consejos médicos) → solo si está matriculado
+    #   3) Otros países / convenios locales                → informativo
+    insts_src = (item.get("sections") or {}).get("institutions") or []
+    certs_src = item.get("certificacion_relacionada") or []
+
+    # Normalizamos ambas fuentes a {title, description, price_str} y
+    # deduplicamos por título normalizado.
+    merged: list[dict] = []
+    seen_titles: set[str] = set()
+
+    def _norm_title(s: str) -> str:
+        return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+    for inst in insts_src:
+        if not isinstance(inst, dict):
+            continue
+        t = html.unescape(inst.get("title", "") or "")
+        key = _norm_title(t)
+        if not t or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        merged.append({
+            "title": t,
+            "description": html_to_text(inst.get("description", "")),
+            "price_str": "",
+        })
+
+    for c in certs_src:
+        if not isinstance(c, dict):
+            continue
+        t = html.unescape(c.get("title", "") or "")
+        key = _norm_title(t)
+        if not t or key in seen_titles:
+            continue
+        seen_titles.add(key)
+        price_str = ""
+        p = _to_float(c.get("total_price")) or _to_float(c.get("regular_price"))
+        if p and p > 0:
+            price_str = f"{c.get('currency', '')} {p:,.0f}".strip()
+        merged.append({
+            "title": t,
+            "description": "",
+            "price_str": price_str,
+        })
+
+    if merged:
         is_ar = country.lower() == "ar"
-        # Heurística: el aval es jurisdiccional AR si la descripción dice
-        # "matriculados" o el título menciona Colegio/Consejo + provincia argentina.
         jurisdiccionales_ar: list[dict] = []
         aval_principal: list[dict] = []
-        otros_paises: list[dict] = []
-        for inst in insts:
-            d = html_to_text(inst.get("description", ""))
-            t = inst.get("title", "")
-            dl = d.lower()
-            tl = t.lower()
-            if ("matricul" in dl and "argentina" in dl) or \
-               any(x in tl for x in ["colegio de médicos", "consejo médico", "consejo superior médico", "colmedcat", "colememi", "csmlp", "cmsc", "cmsf"]):
-                jurisdiccionales_ar.append(inst)
-            elif "udima" in tl or "internacional" in dl.lower():
-                aval_principal.append(inst)
+        otros: list[dict] = []
+
+        # Heurísticas sobre título + descripción combinados.
+        # Jurisdiccional AR = colegio/consejo médico provincial argentino
+        # (COLEMEMI, COLMEDCAT, CSMLP, CMSC, CMSF, o texto explícito).
+        for m in merged:
+            tl = m["title"].lower()
+            dl = m["description"].lower()
+            combined = f"{tl} {dl}"
+            if any(x in combined for x in [
+                "colegio de médicos", "colegio médico",
+                "consejo médico", "consejo superior médico",
+                "colmedcat", "colememi", "csmlp", "cmsc", "cmsf",
+                "misiones", "catamarca", "la pampa", "santa cruz", "santa fe",
+            ]) or ("matricul" in combined and "argentina" in combined):
+                jurisdiccionales_ar.append(m)
+            elif "udima" in tl or "internacional" in dl or "amir" in tl:
+                aval_principal.append(m)
             else:
-                otros_paises.append(inst)
+                otros.append(m)
 
-        lines.append("## Instituciones avalantes")
+        lines.append("## Certificaciones disponibles")
 
-        if aval_principal:
-            lines.append("### Aval principal (todos los países)")
-            for inst in aval_principal:
-                t = inst.get("title", "")
-                d = html_to_text(inst.get("description", ""))
-                if t:
-                    lines.append(f"- **{t}**" + (f" — {d}" if d else ""))
+        # ── Certificación MSK Digital — constante del negocio, NO viene del JSON.
+        # Todos los cursos PAGOS incluyen MSK Digital bonificada (sin costo adicional).
+        # Para cursos gratuitos (is_free=True) NO aplica.
+        is_free_course = bool(prices.get("is_free", False))
+        if not is_free_course:
+            lines.append("### Certificación MSK Digital (incluida — bonificada con tu inscripción)")
+            lines.append(
+                "- **Certificado MSK Digital** — viene incluido sin costo adicional "
+                "con la inscripción al curso. Es el certificado base que acredita "
+                "la formación. **Mencionalo como valor de entrada en el pitch.**"
+            )
+            lines.append("")
+
+        # Separar avales principales en:
+        #   - INCLUIDOS (sin precio) → aval conceptual, se puede mencionar como valor
+        #   - OPCIONALES CON COSTO (precio > 0, ej. UDIMA) → NO mencionar de entrada
+        aval_incluidos = [m for m in aval_principal if not m["price_str"]]
+        aval_opcionales_pagos = [m for m in aval_principal if m["price_str"]]
+
+        if aval_incluidos:
+            lines.append("### Aval académico principal (incluido)")
+            for m in aval_incluidos:
+                line = f"- **{m['title']}**"
+                if m["description"]:
+                    line += f" — {m['description']}"
+                lines.append(line)
+            lines.append("")
+
+        if aval_opcionales_pagos:
+            lines.append("### Certificación universitaria opcional (APARTE del precio del curso)")
+            lines.append(
+                "> **IMPORTANTE:** Estas certificaciones son **opcionales** y tienen "
+                "**costo adicional aparte del precio del curso**. "
+                "**NO las menciones en el primer pitch ni al listar cursos.** "
+                "Solo comunicalas si el usuario pregunta puntualmente por "
+                "certificación universitaria, UDIMA, o validez académica extendida. "
+                "Al comunicarlas, aclará siempre: *'es opcional y se paga aparte'*."
+            )
+            for m in aval_opcionales_pagos:
+                line = f"- **{m['title']}**"
+                if m["description"]:
+                    line += f" — {m['description']}"
+                if m["price_str"]:
+                    line += f" — **costo adicional:** {m['price_str']}"
+                lines.append(line)
             lines.append("")
 
         if is_ar and jurisdiccionales_ar:
             lines.append("### Certificaciones de alcance jurisdiccional en Argentina")
             lines.append(
-                "> Las siguientes certificaciones **solo aplican si el profesional "
-                "está matriculado** en cada institución. No son obligatorias — son "
-                "avales adicionales disponibles para quienes ya tienen matrícula."
+                "> **Solo aplican si el profesional está matriculado** en cada "
+                "institución. No son obligatorias — son avales adicionales "
+                "disponibles para quienes ya tienen matrícula. No las ofrezcas "
+                "por defecto, solo si el usuario pregunta por avales locales, "
+                "menciona su provincia o confirma que está matriculado."
             )
-            for inst in jurisdiccionales_ar:
-                t = inst.get("title", "")
-                if t:
-                    lines.append(f"- **{t}**")
+            for m in jurisdiccionales_ar:
+                line = f"- **{m['title']}**"
+                if m["description"]:
+                    line += f" — {m['description']}"
+                lines.append(line)
             lines.append("")
             lines.append(
-                "**Cómo venderlo**: cuando un médico pregunte por avales, primero "
-                "mencioná el aval principal (UDIMA, internacional). Si pregunta por "
-                "avales locales AR o si vive en Misiones / Catamarca / La Pampa / "
-                "Santa Cruz / Santa Fe, aclarale que también puede obtener el aval "
-                "de su consejo/colegio provincial **si está matriculado ahí**."
+                "**Cómo comunicarlo**: En el primer pitch SOLO mencionás el "
+                "certificado MSK Digital (incluido/bonificado). "
+                "Si el usuario está logueado y su ficha Zoho indica matrícula "
+                "en alguno de estos colegios/consejos, podés mencionarlo "
+                "proactivamente como beneficio adicional sin costo. "
+                "Si el usuario pregunta por avales locales AR o menciona "
+                "matrícula provincial, aclarale que puede sumar la certificación "
+                "de su colegio/consejo **sin costo, si está matriculado ahí**."
+            )
+            lines.append("")
+        elif is_ar:
+            # No vinieron jurisdiccionales en el payload, pero el agente
+            # igual tiene que manejar la pregunta si surge.
+            lines.append("### Avales jurisdiccionales en Argentina")
+            lines.append(
+                "> Si el usuario pregunta por avales locales AR, aclarale que "
+                "MSK trabaja con colegios/consejos médicos provinciales "
+                "(COLEMEMI — Misiones, COLMEDCAT — Catamarca, CSMLP — La Pampa, "
+                "CMSC — Santa Cruz, CMSF1 — Santa Fe), pero **estas "
+                "certificaciones solo aplican si el profesional está "
+                "matriculado** en esas instituciones. No son obligatorias."
             )
             lines.append("")
 
-        if otros_paises:
-            lines.append("### Avales en otros países (no aplican para este usuario)")
-            for inst in otros_paises[:8]:
-                t = inst.get("title", "")
-                d = html_to_text(inst.get("description", ""))
-                if t:
-                    lines.append(f"- {t}" + (f" — {d}" if d else ""))
-            lines.append("")
-
-    # ── Certificaciones adicionales
-    certs = item.get("certificacion_relacionada") or []
-    if certs:
-        lines.append("## Certificaciones adicionales disponibles")
-        for c in certs[:10]:
-            t = html.unescape(c.get("title", ""))
-            p = _to_float(c.get("total_price")) or _to_float(c.get("regular_price"))
-            if t:
-                line = f"- {t}"
-                if p:
-                    line += f" ({c.get('currency', '')} {p:,.0f})"
+        if otros:
+            lines.append("### Otros avales / convenios")
+            for m in otros[:10]:
+                line = f"- {m['title']}"
+                if m["description"]:
+                    line += f" — {m['description']}"
+                if m["price_str"]:
+                    line += f" ({m['price_str']})"
                 lines.append(line)
-        lines.append("")
+            lines.append("")
 
     # ── Equipo docente (top 5 — coordinadores + autores destacados)
     team = (item.get("sections") or {}).get("teaching_team") or []

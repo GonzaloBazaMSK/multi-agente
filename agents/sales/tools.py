@@ -216,62 +216,51 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
 
 @tool
 async def create_payment_link(
-    course_id: str,
     course_name: str,
     price: float,
     currency: str,
     country: str,
     customer_email: str,
     customer_name: str,
-    zoho_order_id: str = "",
-    use_rebill: bool = False,
-    rebill_plan_id: str = "",
 ) -> str:
     """
-    Genera un link de pago para la inscripción al curso.
-    Usa Rebill si el curso tiene plan de suscripción (cuotas), sino MercadoPago (pago único).
+    Genera un link de pago (Rebill) para la inscripción al curso.
+    El link se genera con cuotas habilitadas según el país del usuario.
 
     Args:
-        course_id: ID interno del curso
-        course_name: Nombre del curso
-        price: Precio total
-        currency: Moneda (ARS, MXN, COP, etc.)
-        country: País del usuario
+        course_name: Nombre del curso (ej: "Curso Superior de Cardiología AMIR")
+        price: Precio TOTAL del curso (no el de la cuota — el total)
+        currency: Moneda (ARS, MXN, COP, CLP, PEN, UYU)
+        country: País del usuario (AR, MX, CO, CL, PE, UY)
         customer_email: Email del cliente
         customer_name: Nombre completo del cliente
-        zoho_order_id: ID de la orden en Zoho (opcional, para referencia)
-        use_rebill: Si True, genera link de suscripción Rebill (cuotas)
-        rebill_plan_id: ID del plan en Rebill (requerido si use_rebill=True)
     """
-    external_ref = zoho_order_id or f"{course_id}_{customer_email}"
-    settings = get_settings()
-
-    if use_rebill and rebill_plan_id:
+    try:
         client = RebillClient()
-        name_parts = customer_name.strip().split(" ", 1)
-        result = await client.create_subscription_link(
-            plan_id=rebill_plan_id,
-            customer={
-                "email": customer_email,
-                "first_name": name_parts[0],
-                "last_name": name_parts[1] if len(name_parts) > 1 else "",
-                "phone": "",
-            },
-            external_reference=external_ref,
-        )
-        url = result.get("checkout_url", "")
-        return f"Link de pago en cuotas generado:\n{url}\n\n_ID suscripción: {result.get('subscription_id', '')}_"
-    else:
-        client_mp = MercadoPagoClient()
-        result = await client_mp.create_payment_link(
+        result = await client.create_payment_link(
             title=course_name,
-            price=price,
+            amount=price,
             currency=currency,
-            payer_email=customer_email,
-            external_reference=external_ref,
+            country=country,
+            customer_email=customer_email,
+            customer_name=customer_name,
+            is_single_use=True,
         )
         url = result.get("checkout_url", "")
-        return f"Link de pago generado:\n{url}\n\n_Preference ID: {result.get('preference_id', '')}_"
+        if not url:
+            return "No pude generar el link de pago. Contactá a soporte@msklatam.com para completar la inscripción."
+
+        link_id = result.get("link_id", "")
+        logger.info("payment_link_sent", course=course_name, email=customer_email, link_id=link_id)
+        return f"Link de pago generado exitosamente:\n{url}"
+
+    except Exception as e:
+        logger.error("create_payment_link_failed", error=str(e), course=course_name, email=customer_email)
+        return (
+            "Hubo un error al generar el link de pago. "
+            "El usuario puede inscribirse directamente en soporte@msklatam.com "
+            "o al WhatsApp de MSK indicando el curso y sus datos."
+        )
 
 
 @tool

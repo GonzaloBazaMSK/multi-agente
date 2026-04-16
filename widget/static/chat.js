@@ -698,6 +698,7 @@
           user_name: CONFIG.userName,
           user_courses: CONFIG.userCourses,
           page_slug: CONFIG.pageSlug,
+          country: country,
         }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -767,6 +768,7 @@
           user_name: CONFIG.userName,
           user_courses: CONFIG.userCourses,
           page_slug: CONFIG.pageSlug,
+          country: country,
         }),
       });
       if (!res.ok) return;

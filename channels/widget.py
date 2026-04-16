@@ -15,7 +15,7 @@ from models.message import Message, MessageRole
 from memory.conversation_store import get_conversation_store
 from agents.router import route_message
 from integrations.notifications import notify_handoff
-from config.constants import Channel, ConversationStatus, MAX_HISTORY_MESSAGES
+from config.constants import AgentType, Channel, ConversationStatus, MAX_HISTORY_MESSAGES
 from agents.routing.widget_flow import (
     init_state as wflow_init,
     process_step as wflow_step,
@@ -25,6 +25,73 @@ from agents.routing.widget_flow import (
 from utils.conv_events import log_event, log_action, log_error
 
 logger = structlog.get_logger(__name__)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+async def _resolve_course_title(page_slug: str, country: str) -> str:
+    """
+    Resuelve el título real del curso a partir del slug de la página.
+    Lee de Redis/Postgres vía courses_cache — no pega al WP.
+    Devuelve "" si no encuentra (el prompt cae al fallback genérico).
+    """
+    if not page_slug or not country:
+        return ""
+    try:
+        from integrations.courses_cache import get_course
+        course = await get_course(country, page_slug)
+        if course:
+            return course.get("title") or ""
+    except Exception as e:
+        logger.warning("resolve_course_title_failed", slug=page_slug, country=country, error=str(e))
+    return ""
+
+
+async def _resolve_course_mini_brief(page_slug: str, country: str) -> dict:
+    """
+    Devuelve un mini-brief del curso para inyectar en el saludo personalizado:
+      { title, short_desc, perfiles: [list of short profile strings] }
+    Si no está en catálogo, devuelve {} y el saludo cae al template genérico.
+    """
+    if not page_slug or not country:
+        return {}
+    try:
+        from integrations.courses_cache import get_course_deep
+        course = await get_course_deep(country, page_slug)
+        if not course:
+            return {}
+        title = course.get("title") or ""
+        raw = course.get("raw") or course  # get_course_deep devuelve JSONB crudo
+        # Descripción corta (excerpt) — campo "description_short" en el schema MSK.
+        short_desc = (
+            course.get("description_short")
+            or (raw.get("description_short") if isinstance(raw, dict) else "")
+            or ""
+        )
+        # Perfiles dirigidos — el gold para conectar profesión × curso.
+        perfiles: list[str] = []
+        try:
+            kb = (raw.get("kb_ai") or {}) if isinstance(raw, dict) else {}
+            pdir = kb.get("perfiles_dirigidos") or []
+            for p in pdir[:5]:
+                if not isinstance(p, dict):
+                    continue
+                nombre = (p.get("perfil") or p.get("nombre") or "").strip()
+                dolor = (p.get("dolor") or p.get("problema") or "").strip()
+                gain = (p.get("obtiene") or p.get("beneficio") or p.get("que_obtiene") or "").strip()
+                if nombre:
+                    trozo = nombre
+                    if dolor:
+                        trozo += f" — dolor: {dolor[:140]}"
+                    if gain:
+                        trozo += f" — obtiene: {gain[:140]}"
+                    perfiles.append(trozo)
+        except Exception:
+            pass
+        return {"title": title, "short_desc": short_desc[:400], "perfiles": perfiles}
+    except Exception as e:
+        logger.warning("resolve_course_mini_brief_failed", slug=page_slug, country=country, error=str(e))
+        return {}
 
 
 # ── Enriquecimiento de contexto ───────────────────────────────────────────────
@@ -212,11 +279,40 @@ async def _build_user_context(
                 esp_interes = _lst(contact.get("Especialidad_interes"))
                 intereses_ad = _lst(contact.get("Intereses_adicionales"))
                 contenido = _lst(contact.get("Contenido_Interes"))
+                # Campos nuevos — para cargo/lugar/colegio (registro técnico +
+                # matching de avales AR jurisdiccionales).
+                cargo = contact.get("Cargo", "") or ""
+                lugar_trabajo = contact.get("Lugar_de_trabajo", "") or ""
+                # Typo del API de Zoho — "tabaja" sin "r". Probamos el typo primero
+                # y caemos al nombre correcto si algún día lo arreglan.
+                area_trabajo = (
+                    contact.get("rea_donde_tabaja", "")
+                    or contact.get("rea_donde_trabaja", "")
+                    or ""
+                )
+                pertenece_colegio = bool(contact.get("Pertenece_a_un_colegio", False))
+                colegio_nombre = _lst(contact.get("Colegio_Sociedad_o_Federaci_n"))
 
                 if profesion and not any("Profesión" in l for l in lines):
                     lines.append(f"Profesión: {profesion}")
                 if especialidad and not any("Especialidad:" in l for l in lines):
                     lines.append(f"Especialidad: {especialidad}")
+                if cargo:
+                    lines.append(f"Cargo: {cargo}")
+                if lugar_trabajo:
+                    lines.append(f"Lugar de trabajo: {lugar_trabajo}")
+                if area_trabajo:
+                    lines.append(f"Área donde trabaja: {area_trabajo}")
+                if pertenece_colegio and colegio_nombre:
+                    lines.append(
+                        f"Matrícula activa en colegio/sociedad: {colegio_nombre} "
+                        "(aplicable para certificaciones jurisdiccionales AR si el curso las ofrece)"
+                    )
+                elif pertenece_colegio:
+                    lines.append(
+                        "Pertenece a un colegio/sociedad/federación "
+                        "(nombre no especificado)"
+                    )
                 if esp_interes:
                     lines.append(f"Especialidades de interés: {esp_interes}")
                 if intereses_ad:
@@ -224,11 +320,21 @@ async def _build_user_context(
                 if contenido:
                     lines.append(f"Contenido de interés: {contenido}")
 
-                # Guardar datos Zoho para sincronizar a Supabase
+                # Guardar datos Zoho para sincronizar a Supabase + cache ventas
                 if profesion:
                     zoho_profile_for_sync["profession"] = profesion
                 if especialidad:
                     zoho_profile_for_sync["specialty"] = especialidad
+                # Campos extendidos (NO van a Supabase — solo a cache ventas)
+                # para que el agente pueda usar Cargo/Lugar/Área/Colegio en el pitch.
+                if cargo:
+                    zoho_profile_for_sync["cargo"] = cargo
+                if lugar_trabajo:
+                    zoho_profile_for_sync["lugar_trabajo"] = lugar_trabajo
+                if area_trabajo:
+                    zoho_profile_for_sync["area_trabajo"] = area_trabajo
+                if pertenece_colegio and colegio_nombre:
+                    zoho_profile_for_sync["colegio"] = colegio_nombre
                 combined_interests = ", ".join(
                     [x for x in (esp_interes, intereses_ad, contenido) if x]
                 )
@@ -279,14 +385,44 @@ async def _build_user_context(
                     "detail": f"No hay contacto Zoho para {user_email} — guardando lista vacía en cache",
                 })
 
-            await store._redis.setex(cursadas_key, 86400, _json.dumps(cursadas_list))
+            # Guardar cursadas + perfil completo juntos en la misma entrada de
+            # cache. Antes solo cacheabamos `cursadas_list`, lo que provocaba
+            # que en el HIT (ej. /widget/chat tras /widget/greeting) se perdieran
+            # profession/specialty/cargo/lugar/area/colegio — y el agente de
+            # ventas recibía un `ventas_profile` sin esos campos.
+            cache_payload = {
+                "cursadas": cursadas_list,
+                "profile": dict(zoho_profile_for_sync),  # snapshot
+            }
+            await store._redis.setex(cursadas_key, 86400, _json.dumps(cache_payload))
         else:
-            cursadas_list = _json.loads(cached_cursadas)
+            try:
+                cached_obj = _json.loads(cached_cursadas)
+            except Exception:
+                cached_obj = None
+            # Compat: formato viejo era una lista; nuevo es {"cursadas":[], "profile":{}}
+            if isinstance(cached_obj, list):
+                cursadas_list = cached_obj
+                cached_profile = {}
+            elif isinstance(cached_obj, dict):
+                cursadas_list = cached_obj.get("cursadas") or []
+                cached_profile = cached_obj.get("profile") or {}
+            else:
+                cursadas_list = []
+                cached_profile = {}
+
+            # Rehidratar zoho_profile_for_sync desde el cache para que los
+            # campos de perfil lleguen a ventas_profile incluso en cache-HIT.
+            for k, v in cached_profile.items():
+                if v and not zoho_profile_for_sync.get(k):
+                    zoho_profile_for_sync[k] = v
+
             await _log_event(session_id, "info", {
                 "action": "zoho_contacts_desde_cache",
                 "detail": (
                     f"Cache Redis activo para {user_email} — "
-                    f"{len(cursadas_list)} cursada(s) en cache (TTL 24h)"
+                    f"{len(cursadas_list)} cursada(s), "
+                    f"perfil rehidratado con {len(cached_profile)} campo(s) (TTL 24h)"
                 ),
             })
 
@@ -296,6 +432,33 @@ async def _build_user_context(
             zoho_profile_for_sync["courses"] = todos
             lines.append(f"Cursos del alumno ({len(todos)} total): {', '.join(todos)}")
             lines.append(f"IMPORTANTE — No recomiendes estos cursos (ya los tiene): {', '.join(todos)}")
+
+        # Si venimos de cache-HIT y tenemos perfil rehidratado pero las `lines`
+        # de contexto están incompletas, agregarlas desde el cached_profile
+        # para que el bloque [CONTEXTO DEL CLIENTE IDENTIFICADO] esté completo
+        # también en las llamadas subsiguientes.
+        if cached_cursadas is not None:
+            cp = zoho_profile_for_sync  # ya rehidratado
+            if cp.get("profession") and not any("Profesión:" in l for l in lines):
+                lines.append(f"Profesión: {cp['profession']}")
+            if cp.get("specialty") and not any("Especialidad:" in l for l in lines):
+                lines.append(f"Especialidad: {cp['specialty']}")
+            if cp.get("cargo") and not any("Cargo:" in l for l in lines):
+                lines.append(f"Cargo: {cp['cargo']}")
+            if cp.get("lugar_trabajo") and not any("Lugar de trabajo:" in l for l in lines):
+                lines.append(f"Lugar de trabajo: {cp['lugar_trabajo']}")
+            if cp.get("area_trabajo") and not any("Área donde trabaja:" in l for l in lines):
+                lines.append(f"Área donde trabaja: {cp['area_trabajo']}")
+            if cp.get("colegio") and not any("Matrícula activa" in l for l in lines):
+                lines.append(
+                    f"Matrícula activa en colegio/sociedad: {cp['colegio']} "
+                    "(aplicable para certificaciones jurisdiccionales AR si el curso las ofrece)"
+                )
+            if cp.get("interests") and not any(
+                "Especialidades de interés" in l or "Intereses adicionales" in l or "Contenido de interés" in l
+                for l in lines
+            ):
+                lines.append(f"Intereses: {cp['interests']}")
     except Exception as e:
         logger.debug("zoho_cursadas_failed", error=str(e))
         await _log_error(session_id, "zoho_contacts", str(e)[:150])
@@ -367,6 +530,11 @@ async def _build_user_context(
                 "specialty": zoho_profile_for_sync.get("specialty", ""),
                 "interests": zoho_profile_for_sync.get("interests", ""),
                 "courses": zoho_profile_for_sync.get("courses", []),
+                # Campos extendidos para personalización de ventas
+                "cargo": zoho_profile_for_sync.get("cargo", ""),
+                "lugar_trabajo": zoho_profile_for_sync.get("lugar_trabajo", ""),
+                "area_trabajo": zoho_profile_for_sync.get("area_trabajo", ""),
+                "colegio": zoho_profile_for_sync.get("colegio", ""),
             }
             await store._redis.setex(
                 f"ventas_profile:{user_email}",
@@ -432,6 +600,7 @@ async def generate_greeting_stateless(
     user_email: str = "",
     user_courses: str = "",
     page_slug: str = "",
+    country: str = "AR",
 ) -> dict:
     """
     Genera el saludo personalizado SIN crear conversación ni loggear eventos.
@@ -463,16 +632,33 @@ async def generate_greeting_stateless(
         if ctx:
             system_txt += f"\n\nDatos del cliente:\n{ctx}"
         if page_slug:
-            system_txt += (
-                f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
-                "Podés mencionarlo como 'veo que estás explorando ese curso'."
-            )
+            brief = await _resolve_course_mini_brief(page_slug, country)
+            if brief.get("title"):
+                block = (
+                    f"\n\nEl usuario está viendo la página del curso **{brief['title']}** "
+                    f"(slug: {page_slug}). Mencionalo por su nombre en el saludo — "
+                    "NO uses el slug crudo, usá el título."
+                )
+                if brief.get("short_desc"):
+                    block += f"\n\nDescripción corta del curso:\n{brief['short_desc']}"
+                if brief.get("perfiles"):
+                    block += (
+                        "\n\nPerfiles dirigidos del curso (usá el que matchee con la "
+                        "profesión/especialidad del usuario para conectar el saludo):\n- "
+                        + "\n- ".join(brief["perfiles"])
+                    )
+                system_txt += block
+            else:
+                system_txt += (
+                    f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
+                    "Podés mencionarlo como 'veo que estás explorando ese curso'."
+                )
 
         llm = ChatOpenAI(
             model="gpt-4o-mini",
             api_key=get_settings().openai_api_key,
             temperature=0.7,
-            max_tokens=120,
+            max_tokens=160,
         )
         resp = await llm.ainvoke([
             LcSystem(content=system_txt),
@@ -564,12 +750,40 @@ async def process_widget_message(
         }
 
     # ── Conversación ya derivada a humano ─────────────────────────────────────
-    if conversation.status == ConversationStatus.HANDED_OFF:
+    # Doble gate: (1) status persistido en la conversación (fuente de verdad)
+    # (2) flag rápido en Redis `conv_handoff:{sid}` — se setea sincrónico al
+    # momento del handoff y sobrevive si el load del status quedó stale
+    # (race con la persistencia async a PG).
+    _handoff_flag = await store._redis.get(f"conv_handoff:{session_id}")
+    if conversation.status == ConversationStatus.HANDED_OFF or _handoff_flag:
+        # Log para debugging — así vemos si el gate se dispara pero la conv no
+        # estaba en HANDED_OFF (indicaría race condition entre save() y load).
+        if conversation.status != ConversationStatus.HANDED_OFF and _handoff_flag:
+            logger.warning(
+                "handoff_gate_via_redis_flag",
+                session_id=session_id,
+                conv_status=str(conversation.status),
+            )
+        # Persistir mensaje del usuario igual — así el humano lo ve en el inbox.
+        try:
+            user_msg = Message(role=MessageRole.USER, content=message_text)
+            await store.append_message(conversation, user_msg)
+            await _broadcast({
+                "type": "new_message",
+                "session_id": session_id,
+                "role": "user",
+                "content": message_text,
+                "sender_name": user_name or "Usuario",
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            })
+        except Exception as _e:
+            logger.debug("append_user_msg_on_handoff_failed", error=str(_e))
         return {
-            "response": "Tu consulta fue derivada a un asesor. Te contactaremos a la brevedad.",
+            "response": "",  # no respondemos — el humano atiende
             "agent_used": "humano",
             "handoff_requested": True,
             "session_id": session_id,
+            "bot_disabled": True,
         }
 
     # ── Actualizar perfil del usuario ─────────────────────────────────────────
@@ -638,16 +852,33 @@ async def process_widget_message(
             if ctx:
                 system_txt += f"\n\nDatos del cliente:\n{ctx}"
             if page_slug:
-                system_txt += (
-                    f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
-                    "Podés mencionarlo como 'veo que estás explorando ese curso'."
-                )
+                brief = await _resolve_course_mini_brief(page_slug, country)
+                if brief.get("title"):
+                    block = (
+                        f"\n\nEl usuario está viendo la página del curso **{brief['title']}** "
+                        f"(slug: {page_slug}). Mencionalo por su nombre en el saludo — "
+                        "NO uses el slug crudo, usá el título."
+                    )
+                    if brief.get("short_desc"):
+                        block += f"\n\nDescripción corta del curso:\n{brief['short_desc']}"
+                    if brief.get("perfiles"):
+                        block += (
+                            "\n\nPerfiles dirigidos del curso (usá el que matchee con la "
+                            "profesión/especialidad del usuario para conectar el saludo):\n- "
+                            + "\n- ".join(brief["perfiles"])
+                        )
+                    system_txt += block
+                else:
+                    system_txt += (
+                        f"\n\nEl usuario está viendo la página del curso «{page_slug}». "
+                        "Podés mencionarlo como 'veo que estás explorando ese curso'."
+                    )
 
             llm = ChatOpenAI(
                 model="gpt-4o-mini",
                 api_key=get_settings().openai_api_key,
                 temperature=0.7,
-                max_tokens=120,
+                max_tokens=160,
             )
             resp = await llm.ainvoke([
                 LcSystem(content=system_txt),
@@ -740,24 +971,33 @@ async def process_widget_message(
 
     # ── Si el menú colectó un email anónimo, actualizarlo ────────────────────
     forced_agent: Optional[str] = None
+    collected_email: Optional[str] = None
     if wflow_result and wflow_result.get("needs_routing"):
         forced_agent = wflow_result.get("forced_agent")
         collected_email = wflow_result.get("collected_email")
-        if collected_email:
-            user_email = collected_email
-            conversation.user_profile.email = collected_email
-            await store.save(conversation)
-            logger.info("widget_email_collected", session=session_id, email=collected_email)
-            await log_event(session_id, "action", {
-                "action": "email_capturado",
-                "detail": f"Email ingresado por usuario anónimo: {collected_email} → derivando a {forced_agent}",
-            })
-        if forced_agent:
-            await log_event(session_id, "intent", {
-                "action": "agente_forzado_por_menu",
-                "detail": f"Botón seleccionado → agente: {forced_agent}",
-                "agent": forced_agent,
-            })
+    # Si no hay forced_agent del menú, usar el agente persistido en la conv
+    # para mantener continuidad (evita que cobranzas/post_venta se pierda).
+    elif conversation.current_agent and conversation.current_agent != AgentType.SALES:
+        _agent_label_map = {
+            AgentType.COLLECTIONS: "cobranzas",
+            AgentType.POST_SALES: "post_venta",
+        }
+        forced_agent = _agent_label_map.get(conversation.current_agent)
+    if collected_email:
+        user_email = collected_email
+        conversation.user_profile.email = collected_email
+        await store.save(conversation)
+        logger.info("widget_email_collected", session=session_id, email=collected_email)
+        await log_event(session_id, "action", {
+            "action": "email_capturado",
+            "detail": f"Email ingresado por usuario anónimo: {collected_email} → derivando a {forced_agent}",
+        })
+    if forced_agent:
+        await log_event(session_id, "intent", {
+            "action": "agente_forzado_por_menu",
+            "detail": f"Agente forzado → {forced_agent}",
+            "agent": forced_agent,
+        })
 
     # ─────────────────────────────────────────────────────────────────────────
     # ENRIQUECIMIENTO de contexto (siempre antes de llamar al agente)
@@ -845,6 +1085,20 @@ async def process_widget_message(
     # Nota: la ficha de cobranzas ya se cachea por email en _build_user_context
     # (datos_deudor:{email}, TTL 2 h), por lo que no duplicamos la búsqueda acá.
 
+    # ── Persistir agente actual en la conversación ─────────────────────────────
+    # Sin esto, el router pierde el agente en el segundo mensaje y defaultea a
+    # "sales" — rompe cobranzas y post_venta.
+    _agent_type_map = {
+        "sales": AgentType.SALES,
+        "collections": AgentType.COLLECTIONS,
+        "post_sales": AgentType.POST_SALES,
+        "closer": AgentType.SALES,  # closer vuelve a ventas
+    }
+    new_agent_type = _agent_type_map.get(agent_used)
+    if new_agent_type and conversation.current_agent != new_agent_type:
+        conversation.current_agent = new_agent_type
+        await store.save(conversation)
+
     # ── Guardar respuesta del bot ─────────────────────────────────────────────
     bot_msg = await _save_bot_msg(store, conversation, response_text, agent_used)
 
@@ -867,6 +1121,15 @@ async def process_widget_message(
 
     # ── Handoff ───────────────────────────────────────────────────────────────
     if handoff:
+        # 1) Flag defensivo sincrónico en Redis — independiente del save async
+        # de la conversación. El gate de entrada lo chequea primero así no hay
+        # race con la persistencia a Postgres.
+        try:
+            await store._redis.setex(f"conv_handoff:{session_id}", 86400 * 30, "1")
+        except Exception as _e:
+            logger.debug("handoff_flag_set_failed", error=str(_e))
+
+        # 2) Notificar
         await notify_handoff(
             channel="Widget Web",
             external_id=session_id,
@@ -874,11 +1137,26 @@ async def process_widget_message(
             reason=handoff_reason,
             agent=agent_used,
         )
+
+        # 3) Persistir status en la conversación (fuente de verdad)
         conversation.status = ConversationStatus.HANDED_OFF
         await store.save(conversation)
+
+        # 4) Asignar a un humano de la cola correcta (cobranzas_AR, ventas_MX, etc.)
         try:
+            queue_key = f"conv_queue:{conversation.id}"
+            _q = await store._redis.get(queue_key)
+            queue_val = (_q.decode() if isinstance(_q, bytes) else _q) if _q else ""
+            # Fallback: construir la cola desde el agente + país si no está cacheada
+            if not queue_val:
+                _agent_map = {
+                    "sales": "ventas", "collections": "cobranzas",
+                    "post_sales": "post_venta", "closer": "ventas",
+                }
+                _prefix = _agent_map.get(agent_used, "ventas")
+                queue_val = f"{_prefix}_{(country or 'XX').upper()}"
             from api.inbox import auto_assign_round_robin
-            await auto_assign_round_robin(session_id)
+            await auto_assign_round_robin(session_id, queue=queue_val)
         except Exception:
             pass
 

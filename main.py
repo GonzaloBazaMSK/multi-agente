@@ -225,7 +225,8 @@ def create_app() -> FastAPI:
         return RedirectResponse(url="/msk", status_code=301)
 
     @app.get("/inbox-ui")
-    async def serve_inbox_page():
+    @app.get("/inbox-ui/{session_id}")
+    async def serve_inbox_page(session_id: str = ""):
         """Dashboard de conversaciones para agentes humanos."""
         html_file = Path(__file__).parent / "widget" / "inbox.html"
         return FileResponse(

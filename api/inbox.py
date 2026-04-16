@@ -67,8 +67,8 @@ async def _redis_publish(event: dict):
         from memory.conversation_store import get_conversation_store
         store = await get_conversation_store()
         await store._redis.publish(_PUBSUB_CHANNEL, json.dumps(event))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("redis_publish_failed", error=str(e))
 
 
 async def start_pubsub_listener():
@@ -381,6 +381,13 @@ async def release(session_id: str, user: dict = Depends(get_current_user)):
     store, conv = await _get_conv(session_id)
     await _set_bot_disabled(session_id, False)
     await store._redis.delete(f"agent_name:{session_id}")
+    # Limpiar flag defensivo de handoff (lo setea widget.py al derivar).
+    # Sin este delete, el bot nunca se reactiva aunque status vuelva a ACTIVE.
+    await store._redis.delete(f"conv_handoff:{session_id}")
+    # También limpiar asignación al humano — la conv queda libre para que el
+    # bot la retome y, si vuelve a derivar, se reasigne a quien esté disponible.
+    await store._redis.delete(f"conv_assigned:{session_id}")
+    await store._redis.delete(f"conv_assigned_name:{session_id}")
 
     conv.status = ConversationStatus.ACTIVE
     await store.save(conv)
@@ -474,8 +481,8 @@ async def reply(session_id: str, req: ReplyRequest, user: dict = Depends(get_cur
                 await store._redis.setex(frt_key, 604800, _json.dumps(frt_record))  # 7 days TTL
         # Always update last reply time for inactivity tracking
         await store._redis.set(f"last_reply:{session_id}", str(time.time()))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("frt_tracking_failed", session_id=session_id, error=str(e))
 
     # Clear typing lock after sending
     try:
@@ -1203,8 +1210,8 @@ async def get_zoho_data(session_id: str, user: dict = Depends(get_current_user))
                 record = await contacts.search_by_email(email)
                 if record:
                     module = "Contacts"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("zoho_contacts_search_by_email_failed", email=email, error=str(e))
 
         # Solo si no hay Contact, buscar en Leads
         if not record and phone:
@@ -1217,8 +1224,8 @@ async def get_zoho_data(session_id: str, user: dict = Depends(get_current_user))
                 record = await leads.search_by_email(email)
                 if record:
                     module = "Leads"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("zoho_leads_search_by_email_failed", email=email, error=str(e))
 
         if record:
             # Si es un Contact, traer perfil completo (campos profesionales + cursadas)
@@ -1227,8 +1234,8 @@ async def get_zoho_data(session_id: str, user: dict = Depends(get_current_user))
                     full = await contacts.get_full_profile(record.get("id", ""))
                     if full:
                         record.update(full)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("zoho_get_full_profile_failed", contact_id=record.get("id", ""), error=str(e))
 
             result["found"] = True
             result["module"] = module
@@ -2081,14 +2088,18 @@ async def bulk_label(req: BulkLabelRequest, user: dict = Depends(require_role("a
     if req.label and req.label not in LABELS:
         raise HTTPException(status_code=400, detail=f"Label inválido: {req.label}")
     count = 0
+    errors = []
     for sid in req.session_ids[:50]:  # max 50
         try:
             await _set_label(sid, req.label)
             broadcast_event({"type": "label_updated", "session_id": sid, "label": req.label})
             count += 1
-        except Exception:
-            pass
-    return {"ok": True, "updated": count}
+        except Exception as e:
+            errors.append(sid)
+            logger.warning("bulk_label_failed", session_id=sid, error=str(e))
+    if errors:
+        logger.warning("bulk_label_partial_failure", failed=errors, total=len(req.session_ids))
+    return {"ok": True, "updated": count, "failed": errors}
 
 
 @router.post("/bulk/assign")
@@ -2106,8 +2117,8 @@ async def bulk_assign(req: BulkAssignRequest, user: dict = Depends(require_role(
                 await store._redis.delete(f"conv_assigned_name:{sid}")
             broadcast_event({"type": "conv_assigned", "session_id": sid, "agent_id": req.agent_id, "agent_name": req.agent_name})
             count += 1
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("bulk_assign_failed", session_id=sid, error=str(e))
     return {"ok": True, "updated": count}
 
 
@@ -2158,11 +2169,30 @@ async def get_business_hours():
 async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | None:
     """
     Auto-assign a conversation to the least-loaded available agent.
+
+    Args:
+        session_id: ID de la conversación a asignar.
+        queue: Cola específica (ej: "cobranzas_AR"). Si se omite, se intenta
+            resolver desde `conv_queue:{session_id}` en Redis.
+
+    Regla de matching: si el agente tiene `queues=[]` acepta cualquier cola
+    (wildcard). Si el agente tiene colas definidas, debe matchear EXACTAMENTE
+    la cola de la conversación (ej. "cobranzas_AR" — no basta con ser de
+    cobranzas de otro país).
+
     Returns {agent_id, agent_name} or None if no agents available.
     """
     try:
         store = await get_conversation_store()
         r = store._redis
+
+        # Resolver queue desde Redis si no vino explícita
+        if not queue:
+            try:
+                _q = await r.get(f"conv_queue:{session_id}")
+                queue = (_q.decode() if isinstance(_q, bytes) else _q) or ""
+            except Exception:
+                queue = ""
 
         # Get all agent profiles
         from integrations.supabase_client import list_profiles
@@ -2171,26 +2201,37 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
         # Filter to agents/supervisors who are available
         available = []
         for p in profiles:
-            if p.get("role") not in ("agente", "supervisor", "admin"):
+            role = p.get("role")
+            if role not in ("agente", "supervisor", "admin"):
                 continue
             user_id = p.get("id") or p.get("email", "")
             status = await r.get(f"agent_available:{user_id}")
             status_str = (status.decode() if isinstance(status, bytes) else status) if status else ""
             if status_str != "available":
                 continue
-            # Check queue match if agent has queue restrictions
+            # Queue matching:
+            # - Admins y supervisores sin colas definidas = wildcard (reciben de todas)
+            # - Agentes con colas definidas = match exacto contra la cola de la conv
             agent_queues = p.get("queues") or []
-            if agent_queues and queue:
-                area = queue.split("_")[0] if "_" in queue else queue
-                if not any(q.startswith(area) for q in agent_queues):
-                    continue
+            if queue and agent_queues and queue not in agent_queues:
+                continue
             available.append({
                 "id": user_id,
                 "name": p.get("name") or p.get("email", ""),
+                "role": role,
+                "has_queue_match": bool(agent_queues and queue in agent_queues),
             })
 
         if not available:
+            logger.warning(
+                "auto_assign_no_agents_for_queue",
+                session_id=session_id, queue=queue,
+            )
             return None
+
+        # Preferir agentes con match explícito de cola sobre wildcards (admins).
+        # Dentro de cada grupo, ordenar por carga (least-loaded round-robin).
+        available.sort(key=lambda a: (0 if a["has_queue_match"] else 1,))
 
         # Count current assignments per agent
         load = {}
@@ -2202,8 +2243,8 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
                     count += 1
             load[agent["id"]] = count
 
-        # Pick agent with fewest assignments (round-robin by load)
-        available.sort(key=lambda a: load.get(a["id"], 0))
+        # Pick agent with fewest assignments, respetando prioridad de match de cola
+        available.sort(key=lambda a: (0 if a["has_queue_match"] else 1, load.get(a["id"], 0)))
         chosen = available[0]
 
         # Assign
@@ -2215,9 +2256,10 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
             "session_id": session_id,
             "agent_id": chosen["id"],
             "agent_name": chosen["name"],
+            "queue": queue,
         })
 
-        logger.info("auto_assigned", session_id=session_id, agent=chosen["name"])
+        logger.info("auto_assigned", session_id=session_id, agent=chosen["name"], queue=queue)
         return chosen
     except Exception as e:
         logger.warning("auto_assign_failed", error=str(e))

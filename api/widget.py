@@ -33,6 +33,7 @@ class GreetingRequest(BaseModel):
     user_email: str = ""
     user_courses: str = ""
     page_slug: str = ""
+    country: str = "AR"
 
 
 class ChatResponse(BaseModel):
@@ -85,6 +86,7 @@ async def greeting(req: GreetingRequest):
         user_email=req.user_email,
         user_courses=req.user_courses,
         page_slug=req.page_slug,
+        country=req.country,
     )
     return data
 

@@ -130,10 +130,18 @@ class ZohoContacts:
         return contact
 
     # Campos de perfil que queremos traer del contacto
+    # OJO: los API names de Zoho normalizan tildes → "_" y a veces tienen typos
+    # que no se pueden corregir sin romper integraciones existentes:
+    #   - "Profesi_n" (Profesión)
+    #   - "rea_donde_tabaja" (Área donde trabaja — "tabaja" sin "r", typo de Zoho)
+    #   - "Colegio_Sociedad_o_Federaci_n" (…Federación)
     PROFILE_FIELDS = (
         "First_Name,Last_Name,Email,Phone,Owner,Lead_Source,Canal_Origen,"
         "Profesi_n,Especialidad,Especialidad_interes,Intereses_adicionales,"
-        "Contenido_Interes,Formulario_de_cursada,Created_Time,Modified_Time"
+        "Contenido_Interes,Formulario_de_cursada,"
+        "Cargo,Lugar_de_trabajo,rea_donde_tabaja,"
+        "Pertenece_a_un_colegio,Colegio_Sociedad_o_Federaci_n,"
+        "Created_Time,Modified_Time"
     )
 
     async def get_full_profile(self, contact_id: str) -> dict | None:

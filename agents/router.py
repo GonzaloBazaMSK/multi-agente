@@ -9,6 +9,7 @@ El clasificador decide con un LLM liviano (gpt-4o-mini) qué agente ejecutar.
 Cada agente es un subgrafo compilado que retorna al supervisor.
 Si se detecta handoff_requested, el supervisor termina y el caller realiza el handoff.
 """
+import re
 from typing import Literal
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -30,23 +31,17 @@ _ROUTER_PROMPT_FALLBACK = (
     "Respondé solo la palabra."
 )
 
+# Prompt cacheado al inicio — mismo patrón que los demás agentes.
+# Los cambios se aplican al reiniciar el servidor (no hot-reload).
+try:
+    from agents.routing.router_prompt import ROUTER_SYSTEM_PROMPT as _CACHED_ROUTER_PROMPT
+except Exception:
+    _CACHED_ROUTER_PROMPT = None
+
 
 def _load_router_prompt() -> str:
-    """
-    Carga el prompt del router desde su archivo en disco.
-    Se llama en cada clasificación para que los cambios del panel admin
-    se apliquen sin reiniciar el servidor.
-    """
-    try:
-        from pathlib import Path
-        import importlib.util
-        path = Path(__file__).parent / "routing" / "router_prompt.py"
-        spec = importlib.util.spec_from_file_location("router_prompt_dyn", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.ROUTER_SYSTEM_PROMPT
-    except Exception:
-        return _ROUTER_PROMPT_FALLBACK
+    """Retorna el prompt del router cacheado al inicio del proceso."""
+    return _CACHED_ROUTER_PROMPT or _ROUTER_PROMPT_FALLBACK
 
 
 class SupervisorState(TypedDict):
@@ -161,8 +156,8 @@ async def classify_intent(state: SupervisorState) -> dict:
                 if retarget_data:
                     agent = AgentType.CLOSER.value
                     logger.info("closer_override", phone=phone, reason="retargeting_active")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("retarget_check_failed", phone=phone, error=str(e))
 
     logger.info("intent_classified", intent=intent, agent=agent)
 
@@ -229,10 +224,14 @@ async def run_sales_node(state: SupervisorState) -> dict:
     # Detectar si el agente de ventas solicitó handoff en su respuesta
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
+    reason = ""
     if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
         handoff = True
+        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
+        if _m:
+            reason = _m.group(1).strip().rstrip(".").strip()
 
-    return {"messages": result["messages"], "handoff_requested": handoff}
+    return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
 
 async def run_collections_node(state: SupervisorState) -> dict:
@@ -297,7 +296,11 @@ async def run_collections_node(state: SupervisorState) -> dict:
         content = str(last_ai.content)
         if "HANDOFF_REQUIRED" in content:
             handoff = True
-            reason = "Derivación solicitada por agente de cobranzas"
+            _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", content)
+            if _m:
+                reason = _m.group(1).strip().rstrip(".").strip()
+            else:
+                reason = "cobranzas"
         if "[LINK_REBILL_ENVIADO]" in content:
             link_rebill_enviado = True
         if "[VERIFICAR_PAGO]" in content:
@@ -328,10 +331,16 @@ async def run_post_sales_node(state: SupervisorState) -> dict:
 
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
+    reason = ""
     if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
         handoff = True
+        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
+        if _m:
+            reason = _m.group(1).strip().rstrip(".").strip()
+        else:
+            reason = "post_venta"
 
-    return {"messages": result["messages"], "handoff_requested": handoff}
+    return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
 
 async def run_closer_node(state: SupervisorState) -> dict:
@@ -385,12 +394,16 @@ async def run_closer_node(state: SupervisorState) -> dict:
 
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
+    reason = ""
     if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
         handoff = True
-        # Clean tag
-        last_ai.content = last_ai.content.replace("HANDOFF_REQUIRED:", "").replace("HANDOFF_REQUIRED", "").strip()
+        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
+        if _m:
+            reason = _m.group(1).strip().rstrip(".").strip()
+        else:
+            reason = "closer"
 
-    return {"messages": result["messages"], "handoff_requested": handoff}
+    return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
 
 
 def build_supervisor() -> StateGraph:
@@ -558,9 +571,33 @@ async def route_message(
     for m in reversed(final_state["messages"]):
         if isinstance(m, AIMessage) and m.content:
             response_text = m.content
-            # Limpiar el token interno de handoff del texto visible
-            response_text = response_text.replace("HANDOFF_REQUIRED:", "").strip()
             break
+
+    # Si es handoff directo (sin pasar por agente), generar mensaje para el usuario
+    if not response_text and final_state.get("handoff_requested"):
+        response_text = (
+            "Te voy a conectar con un asesor para que pueda ayudarte personalmente. "
+            "Un momento, por favor 🙏"
+        )
+
+    # ── Cleanup centralizado de tags internos ────────────────────────────────
+    # Protocol: los agentes pueden emitir `HANDOFF_REQUIRED: <motivo_slug>` o
+    # bare `HANDOFF_REQUIRED`. Si hay motivo estructurado, lo usamos como
+    # `handoff_reason`. Luego borramos TODAS las variantes del texto visible.
+    handoff_reason = final_state.get("handoff_reason", "") or ""
+    m_reason = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", response_text)
+    if m_reason:
+        structured = m_reason.group(1).strip().rstrip(".").strip()
+        if structured:
+            handoff_reason = structured
+
+    # Borrar tanto `HANDOFF_REQUIRED: motivo` como `HANDOFF_REQUIRED` pelado
+    response_text = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", response_text)
+    # Borrar tags internas que nunca deben llegar al usuario
+    for _tag in ("[LINK_REBILL_ENVIADO]", "[VERIFICAR_PAGO]"):
+        response_text = response_text.replace(_tag, "")
+    # Compactar saltos múltiples
+    response_text = re.sub(r"\n{3,}", "\n\n", response_text).strip()
 
     agent_used = final_state.get("current_agent", AgentType.SALES.value)
 
@@ -579,14 +616,14 @@ async def route_message(
         from memory.conversation_store import get_conversation_store as _gcs
         _store = await _gcs()
         await _store._redis.set(queue_key, queue_val, ex=86400*30)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("queue_persist_failed", conversation_id=conversation_id, error=str(e))
 
     return {
         "response": response_text,
         "agent_used": agent_used,
         "handoff_requested": final_state.get("handoff_requested", False),
-        "handoff_reason": final_state.get("handoff_reason", ""),
+        "handoff_reason": handoff_reason,
         "link_rebill_enviado": final_state.get("link_rebill_enviado", False),
         "verificar_pago": final_state.get("verificar_pago", False),
         "phone": phone,

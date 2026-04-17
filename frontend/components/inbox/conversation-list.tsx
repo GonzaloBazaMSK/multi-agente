@@ -297,73 +297,103 @@ export function ConversationList({
                     );
                   })}
 
-                  <DropdownSeparator />
-                  <DropdownLabel>Por lifecycle</DropdownLabel>
-                  <div className="px-3 py-1.5 flex flex-wrap gap-1">
+                  {/* === LIFECYCLE — collapsible === */}
+                  <CollapsibleSection
+                    title="Por lifecycle"
+                    defaultOpen={false}
+                    rightAccessory={lifecycle ? <span className="text-[9px] text-accent">{lifecycle}</span> : null}
+                  >
                     {(["new", "hot", "customer", "cold"] as LifecycleStage[]).map((l) => {
                       const active = lifecycle === l;
-                      const dot: Record<LifecycleStage, string> = {
-                        new: "bg-info", hot: "bg-warn", customer: "bg-success", cold: "bg-fg-dim",
-                      };
-                      const label: Record<LifecycleStage, string> = {
-                        new: "New", hot: "Hot", customer: "Customer", cold: "Cold",
-                      };
+                      const dot: Record<LifecycleStage, string> = { new: "bg-info", hot: "bg-warn", customer: "bg-success", cold: "bg-fg-dim" };
+                      const label: Record<LifecycleStage, string> = { new: "New Lead", hot: "Hot Lead", customer: "Customer", cold: "Cold Lead" };
                       return (
                         <button
                           key={l}
                           onClick={() => { onLifecycleChange(active ? null : l); close(); }}
                           className={cn(
-                            "text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap flex items-center gap-1",
-                            active ? "bg-accent/20 text-accent" : "bg-hover text-fg-muted hover:bg-border"
+                            "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover transition-colors",
+                            active && "bg-accent/10 text-accent"
                           )}
                         >
                           <span className={cn("w-1.5 h-1.5 rounded-full", dot[l])} />
-                          {label[l]} ({counts.byLifecycle[l]})
+                          <span className="flex-1 text-left">{label[l]}</span>
+                          <span className="text-[10px] text-fg-dim">{counts.byLifecycle[l]}</span>
                         </button>
                       );
                     })}
-                  </div>
+                  </CollapsibleSection>
 
-                  <DropdownSeparator />
-                  <DropdownLabel>Por canal</DropdownLabel>
-                  <DropdownItem onClick={() => { onChannelChange(channel === "whatsapp" ? null : "whatsapp"); close(); }}>
-                    <Smartphone className="w-3 h-3 text-success" />
-                    <span>WhatsApp ({counts.byChannel.whatsapp})</span>
-                    {channel === "whatsapp" && <span className="ml-auto text-accent text-[10px]">activo</span>}
-                  </DropdownItem>
-                  <DropdownItem onClick={() => { onChannelChange(channel === "widget" ? null : "widget"); close(); }}>
-                    <MessageSquare className="w-3 h-3 text-accent" />
-                    <span>Widget ({counts.byChannel.widget})</span>
-                    {channel === "widget" && <span className="ml-auto text-accent text-[10px]">activo</span>}
-                  </DropdownItem>
+                  {/* === CANAL — collapsible === */}
+                  <CollapsibleSection
+                    title="Por canal"
+                    defaultOpen={false}
+                    rightAccessory={channel ? <span className="text-[9px] text-accent">{channel}</span> : null}
+                  >
+                    <button
+                      onClick={() => { onChannelChange(channel === "whatsapp" ? null : "whatsapp"); close(); }}
+                      className={cn(
+                        "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover",
+                        channel === "whatsapp" && "bg-accent/10 text-accent"
+                      )}
+                    >
+                      <Smartphone className="w-3 h-3 text-success" />
+                      <span className="flex-1 text-left">WhatsApp</span>
+                      <span className="text-[10px] text-fg-dim">{counts.byChannel.whatsapp}</span>
+                    </button>
+                    <button
+                      onClick={() => { onChannelChange(channel === "widget" ? null : "widget"); close(); }}
+                      className={cn(
+                        "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover",
+                        channel === "widget" && "bg-accent/10 text-accent"
+                      )}
+                    >
+                      <MessageSquare className="w-3 h-3 text-accent" />
+                      <span className="flex-1 text-left">Widget</span>
+                      <span className="text-[10px] text-fg-dim">{counts.byChannel.widget}</span>
+                    </button>
+                  </CollapsibleSection>
 
-                  <DropdownSeparator />
-                  <DropdownLabel>Asignado a</DropdownLabel>
-                  {TEAM.map((a) => (
-                    <DropdownItem key={a.id} onClick={() => { close(); }}>
-                      <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${a.color} text-white text-[8px] font-bold flex items-center justify-center`}>
-                        {a.initials}
-                      </div>
-                      <span>{a.name}</span>
-                    </DropdownItem>
-                  ))}
-
-                  <DropdownSeparator />
-                  <DropdownLabel>Por tag</DropdownLabel>
-                  <div className="px-3 py-1.5 flex flex-wrap gap-1">
-                    {["cardio", "amir-interest", "italiano-staff", "residente", "primer-contacto", "urgente", "objeción-precio", "follow-up"].map((t) => (
+                  {/* === ASIGNADO A — collapsible === */}
+                  <CollapsibleSection
+                    title="Asignado a"
+                    defaultOpen={false}
+                    rightAccessory={<span className="text-[9px] text-fg-dim">{TEAM.length}</span>}
+                  >
+                    {TEAM.map((a) => (
                       <button
-                        key={t}
+                        key={a.id}
                         onClick={() => { close(); }}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-hover hover:bg-border text-fg-muted hover:text-fg"
+                        className="w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover"
                       >
-                        {t}
+                        <div className={`w-4 h-4 rounded-full bg-gradient-to-br ${a.color} text-white text-[8px] font-bold flex items-center justify-center`}>
+                          {a.initials}
+                        </div>
+                        <span className="flex-1 text-left truncate">{a.name}</span>
                       </button>
                     ))}
-                  </div>
+                  </CollapsibleSection>
+
+                  {/* === TAGS — collapsible === */}
+                  <CollapsibleSection
+                    title="Por tag"
+                    defaultOpen={false}
+                  >
+                    <div className="px-9 py-1.5 flex flex-wrap gap-1">
+                      {["cardio", "amir-interest", "italiano-staff", "residente", "primer-contacto", "urgente", "objeción-precio", "follow-up"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => { close(); }}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-hover hover:bg-border text-fg-muted hover:text-fg"
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </CollapsibleSection>
 
                   <DropdownSeparator />
-                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); close(); }} variant="danger">
+                  <DropdownItem onClick={() => { onViewChange("all"); onLifecycleChange(null); onChannelChange(null); onQueueChange(null); onCountryChange(null); close(); }} variant="danger">
                     <X className="w-3 h-3" /> Limpiar todos los filtros
                   </DropdownItem>
                 </>

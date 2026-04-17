@@ -90,9 +90,26 @@ export default function InboxPage() {
   const bulkResolveM = useBulkResolve();
   const bulkSnoozeM  = useBulkSnooze();
 
+  // El UI manda strings tipo "en 1 hora" — los mapeamos al `duration` que entiende
+  // el backend (1h, 4h, tomorrow, next-week).
+  const UI_TO_DURATION: Record<string, "1h" | "4h" | "tomorrow" | "next-week"> = {
+    "en 1 hora": "1h",
+    "en 4 horas": "4h",
+    "mañana 09:00": "tomorrow",
+    "la próxima semana": "next-week",
+  };
+
   // Por conversación
   const handleAssign     = (agentId: string | null) => effectiveSelectedId && assignM.mutate({ id: effectiveSelectedId, agentId });
-  const handleSnooze     = (until: string | null)   => effectiveSelectedId && snoozeM.mutate({ id: effectiveSelectedId, untilIso: until ?? undefined });
+  const handleSnooze     = (until: string | null) => {
+    if (!effectiveSelectedId) return;
+    if (until === null) {
+      snoozeM.mutate({ id: effectiveSelectedId, untilIso: undefined });
+    } else {
+      const dur = UI_TO_DURATION[until];
+      snoozeM.mutate({ id: effectiveSelectedId, duration: dur ?? "1h" });
+    }
+  };
   const handleClassify   = (stage: LifecycleStage)  => effectiveSelectedId && classifyM.mutate({ id: effectiveSelectedId, lifecycle: stage });
   const handleToggleBot  = ()                        => selected && toggleBotM.mutate({ id: selected.id, paused: !selected.botPaused });
   const handleTakeover   = ()                        => effectiveSelectedId && takeoverM.mutate({ id: effectiveSelectedId, agentId: ME_ID });

@@ -265,23 +265,30 @@ async def get_messages(conv_id: str):
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, role, content, agent, created_at
+            SELECT id, role, content, metadata, created_at
             FROM public.messages
             WHERE conversation_id = $1
             ORDER BY created_at ASC
             """,
             conv_id,
         )
-    return [
-        {
+    out = []
+    for r in rows:
+        meta = r["metadata"] or {}
+        if isinstance(meta, str):
+            import json as _json
+            try:
+                meta = _json.loads(meta)
+            except Exception:
+                meta = {}
+        out.append({
             "id": str(r["id"]),
             "role": r["role"],
             "content": r["content"],
-            "agent": r["agent"],
+            "agent": meta.get("agent") or meta.get("sender_name"),
             "at": r["created_at"].isoformat(),
-        }
-        for r in rows
-    ]
+        })
+    return out
 
 
 @router.get("/contacts/{email}")
@@ -295,11 +302,16 @@ async def get_contact(email: str):
     if not profile:
         raise HTTPException(404, f"Contacto no encontrado en Zoho: {email}")
 
-    cursos = []
-    for c in (profile.get("Formulario_de_cursada") or [])[:30]:
+    # Deduplicar cursos (un mismo curso puede aparecer N veces si el alumno
+    # lo cursó múltiples ediciones)
+    cursos_set: list[str] = []
+    seen: set[str] = set()
+    for c in (profile.get("Formulario_de_cursada") or [])[:50]:
         nombre = (c.get("Nombre_de_curso") or {}).get("name")
-        if nombre:
-            cursos.append(nombre)
+        if nombre and nombre not in seen:
+            seen.add(nombre)
+            cursos_set.append(nombre)
+    cursos = cursos_set
 
     colegio = (profile.get("Colegio_Sociedad_o_Federaci_n") or [None])[0]
 

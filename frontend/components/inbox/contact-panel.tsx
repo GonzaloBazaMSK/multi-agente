@@ -147,8 +147,8 @@ export function ContactPanel({ contact }: Props) {
             {contact.coursesTaken.length > 0 && (
               <Section title={`Cursos cursados (${contact.coursesTaken.length})`}>
                 <ul className="space-y-1">
-                  {contact.coursesTaken.slice(0, 4).map((c) => (
-                    <li key={c} className="flex items-center gap-1.5">
+                  {contact.coursesTaken.slice(0, 4).map((c, i) => (
+                    <li key={`${c}-${i}`} className="flex items-center gap-1.5">
                       <span className="w-1 h-1 bg-success rounded-full" />
                       {c}
                     </li>

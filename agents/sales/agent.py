@@ -83,9 +83,12 @@ async def build_sales_agent(
         if catalog:
             system_prompt += f"\n\n---\n\n{catalog}\n\n"
             system_prompt += (
-                "👆 Este es el catálogo completo. Ya lo tenés — NO necesitás buscar.\n"
+                "👆 El catálogo completo del país está envuelto en las etiquetas "
+                f"`<catalogo_{country.upper()}>...</catalogo_{country.upper()}>`. "
+                "Ya lo tenés — NO necesitás buscar. Cada fila es un curso: slug + título + categoría + precio.\n"
                 "Para vender un curso distinto al actual, usá `get_course_brief(slug)` "
                 "para obtener el brief con perfiles, datos técnicos y argumentos de venta.\n"
+                "**No mezcles datos entre filas**: cada fila es un curso independiente — el precio de la fila 3 corresponde SOLO al curso de la fila 3.\n"
             )
     except Exception as e:
         logger.warning("catalog_inject_failed", error=str(e))

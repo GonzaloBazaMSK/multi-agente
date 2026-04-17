@@ -531,13 +531,19 @@ async def get_catalog_compact(country: str) -> str:
         )
     if not rows:
         return ""
-    lines = [f"## Catálogo {country.upper()} ({len(rows)} cursos)\n"]
+    cc = country.upper()
+    # Envolvemos el catálogo en un tag XML propio para que el LLM no mezcle
+    # líneas del catálogo con texto cercano (instrucciones, brief, etc.) y
+    # para poder referirlo explícitamente ("mirá dentro de <catalogo_AR>").
+    lines = [f"<catalogo_{cc} total_cursos=\"{len(rows)}\">"]
+    lines.append(f"# Catálogo de cursos activos en {cc}")
+    lines.append("")
     lines.append("| Slug | Título | Categoría | Precio |")
     lines.append("|---|---|---|---|")
     for r in rows:
         slug = r["slug"]
-        title = r["title"] or ""
-        cat = r["categoria"] or ""
+        title = (r["title"] or "").replace("|", "/")
+        cat = (r["categoria"] or "").replace("|", "/")
         inst = r["max_installments"]
         val = r["price_installments"]
         cur = r["currency"] or ""
@@ -546,6 +552,7 @@ async def get_catalog_compact(country: str) -> str:
         else:
             precio = "Consultar"
         lines.append(f"| {slug} | {title} | {cat} | {precio} |")
+    lines.append(f"</catalogo_{cc}>")
     return "\n".join(lines)
 
 

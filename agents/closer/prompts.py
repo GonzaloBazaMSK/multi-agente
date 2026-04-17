@@ -128,12 +128,14 @@ def _channel_format(channel: str) -> str:
     if channel == "whatsapp":
         return """## FORMATO PARA WHATSAPP
 - Mensajes cortos: máximo 3-4 líneas por bloque
-- Sin markdown con asteriscos (no **negrita** en WA)
+- **Negrita en WhatsApp usa UN asterisco**: `*texto*` (NO `**texto**`). Ejemplo: `*Cardiología AMIR*`.
+- Itálica: `_texto_`. Headers markdown (`#`, `##`) NO se renderizan — evitalos.
+- Links: solos en su propia línea para que WhatsApp los previsualice.
 - Emojis: 1-2 por mensaje
 - Si tenés que mostrar info, usá listas con • o números"""
     else:
         return """## FORMATO PARA WIDGET WEB
-- Podés usar **negrita** para nombres de cursos y precios
+- Podés usar **negrita** (doble asterisco) para nombres de cursos y precios
 - Listas con • para comparar opciones
 - Mensajes un poco más largos están bien
 - Emojis moderados"""

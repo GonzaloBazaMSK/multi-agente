@@ -237,11 +237,12 @@ export function ConversationList({
                   <DropdownLabel>
                     Por cola de atención
                   </DropdownLabel>
+                  {/* Siempre las mismas 6 sub-opciones por cola: AR, CL, EC, MX, CO, MP */}
                   {(["sales", "billing", "post-sales"] as Queue[]).map((q) => {
                     const active = queue === q;
                     const stats = queueStats?.[q] ?? {};
                     const totalForQueue = Object.values(stats).reduce((a, b) => a + b, 0);
-                    const countries = Object.keys(stats).sort();
+                    const COUNTRIES_ORDER = ["AR", "CL", "EC", "MX", "CO", "MP"] as const;
                     return (
                       <CollapsibleSection
                         key={q}
@@ -254,7 +255,7 @@ export function ConversationList({
                         defaultOpen={active}
                         rightAccessory={
                           <span className="text-[10px] text-fg-dim">
-                            {totalForQueue || counts.byQueue[q]}
+                            {totalForQueue}
                             {active && country && (
                               <span className="ml-1 text-accent">· {country}</span>
                             )}
@@ -271,25 +272,29 @@ export function ConversationList({
                           <span className="flex-1 text-left">Todos los países</span>
                           <span className="text-[10px] text-fg-dim">{totalForQueue}</span>
                         </button>
-                        {countries.length === 0 && (
-                          <div className="px-9 py-1 text-[10px] text-fg-dim italic">
-                            sin convs en esta cola
-                          </div>
-                        )}
-                        {countries.map((cc) => {
+                        {COUNTRIES_ORDER.map((cc) => {
                           const cActive = active && country === cc;
+                          const n = stats[cc] ?? 0;
                           return (
                             <button
                               key={cc}
                               onClick={() => { onQueueChange(q); onCountryChange(cc); close(); }}
                               className={cn(
                                 "w-full px-9 py-1 text-[11px] flex items-center gap-2 hover:bg-hover transition-colors",
-                                cActive && "bg-accent/10 text-accent"
+                                cActive && "bg-accent/10 text-accent",
+                                n === 0 && !cActive && "opacity-50"
                               )}
+                              title={cc === "MP" ? "Multi-país (resto de países que no son AR/CL/EC/MX/CO)" : undefined}
                             >
-                              <Flag iso={cc} size={10} />
-                              <span className="flex-1 text-left">{cc}</span>
-                              <span className="text-[10px] text-fg-dim">{stats[cc]}</span>
+                              {cc === "MP" ? (
+                                <span className="text-[9px] font-bold text-fg-dim w-[15px] text-center">MP</span>
+                              ) : (
+                                <Flag iso={cc} size={10} />
+                              )}
+                              <span className="flex-1 text-left">
+                                {cc === "MP" ? "Multi-país" : cc}
+                              </span>
+                              <span className="text-[10px] text-fg-dim">{n}</span>
                             </button>
                           );
                         })}

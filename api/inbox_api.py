@@ -90,10 +90,18 @@ async def list_agents():
     return await cm.list_agents()
 
 
+# Países "primarios" — los que tienen su propia sub-cola en el inbox.
+# El resto se agrupa bajo "MP" (multi-país).
+PRIMARY_COUNTRIES = {"AR", "CL", "EC", "MX", "CO"}
+
+
 @router.get("/queue-stats")
 async def queue_stats():
-    """Retorna conteo de conversaciones por (queue, country). Para el filtro
-    Cola → País del inbox."""
+    """
+    Conteo de conversaciones por (queue, country). Cada cola siempre devuelve
+    las mismas 6 sub-categorías: AR, CL, EC, MX, CO, MP. Países no primarios
+    se acumulan en "MP" (multi-país).
+    """
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -107,12 +115,18 @@ async def queue_stats():
             group by 1, 2
             order by 1, 2
         """)
-    out: dict[str, dict[str, int]] = {"sales": {}, "billing": {}, "post-sales": {}}
+
+    # Inicializar las 3 colas × 6 categorias en cero
+    out: dict[str, dict[str, int]] = {
+        q: {c: 0 for c in [*sorted(PRIMARY_COUNTRIES), "MP"]}
+        for q in ("sales", "billing", "post-sales")
+    }
     for r in rows:
         q = r["queue"]; c = r["country"]; n = r["cnt"]
         if q not in out:
-            out[q] = {}
-        out[q][c] = n
+            continue  # ignora queues no oficiales
+        bucket = c if c in PRIMARY_COUNTRIES else "MP"
+        out[q][bucket] = out[q].get(bucket, 0) + n
     return out
 
 
@@ -153,9 +167,17 @@ async def list_conversations(
         where_parts.append(f"cm.queue = ${idx}")
         params.append(queue); idx += 1
     if country:
-        # filtra por user_profile.country (ISO-2). Case-insensitive.
-        where_parts.append(f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})")
-        params.append(country); idx += 1
+        # Filtro especial: "MP" = multi-país (todo país NO primario)
+        if country.upper() == "MP":
+            primary_list = ",".join(f"'{c}'" for c in sorted(PRIMARY_COUNTRIES))
+            where_parts.append(
+                f"upper(coalesce(c.user_profile->>'country', 'AR')) NOT IN ({primary_list})"
+            )
+        else:
+            where_parts.append(
+                f"upper(coalesce(c.user_profile->>'country', 'AR')) = upper(${idx})"
+            )
+            params.append(country); idx += 1
     if lifecycle:
         where_parts.append(f"coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') = ${idx}")
         params.append(lifecycle); idx += 1

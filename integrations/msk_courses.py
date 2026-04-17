@@ -150,45 +150,39 @@ async def fetch_country(country: str, timeout: float = 60.0) -> list[dict]:
 
 def build_brief_md(item: dict, country: str) -> str:
     """
-    Arma un Markdown ~800-1200 tokens con lo esencial del curso.
+    Arma un Markdown compacto orientado a VENDER, no a informar.
     Pensado para inyectar en el system-prompt del agente de ventas.
 
-    Secciones:
-      - Título + cedente + URL
-      - Precio / cuotas / moneda
-      - Categoría
-      - De qué trata el curso (kb_ai.descripcion_y_problematica)
-      - A quién está dirigido (sections.formacion_dirigida)
-      - Perfiles objetivo (kb_ai.perfiles_dirigidos) ← GOLD para ventas
-      - Qué vas a aprender (sections.learning)
-      - Habilidades (sections.habilities)
-      - Objetivos de aprendizaje (kb_ai.objetivos_de_aprendizaje)
-      - Módulos (sections.study_plan.modules — solo títulos + resumen corto)
-      - Qué incluye (sections.with_this_course + your_course_steps)
-      - Instituciones avalantes (sections.institutions)
-      - Certificaciones adicionales (certificacion_relacionada)
-      - Equipo docente (top 5 de sections.teaching_team)
+    Estructura (orden = prioridad de lectura del LLM):
+      1. Header: título, cedente, precio en cuotas, slug
+      2. Datos técnicos (kb_ai.datos_tecnicos): modalidad, evaluación, acceso
+      3. Perfiles objetivo con dolor/beneficio (kb_ai.perfiles_dirigidos)
+      4. Descripción y problemática (kb_ai.descripcion_y_problematica)
+      5. Objetivos de aprendizaje (kb_ai.objetivos_de_aprendizaje)
+      6. Habilidades (sections.habilities)
+      7. Módulos: solo títulos (drill-down con tool get_course_deep)
+      8. Certificaciones reales del curso
+      9. Equipo docente (top 5)
 
-    NO incluye testimonios (sections.reviews) — excluidos por política.
+    Fallbacks para cursos SIN kb_ai:
+      - Descripción: sections.content.content (WP genérico)
+      - A quién está dirigido: sections.formacion_dirigida
+      - Qué vas a aprender: sections.learning
+
+    NO incluye: testimonios, "qué incluye" (redundante con datos técnicos).
     """
     lines: list[str] = []
 
     title = item.get("title") or "(sin título)"
     slug = item.get("slug") or ""
     cedente = (item.get("cedente") or {}).get("title") or (item.get("cedente") or {}).get("name") or ""
-    url = item.get("link") or ""
-    if url and not url.startswith("http"):
-        url = f"https://msklatam.com/{url.lstrip('/')}"
 
     lines.append(f"# {title}")
     if cedente:
         lines.append(f"**Cedente:** {cedente}")
-    if url:
-        lines.append(f"**URL:** {url}")
     lines.append(f"**País:** {COUNTRY_LABEL.get(country.lower(), country.upper())}  ·  **Slug:** `{slug}`")
 
     # Precio — REGLA DE MARKETING: siempre hablamos en CUOTAS, nunca total.
-    # El agente tiene que vender cuota, no precio total (menor fricción).
     prices = item.get("prices") or {}
     currency = prices.get("currency") or ""
     total = _to_float(prices.get("total_price")) or _to_float(prices.get("regular_price"))
@@ -197,10 +191,9 @@ def build_brief_md(item: dict, country: str) -> str:
     if max_inst and inst_val:
         lines.append(f"**Precio (comunicar SIEMPRE en cuotas):** {max_inst} cuotas de {currency} {inst_val:,.2f}")
     elif total:
-        # Fallback raro: no vino el dato de cuotas (curso al contado)
         lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no hay cuotas disponibles)")
 
-    # Datos técnicos
+    # Línea compacta: duración + módulos + categoría
     duration = item.get("duration")
     modules_count = item.get("modules")
     categoria = _primary_category(item) or ""
@@ -216,22 +209,29 @@ def build_brief_md(item: dict, country: str) -> str:
 
     lines.append("")
 
-    # ── De qué trata
+    # ── Datos técnicos del kb_ai (modalidad, evaluación, acceso, materiales)
     kb_ai = item.get("kb_ai") or {}
-    desc = html_to_text(kb_ai.get("descripcion_y_problematica") or (item.get("sections", {}) or {}).get("content", {}).get("content", ""))
-    if desc:
-        lines.append("## De qué trata el curso")
-        lines.append(desc)
-        lines.append("")
-
-    # ── A quién está dirigido
-    dirigida = (item.get("sections") or {}).get("formacion_dirigida") or []
-    if dirigida:
-        lines.append("## A quién está dirigido")
-        for d in dirigida:
-            step = html_to_text(d.get("step", "")) if isinstance(d, dict) else html_to_text(str(d))
-            if step:
-                lines.append(f"- {step}")
+    datos_tec_html = kb_ai.get("datos_tecnicos") or ""
+    if datos_tec_html:
+        lines.append("## Datos técnicos")
+        # Parsear tabla HTML <tr><td>key</td><td>val</td></tr>
+        import re as _re
+        rows_html = _re.findall(
+            r"<tr[^>]*>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>\s*</tr>",
+            datos_tec_html,
+            _re.DOTALL | _re.IGNORECASE,
+        )
+        if rows_html:
+            for key_html, val_html in rows_html:
+                key = html_to_text(key_html).strip()
+                val = html_to_text(val_html).strip()
+                if key and val:
+                    # Omitir duración (ya está en el header)
+                    if key.lower().startswith("duraci"):
+                        continue
+                    lines.append(f"- **{key}:** {val}")
+        else:
+            lines.append(html_to_text(datos_tec_html))
         lines.append("")
 
     # ── Perfiles objetivo (pain + gain) — GOLD para ventas
@@ -250,14 +250,24 @@ def build_brief_md(item: dict, country: str) -> str:
                 lines.append(f"- **Qué obtiene con este curso:** {obtiene}")
             lines.append("")
 
-    # ── Qué vas a aprender
-    learning = (item.get("sections") or {}).get("learning") or []
-    if learning:
-        lines.append("## Qué vas a aprender")
-        for l in learning:
-            txt = html_to_text(l.get("msk_learning_content", "")) if isinstance(l, dict) else html_to_text(str(l))
-            if txt:
-                lines.append(f"- {txt}")
+    # ── Descripción y problemática (kb_ai prioritario, WP como fallback)
+    desc = html_to_text(kb_ai.get("descripcion_y_problematica") or "")
+    if not desc:
+        desc = html_to_text(
+            (item.get("sections", {}) or {}).get("content", {}).get("content", "")
+        )
+    if desc:
+        lines.append("## De qué trata el curso")
+        lines.append(desc)
+        lines.append("")
+
+    # ── Objetivos de aprendizaje (kb_ai)
+    objetivos = html_to_text(kb_ai.get("objetivos_de_aprendizaje") or "")
+    if objetivos:
+        lines.append("## Objetivos de aprendizaje")
+        if len(objetivos) > 1500:
+            objetivos = objetivos[:1500].rsplit(" ", 1)[0] + "…"
+        lines.append(objetivos)
         lines.append("")
 
     # ── Habilidades
@@ -269,46 +279,41 @@ def build_brief_md(item: dict, country: str) -> str:
             lines.append(", ".join(names))
             lines.append("")
 
-    # ── Objetivos de aprendizaje
-    objetivos = html_to_text(kb_ai.get("objetivos_de_aprendizaje") or "")
-    if objetivos:
-        lines.append("## Objetivos de aprendizaje")
-        # Limitar a ~1500 chars para no explotar el prompt
-        if len(objetivos) > 1500:
-            objetivos = objetivos[:1500].rsplit(" ", 1)[0] + "…"
-        lines.append(objetivos)
-        lines.append("")
+    # ── Fallbacks para cursos SIN kb_ai
+    has_kb = bool(kb_ai and (perfiles or objetivos))
+    if not has_kb:
+        # A quién está dirigido (WP genérico — solo sin kb_ai)
+        dirigida = (item.get("sections") or {}).get("formacion_dirigida") or []
+        if dirigida:
+            lines.append("## A quién está dirigido")
+            for d in dirigida:
+                step = html_to_text(d.get("step", "")) if isinstance(d, dict) else html_to_text(str(d))
+                if step:
+                    lines.append(f"- {step}")
+            lines.append("")
 
-    # ── Módulos (solo títulos + primera oración del contenido)
+        # Qué vas a aprender (WP genérico — solo sin kb_ai)
+        learning = (item.get("sections") or {}).get("learning") or []
+        if learning:
+            lines.append("## Qué vas a aprender")
+            for l in learning:
+                txt = html_to_text(l.get("msk_learning_content", "")) if isinstance(l, dict) else html_to_text(str(l))
+                if txt:
+                    lines.append(f"- {txt}")
+            lines.append("")
+
+    # ── Módulos (solo títulos — contenido detallado via tool get_course_deep)
     study_plan = (item.get("sections") or {}).get("study_plan") or {}
     modules = study_plan.get("modules") or []
     if modules:
         lines.append("## Plan de estudios")
         for i, m in enumerate(modules, 1):
             mtitle = (m.get("title") or "").strip()
-            mcontent = html_to_text(m.get("content") or "")
-            # Primera oración significativa (máx 200 chars)
-            summary = mcontent.split("\n\n")[0] if mcontent else ""
-            if len(summary) > 240:
-                summary = summary[:240].rsplit(" ", 1)[0] + "…"
-            line = f"**Módulo {i} — {mtitle}**"
-            if summary:
-                line += f": {summary}"
-            lines.append(line)
-        lines.append("")
-
-    # ── Qué incluye
-    with_course = html_to_text((item.get("sections") or {}).get("with_this_course") or "")
-    steps = (item.get("sections") or {}).get("your_course_steps") or []
-    if with_course or steps:
-        lines.append("## Qué incluye")
-        if with_course:
-            lines.append(with_course)
-        if steps:
-            for s in steps:
-                txt = html_to_text(s.get("step", "")) if isinstance(s, dict) else html_to_text(str(s))
-                if txt:
-                    lines.append(f"- {txt}")
+            lines.append(f"**Módulo {i} — {mtitle}**")
+        # URL del temario PDF si existe
+        spf = study_plan.get("study_plan_file") or ""
+        if spf:
+            lines.append(f"\n📄 [Descargar temario completo (PDF)]({spf})")
         lines.append("")
 
     # ── Instituciones avalantes / Certificaciones

@@ -4,8 +4,8 @@ una tool nueva para consultar historial del lead.
 """
 from langchain_core.tools import tool
 from agents.sales.tools import (
-    search_courses,
-    get_course_details,
+    get_course_brief,
+    get_course_deep,
     create_payment_link,
     create_or_update_lead,
     create_sales_order,
@@ -101,8 +101,8 @@ async def check_lead_history(phone: str) -> str:
 
 # All tools available to the closer
 CLOSER_TOOLS = [
-    search_courses,
-    get_course_details,
+    get_course_brief,
+    get_course_deep,
     create_payment_link,
     create_or_update_lead,
     create_sales_order,

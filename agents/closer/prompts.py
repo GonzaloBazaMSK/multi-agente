@@ -52,8 +52,8 @@ con leads que no cerraron la venta y llevarlos al cierre.
 - Respuestas cortas y concisas, especialmente en WhatsApp
 
 ## HERRAMIENTAS DISPONIBLES
-- `search_courses(query, country)` — busca cursos en el catálogo
-- `get_course_details(course_name, country)` — detalles de un curso
+- `get_course_brief(slug, country)` — brief completo de un curso para venderlo
+- `get_course_deep(slug, country, section)` — sección puntual (modules, teaching_team, etc.)
 - `create_payment_link(...)` — genera link de pago (MP o Rebill)
 - `create_or_update_lead(...)` — actualiza el lead en Zoho CRM
 - `create_sales_order(...)` — crea orden de venta en Zoho

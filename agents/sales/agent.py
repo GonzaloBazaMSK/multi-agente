@@ -185,7 +185,7 @@ def _build_priority_profile_header(
             "**Si el usuario está viendo la página de un curso que ya tiene**, no intentes vendérselo de nuevo. ",
             "Reconocé que ya lo hizo y sugerí algo complementario o de nivel superior.",
             "",
-            "**Si buscás cursos con `search_courses`, filtrá mentalmente los resultados** y NO muestres los que ya tiene.",
+            "**Cuando recomiendes cursos del catálogo, filtrá mentalmente** y NO muestres los que ya tiene.",
         ])
 
     # Regla de confianza: lo que dice el usuario pisa los datos del CRM

@@ -219,7 +219,13 @@ async def _process_lead(phone: str, label: str, days_inactive: int) -> bool:
                 {"role": "user", "content": user_prompt},
             ],
         )
-        decision = json.loads(resp.choices[0].message.content)
+        content = resp.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+        decision = json.loads(content)
     except Exception as e:
         logger.warning("retargeting_decision_failed", phone=phone, error=str(e))
         return False

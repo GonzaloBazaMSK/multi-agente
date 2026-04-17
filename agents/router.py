@@ -44,6 +44,20 @@ def _load_router_prompt() -> str:
     return _CACHED_ROUTER_PROMPT or _ROUTER_PROMPT_FALLBACK
 
 
+def _clean_handoff_tags(content: str) -> tuple[str, bool, str]:
+    """Extract and clean HANDOFF_REQUIRED tags from agent response.
+    Returns: (cleaned_content, has_handoff, motivo)
+    """
+    has_handoff = "HANDOFF_REQUIRED" in content
+    motivo = ""
+    if has_handoff:
+        match = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", content)
+        if match:
+            motivo = match.group(1).strip()
+        content = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", content).strip()
+    return content, has_handoff, motivo
+
+
 class SupervisorState(TypedDict):
     messages: Annotated[list, add_messages]
     current_agent: str
@@ -225,14 +239,8 @@ async def run_sales_node(state: SupervisorState) -> dict:
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
     reason = ""
-    if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
-        handoff = True
-        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
-        if _m:
-            reason = _m.group(1).strip().rstrip(".").strip()
-        # Limpiar tags internas del texto visible
-        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    if last_ai:
+        cleaned, handoff, reason = _clean_handoff_tags(str(last_ai.content))
         last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
@@ -298,25 +306,15 @@ async def run_collections_node(state: SupervisorState) -> dict:
 
     if last_ai:
         content = str(last_ai.content)
-        if "HANDOFF_REQUIRED" in content:
-            handoff = True
-            _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", content)
-            if _m:
-                reason = _m.group(1).strip().rstrip(".").strip()
-            else:
-                reason = "cobranzas"
-        if "[LINK_REBILL_ENVIADO]" in content:
-            link_rebill_enviado = True
-        if "[VERIFICAR_PAGO]" in content:
-            verificar_pago = True
+        link_rebill_enviado = "[LINK_REBILL_ENVIADO]" in content
+        verificar_pago = "[VERIFICAR_PAGO]" in content
 
-        # Limpiar tags internas del texto visible
-        cleaned = content
-        cleaned = cleaned.replace("[LINK_REBILL_ENVIADO]", "")
-        cleaned = cleaned.replace("[VERIFICAR_PAGO]", "")
-        # Borrar HANDOFF_REQUIRED + motivo completo (regex para capturar todo)
-        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        # Clean internal tags
+        content = content.replace("[LINK_REBILL_ENVIADO]", "")
+        content = content.replace("[VERIFICAR_PAGO]", "")
+        cleaned, handoff, reason = _clean_handoff_tags(content)
+        if handoff and not reason:
+            reason = "cobranzas"
         last_ai.content = cleaned
 
     return {
@@ -336,16 +334,10 @@ async def run_post_sales_node(state: SupervisorState) -> dict:
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
     reason = ""
-    if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
-        handoff = True
-        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
-        if _m:
-            reason = _m.group(1).strip().rstrip(".").strip()
-        else:
+    if last_ai:
+        cleaned, handoff, reason = _clean_handoff_tags(str(last_ai.content))
+        if handoff and not reason:
             reason = "post_venta"
-        # Limpiar tags internas del texto visible
-        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
@@ -403,16 +395,10 @@ async def run_closer_node(state: SupervisorState) -> dict:
     last_ai = result["messages"][-1] if result["messages"] else None
     handoff = False
     reason = ""
-    if last_ai and "HANDOFF_REQUIRED" in str(last_ai.content):
-        handoff = True
-        _m = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", str(last_ai.content))
-        if _m:
-            reason = _m.group(1).strip().rstrip(".").strip()
-        else:
+    if last_ai:
+        cleaned, handoff, reason = _clean_handoff_tags(str(last_ai.content))
+        if handoff and not reason:
             reason = "closer"
-        # Limpiar tags internas del texto visible
-        cleaned = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", str(last_ai.content))
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         last_ai.content = cleaned
 
     return {"messages": result["messages"], "handoff_requested": handoff, "handoff_reason": reason}
@@ -448,6 +434,16 @@ def build_supervisor() -> StateGraph:
     return graph.compile()
 
 
+_cached_supervisor = None
+
+
+def _get_supervisor():
+    global _cached_supervisor
+    if _cached_supervisor is None:
+        _cached_supervisor = build_supervisor()
+    return _cached_supervisor
+
+
 async def route_message(
     user_message: str,
     history: list[dict],
@@ -476,6 +472,10 @@ async def route_message(
     Returns:
         {response: str, agent_used: str, handoff_requested: bool, handoff_reason: str}
     """
+    # Bind conversation_id to structlog context for end-to-end tracing
+    if conversation_id:
+        structlog.contextvars.bind_contextvars(conversation_id=str(conversation_id))
+
     # ── Guardar el forced_agent del parámetro antes de que el flow lo pise ──
     _param_forced_agent = forced_agent  # puede ser None si no viene del widget
 
@@ -503,7 +503,7 @@ async def route_message(
         except Exception as _fe:
             logger.warning("flow_runner_error", error=str(_fe))
 
-    supervisor = build_supervisor()
+    supervisor = _get_supervisor()
 
     # Construir messages para LangGraph
     lc_messages = []
@@ -595,18 +595,10 @@ async def route_message(
         )
 
     # ── Cleanup centralizado de tags internos ────────────────────────────────
-    # Protocol: los agentes pueden emitir `HANDOFF_REQUIRED: <motivo_slug>` o
-    # bare `HANDOFF_REQUIRED`. Si hay motivo estructurado, lo usamos como
-    # `handoff_reason`. Luego borramos TODAS las variantes del texto visible.
     handoff_reason = final_state.get("handoff_reason", "") or ""
-    m_reason = re.search(r"HANDOFF_REQUIRED\s*:\s*([^\n\r]+)", response_text)
-    if m_reason:
-        structured = m_reason.group(1).strip().rstrip(".").strip()
-        if structured:
-            handoff_reason = structured
-
-    # Borrar tanto `HANDOFF_REQUIRED: motivo` como `HANDOFF_REQUIRED` pelado
-    response_text = re.sub(r"HANDOFF_REQUIRED(\s*:\s*[^\n\r]*)?", "", response_text)
+    response_text, _has_handoff, _motivo = _clean_handoff_tags(response_text)
+    if _motivo:
+        handoff_reason = _motivo
     # Borrar tags internas que nunca deben llegar al usuario
     for _tag in ("[LINK_REBILL_ENVIADO]", "[VERIFICAR_PAGO]"):
         response_text = response_text.replace(_tag, "")

@@ -218,6 +218,9 @@ async def process_whatsapp_message(payload: dict) -> None:
         country=country,
     )
 
+    # Bind conversation_id to structlog context for end-to-end tracing
+    structlog.contextvars.bind_contextvars(conversation_id=str(conversation.id))
+
     # Actualizar nombre si lo tenemos
     if name and not conversation.user_profile.name:
         conversation.user_profile.name = name
@@ -233,7 +236,7 @@ async def process_whatsapp_message(payload: dict) -> None:
     await store.append_message(conversation, user_msg)
 
     # Historial para el agente
-    history = conversation.messages[-MAX_HISTORY_MESSAGES:] if len(conversation.messages) > 1 else []
+    history = conversation.get_history_for_llm(MAX_HISTORY_MESSAGES)
 
     # Procesar con el router de agentes
     result = await route_message(

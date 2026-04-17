@@ -28,6 +28,29 @@ from config.constants import CONVERSATION_TTL, Channel
 
 logger = structlog.get_logger(__name__)
 
+# ─── Tracked background tasks ───────────────────────────────────────────────
+
+_bg_tasks: set[asyncio.Task] = set()
+
+
+async def _tracked_bg_write(coro) -> asyncio.Task:
+    """Run a coroutine as a tracked background task."""
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
+
+
+async def drain_background_writes(timeout: float = 10.0) -> None:
+    """Wait for pending Postgres writes. Call during shutdown."""
+    if _bg_tasks:
+        await asyncio.wait(_bg_tasks, timeout=timeout)
+
+
+# ─── Per-key locks for get_or_create ─────────────────────────────────────────
+
+_create_locks: dict[str, asyncio.Lock] = {}
+
 
 class ConversationStore:
     _pg_consecutive_failures: int = 0
@@ -98,12 +121,17 @@ class ConversationStore:
         await pipe.execute()
 
     async def save(self, conversation: Conversation) -> None:
-        # Redis primero (bloqueante — si falla, la app lo ve)
-        await self._write_redis(conversation)
+        # Redis primero (bloqueante — si falla, still try Postgres)
+        redis_ok = True
+        try:
+            await self._write_redis(conversation)
+        except Exception as e:
+            redis_ok = False
+            logger.warning("redis_write_failed", conversation_id=conversation.id, error=str(e))
 
         # Postgres en background (best effort, no bloquea el request)
         if postgres_store.is_enabled():
-            asyncio.create_task(self._save_to_postgres(conversation))
+            await _tracked_bg_write(self._save_to_postgres(conversation))
 
     async def _save_to_postgres(self, conversation: Conversation) -> None:
         """Write to Postgres with one automatic retry on failure."""
@@ -140,18 +168,29 @@ class ConversationStore:
         country: str = "AR",
     ) -> tuple[Conversation, bool]:
         """Returns (conversation, is_new)."""
+        # Fast path without lock
         existing = await self.get_by_external(channel, external_id)
         if existing:
             return existing, False
 
-        conversation = Conversation(
-            channel=channel,
-            external_id=external_id,
-            user_profile=UserProfile(country=country),
-        )
-        await self.save(conversation)
-        logger.info("conversation_created", id=conversation.id, channel=channel, external_id=external_id)
-        return conversation, True
+        # Per-key lock to prevent duplicate creation
+        lock_key = f"{channel.value}:{external_id}"
+        if lock_key not in _create_locks:
+            _create_locks[lock_key] = asyncio.Lock()
+        async with _create_locks[lock_key]:
+            # Double-check after acquiring lock
+            existing = await self.get_by_external(channel, external_id)
+            if existing:
+                return existing, False
+
+            conversation = Conversation(
+                channel=channel,
+                external_id=external_id,
+                user_profile=UserProfile(country=country),
+            )
+            await self.save(conversation)
+            logger.info("conversation_created", id=conversation.id, channel=channel, external_id=external_id)
+            return conversation, True
 
     async def append_message(self, conversation: Conversation, message: Message) -> Conversation:
         conversation.add_message(message)
@@ -177,11 +216,16 @@ class ConversationStore:
 
 
 _store: ConversationStore | None = None
+_store_lock = asyncio.Lock()
 
 
 async def get_conversation_store() -> ConversationStore:
     global _store
-    if _store is None:
+    if _store is not None:
+        return _store
+    async with _store_lock:
+        if _store is not None:
+            return _store
         settings = get_settings()
         client = aioredis.from_url(settings.redis_url, decode_responses=False)
         _store = ConversationStore(client)

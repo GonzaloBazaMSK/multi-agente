@@ -8,6 +8,7 @@ Autenticación OAuth2:
 
 El access-token se renueva automáticamente cuando expira.
 """
+import asyncio
 import time
 import hmac
 import hashlib
@@ -28,6 +29,7 @@ class BotmakerClient:
             cls._instance = super().__new__(cls)
             cls._instance._access_token: str = ""
             cls._instance._token_expires_at: float = 0.0
+            cls._instance._lock = asyncio.Lock()
         return cls._instance
 
     def __init__(self):
@@ -51,27 +53,33 @@ class BotmakerClient:
         if self._access_token and now < self._token_expires_at - _TOKEN_BUFFER_SECONDS:
             return self._access_token
 
-        # Renovar token
-        payload = {
-            "clientId": self._client_id,
-            "secretId": self._secret_id,
-            "refreshToken": self._refresh_token,
-            "grantType": "refresh_token",
-        }
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._base}/oauth2/token",
-                json=payload,
-                timeout=15,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        async with self._lock:
+            # Double-check after acquiring lock
+            now = time.time()
+            if self._access_token and now < self._token_expires_at - _TOKEN_BUFFER_SECONDS:
+                return self._access_token
 
-        self._access_token = data["accessToken"]
-        expires_in = data.get("expiresIn", 3600)
-        self._token_expires_at = time.time() + expires_in
-        logger.info("botmaker_token_refreshed", expires_in=expires_in)
-        return self._access_token
+            # Renovar token
+            payload = {
+                "clientId": self._client_id,
+                "secretId": self._secret_id,
+                "refreshToken": self._refresh_token,
+                "grantType": "refresh_token",
+            }
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self._base}/oauth2/token",
+                    json=payload,
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            self._access_token = data["accessToken"]
+            expires_in = data.get("expiresIn", 3600)
+            self._token_expires_at = time.time() + expires_in
+            logger.info("botmaker_token_refreshed", expires_in=expires_in)
+            return self._access_token
 
     async def _headers(self) -> dict:
         token = await self._get_access_token()

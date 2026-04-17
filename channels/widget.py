@@ -717,6 +717,9 @@ async def process_widget_message(
         country=country,
     )
 
+    # Bind conversation_id to structlog context for end-to-end tracing
+    structlog.contextvars.bind_contextvars(conversation_id=str(conversation.id))
+
     # Si acabamos de crear la conv y el front envió el saludo que mostró,
     # lo persistimos como primer bot msg para que quede en el historial
     # y en el contexto del agente.

@@ -13,6 +13,7 @@ las operaciones atómicas.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Optional
 from uuid import UUID
@@ -31,6 +32,7 @@ logger = structlog.get_logger(__name__)
 # ─── Pool singleton ───────────────────────────────────────────────────────────
 
 _pool: asyncpg.Pool | None = None
+_pool_lock = asyncio.Lock()
 
 
 def is_enabled() -> bool:
@@ -40,7 +42,11 @@ def is_enabled() -> bool:
 async def get_pool() -> asyncpg.Pool:
     """Retorna el pool global, inicializándolo lazy."""
     global _pool
-    if _pool is None:
+    if _pool is not None:
+        return _pool
+    async with _pool_lock:
+        if _pool is not None:
+            return _pool
         settings = get_settings()
         # statement_cache_size=0 es requerido por PgBouncer transaction mode.
         # ssl="require" — Supabase pooler exige TLS.

@@ -62,6 +62,9 @@ async def process_whatsapp_message(payload: dict) -> None:
         country=country,
     )
 
+    # Bind conversation_id to structlog context for end-to-end tracing
+    structlog.contextvars.bind_contextvars(conversation_id=str(conversation.id))
+
     # Si la conversación está handed off, no responder (el humano tiene el control)
     if conversation.status == ConversationStatus.HANDED_OFF:
         logger.info("conversation_handed_off_skipping", chat_id=chat_id)

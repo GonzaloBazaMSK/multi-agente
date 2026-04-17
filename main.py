@@ -5,10 +5,10 @@ Canales: WhatsApp (Botmaker) + Widget web embebible.
 """
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -28,7 +28,7 @@ if _settings_boot.sentry_dsn:
         dsn=_settings_boot.sentry_dsn,
         environment=_settings_boot.app_env,
         traces_sample_rate=_settings_boot.sentry_traces_sample_rate,
-        send_default_pii=True,
+        send_default_pii=False,
         integrations=[
             FastApiIntegration(transaction_style="endpoint"),
             StarletteIntegration(transaction_style="endpoint"),
@@ -53,7 +53,6 @@ from api.flows import router as flows_router
 from api.auth import router as auth_router
 from api.redis_admin import router as redis_admin_router
 from api.customer_auth import router as customer_auth_router
-from config.settings import get_settings
 
 # Rate limiter global
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
@@ -65,6 +64,18 @@ logger = structlog.get_logger(__name__)
 async def lifespan(app: FastAPI):
     """Startup / shutdown de la app."""
     settings = get_settings()
+
+    # Block startup if default secret key is used in production
+    if settings.is_production and settings.app_secret_key == "change-this-secret":
+        raise RuntimeError("CRITICAL: app_secret_key must be changed in production")
+
+    # Validate critical environment variables
+    if not settings.openai_api_key:
+        logger.critical("OPENAI_API_KEY is required")
+        raise RuntimeError("OPENAI_API_KEY must be set")
+    if not settings.database_url:
+        logger.warning("DATABASE_URL not set — running without Postgres persistence")
+
     logger.info(
         "app_startup",
         env=settings.app_env,
@@ -196,7 +207,17 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok"}
+        checks = {"status": "ok"}
+        try:
+            import redis.asyncio as aioredis
+            client = aioredis.from_url(get_settings().redis_url)
+            await client.ping()
+            checks["redis"] = "ok"
+            await client.aclose()
+        except Exception:
+            checks["redis"] = "error"
+            checks["status"] = "degraded"
+        return checks
 
     @app.get("/widget.js")
     async def serve_widget_js():

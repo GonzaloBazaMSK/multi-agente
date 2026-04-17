@@ -10,11 +10,14 @@ import json
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from channels.widget import process_widget_message, generate_greeting_stateless
 from memory.conversation_store import get_conversation_store
 from config.constants import Channel
 
 router = APIRouter(prefix="/widget", tags=["widget"])
+widget_limiter = Limiter(key_func=get_remote_address)
 
 
 class ChatRequest(BaseModel):
@@ -44,7 +47,8 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+@widget_limiter.limit("30/minute")
+async def chat(request: Request, req: ChatRequest):
     """
     Endpoint principal del widget web.
     El frontend envía el mensaje y recibe la respuesta del bot.
@@ -74,7 +78,8 @@ async def chat(req: ChatRequest):
 
 
 @router.post("/greeting")
-async def greeting(req: GreetingRequest):
+@widget_limiter.limit("10/minute")
+async def greeting(request: Request, req: GreetingRequest):
     """
     Genera el saludo personalizado SIN crear conversación.
     Se llama al cargar la página; el front lo muestra en el widget.
@@ -220,11 +225,19 @@ async def get_history(session_id: str):
     if not conversation:
         return {"messages": [], "session_id": session_id}
 
+    import re
     messages = []
     for m in conversation.messages:
+        # Strip PII from content before returning to widget
+        content = m.content
+        # Redact email addresses
+        content = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[email]', content)
+        # Redact phone numbers (sequences of 7+ digits, optionally with +, -, spaces, parens)
+        content = re.sub(r'[\+]?[\d\s\-\(\)]{7,}', '[phone]', content)
+
         msg = {
             "role": m.role.value,
-            "content": m.content,
+            "content": content,
             "timestamp": m.timestamp.isoformat(),
             "agent": m.metadata.get("agent", ""),
         }

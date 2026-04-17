@@ -8,6 +8,7 @@ import json
 from fastapi import APIRouter, Request, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from api.auth import get_current_user
+from api.admin import verify_admin_key
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -37,7 +38,7 @@ COUNTRY_ISO = {
 
 
 @router.post("/send")
-async def send_template(request: Request, background_tasks: BackgroundTasks):
+async def send_template(request: Request, background_tasks: BackgroundTasks, key: str = Depends(verify_admin_key)):
     """
     Recibe datos de Zoho CRM y envía una plantilla de WhatsApp.
     Acepta tanto JSON como form-urlencoded (como enviaba Botmaker/Deluge).

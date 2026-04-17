@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     whatsapp_token: str = ""                  # Token de acceso permanente
     whatsapp_phone_number_id: str = ""        # ID del número en Meta
     whatsapp_waba_id: str = ""                # WhatsApp Business Account ID (para listar templates)
-    whatsapp_verify_token: str = "msk_verify_2024"  # Token de verificación del webhook
+    whatsapp_verify_token: str = ""  # Token de verificación del webhook — must be set explicitly
     whatsapp_app_secret: str = ""             # App Secret para verificar firmas
     whatsapp_app_id: str = ""                 # App ID de Meta (para Resumable Upload API)
 
@@ -52,20 +52,6 @@ class Settings(BaseSettings):
     # Rebill
     rebill_api_key: str = ""
     rebill_base_url: str = "https://api.rebill.to/v2"
-    rebill_organization_id: str = ""
-
-    # LMS - Moodle
-    moodle_base_url: str = ""
-    moodle_token: str = ""
-
-    # LMS - Blackboard
-    blackboard_base_url: str = ""
-    blackboard_app_key: str = ""
-    blackboard_app_secret: str = ""
-
-    # LMS - Tropos
-    tropos_base_url: str = ""
-    tropos_api_key: str = ""
 
     # Business hours
     business_hours_start: int = 9       # 9:00 AM
@@ -97,7 +83,6 @@ class Settings(BaseSettings):
 
     # Notifications
     slack_webhook_url: str = ""
-    notification_email: str = ""
 
     @property
     def cors_origins(self) -> list[str]:

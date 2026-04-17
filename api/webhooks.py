@@ -59,7 +59,10 @@ async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # Verificar firma de Meta
     signature = request.headers.get("X-Hub-Signature-256", "")
-    if signature and settings.whatsapp_app_secret:
+    if settings.whatsapp_app_secret:
+        if not signature:
+            logger.warning("whatsapp_meta_missing_signature")
+            raise HTTPException(status_code=401, detail="Missing signature")
         expected = "sha256=" + hmac.new(
             settings.whatsapp_app_secret.encode(),
             body,
@@ -145,9 +148,13 @@ async def botmaker_webhook(request: Request, background_tasks: BackgroundTasks):
     # Verificar firma si está configurada
     botmaker = BotmakerClient()
     signature = request.headers.get("X-Hub-Signature-256", "")
-    if signature and not botmaker.verify_signature(body, signature):
-        logger.warning("botmaker_invalid_signature")
-        raise HTTPException(status_code=401, detail="Invalid signature")
+    if botmaker._webhook_secret:
+        if not signature:
+            logger.warning("botmaker_missing_signature")
+            raise HTTPException(status_code=401, detail="Missing signature")
+        if not botmaker.verify_signature(body, signature):
+            logger.warning("botmaker_invalid_signature")
+            raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
         payload = json.loads(body)
@@ -244,12 +251,15 @@ async def rebill_webhook(request: Request, background_tasks: BackgroundTasks):
     # Verificar firma Rebill si está configurada
     if settings.rebill_api_key:
         signature = request.headers.get("x-rebill-signature", "")
+        if not signature:
+            logger.warning("rebill_missing_signature")
+            raise HTTPException(status_code=401, detail="Missing signature")
         expected = hmac.new(
             settings.rebill_api_key.encode(),
             body,
             hashlib.sha256,
         ).hexdigest()
-        if signature and not hmac.compare_digest(signature, expected):
+        if not hmac.compare_digest(signature, expected):
             logger.warning("rebill_invalid_signature")
             raise HTTPException(status_code=401, detail="Invalid signature")
 

@@ -1788,12 +1788,13 @@ async def sse_stream(request: Request, token: str = ""):
     """
     # Validar auth via query param o header
     session_token = token or request.headers.get("x-session-token", "")
-    if session_token:
-        from memory.conversation_store import get_conversation_store
-        store = await get_conversation_store()
-        data = await store._redis.get(f"session:{session_token}")
-        if not data:
-            raise HTTPException(status_code=401, detail="Token inválido")
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Token requerido")
+    from memory.conversation_store import get_conversation_store
+    store = await get_conversation_store()
+    data = await store._redis.get(f"session:{session_token}")
+    if not data:
+        raise HTTPException(status_code=401, detail="Token inválido")
 
     queue: asyncio.Queue = asyncio.Queue(maxsize=50)
     _sse_clients.add(queue)

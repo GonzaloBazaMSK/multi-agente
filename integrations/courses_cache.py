@@ -50,6 +50,15 @@ def _compact(row: dict) -> dict:
                 d[k] = float(d[k])
             except Exception:
                 pass
+    # pitch_by_profile es JSONB — asyncpg puede devolverlo como str (por
+    # codec) o dict. Normalizamos a dict para que el consumer no tenga que
+    # hacer json.loads a cada llamada.
+    pbp = d.get("pitch_by_profile")
+    if isinstance(pbp, str):
+        try:
+            d["pitch_by_profile"] = json.loads(pbp)
+        except Exception:
+            d["pitch_by_profile"] = {}
     return d
 
 

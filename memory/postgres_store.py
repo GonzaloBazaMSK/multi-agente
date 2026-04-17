@@ -522,7 +522,8 @@ async def get_catalog_compact(country: str) -> str:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            select slug, title, categoria, currency, max_installments, price_installments
+            select slug, title, categoria, currency, max_installments,
+                   price_installments, pitch_hook
             from public.courses
             where country = $1
             order by categoria asc, title asc
@@ -538,12 +539,15 @@ async def get_catalog_compact(country: str) -> str:
     lines = [f"<catalogo_{cc} total_cursos=\"{len(rows)}\">"]
     lines.append(f"# Catálogo de cursos activos en {cc}")
     lines.append("")
-    lines.append("| Slug | Título | Categoría | Precio |")
-    lines.append("|---|---|---|---|")
+    lines.append("Columna **qué te deja** = gancho de valor clínico (usalo como pitch de 1 línea cuando listés este curso; si está vacío, referite al título y la categoría solamente — NO inventes).")
+    lines.append("")
+    lines.append("| Slug | Título | Categoría | Qué te deja | Precio |")
+    lines.append("|---|---|---|---|---|")
     for r in rows:
         slug = r["slug"]
         title = (r["title"] or "").replace("|", "/")
         cat = (r["categoria"] or "").replace("|", "/")
+        hook = (r["pitch_hook"] or "").replace("|", "/").replace("\n", " ").strip()
         inst = r["max_installments"]
         val = r["price_installments"]
         cur = r["currency"] or ""
@@ -551,7 +555,7 @@ async def get_catalog_compact(country: str) -> str:
             precio = f"{inst}x {cur} {val:,.0f}"
         else:
             precio = "Consultar"
-        lines.append(f"| {slug} | {title} | {cat} | {precio} |")
+        lines.append(f"| {slug} | {title} | {cat} | {hook} | {precio} |")
     lines.append(f"</catalogo_{cc}>")
     return "\n".join(lines)
 

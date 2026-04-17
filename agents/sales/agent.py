@@ -30,6 +30,54 @@ SALES_TOOLS = [
 ]
 
 
+# Claves canónicas del pitch_by_profile. Deben mantenerse en sync con el
+# generador de hooks (scripts/gen_pitch_hooks.py) y con el CRM (Zoho MSK).
+_PITCH_KEYS = {
+    "medico", "medico_jefe", "residente", "estudiante",
+    "enfermeria", "tecnico_salud", "licenciado_salud", "otros",
+}
+
+
+def _map_crm_profile_to_pitch_key(profession: Optional[str], cargo: Optional[str]) -> str:
+    """
+    Convierte Profesión + Cargo del CRM MSK a una clave canónica del
+    pitch_by_profile. Matching es case-insensitive y tolerante con/sin tildes.
+
+    Mapeo (orden de evaluación importa):
+      - Profesión = Residente            → residente
+      - Profesión = Estudiante           → estudiante
+      - Profesión = Personal médico:
+          · Cargo directivo/jefatura     → medico_jefe
+          · Cargo operativo o vacío      → medico
+      - Profesión = Personal de enfermería / Auxiliar de enfermería → enfermeria
+      - Profesión = Técnico universitario / Tecnología Médica        → tecnico_salud
+      - Profesión = Licenciado de la salud                           → licenciado_salud
+      - Otra profesión / Fuerza pública / desconocido                → otros
+    """
+    p = (profession or "").lower().strip()
+    c = (cargo or "").lower().strip()
+
+    if "residente" in p:
+        return "residente"
+    if "estudiante" in p:
+        return "estudiante"
+    if "personal médico" in p or "personal medico" in p or p == "médico" or p == "medico":
+        # Detectar cargo directivo/jefatura
+        directive_markers = (
+            "direcci", "gerencia", "coordinaci", "jefat", "supervis", "jefe", "director",
+        )
+        if any(m in c for m in directive_markers):
+            return "medico_jefe"
+        return "medico"
+    if "enfermer" in p:  # cubre "Personal de enfermería" y "Auxiliar de enfermería"
+        return "enfermeria"
+    if "técnico" in p or "tecnico" in p or "tecnología médica" in p or "tecnologia medica" in p:
+        return "tecnico_salud"
+    if "licenciado" in p:
+        return "licenciado_salud"
+    return "otros"
+
+
 async def build_sales_agent(
     country: str = "AR",
     channel: str = "whatsapp",
@@ -332,6 +380,34 @@ def _format_course_context(
 
     profile_block = f"{profile_line}" if profile_line else ""
 
+    # ── Pitch personalizado por perfil ─────────────────────────────────────
+    # Si el curso tiene pitch_by_profile cargado Y tenemos perfil del usuario,
+    # pulleamos el texto específico para la clave canónica del usuario y lo
+    # inyectamos como "pitch listo para usar". El LLM puede usarlo literal o
+    # parafrasearlo — pero no tiene que adivinar beneficios.
+    personalized_pitch_block = ""
+    pbp = course.get("pitch_by_profile") or {}
+    if isinstance(pbp, dict) and user_profile:
+        prof = user_profile.get("profession") or user_profile.get("Profession") or ""
+        cargo = user_profile.get("cargo") or ""
+        key = _map_crm_profile_to_pitch_key(prof, cargo)
+        texto = pbp.get(key) or ""
+        if texto:
+            personalized_pitch_block = f"""
+
+## 🎯 PITCH LISTO PARA USAR — perfil del usuario detectado: `{key}`
+
+Este es el beneficio específico de este curso para su perfil. Usalo como
+base de la apertura del pitch (podés parafrasearlo, pero NO lo contradigas
+ni inventes otros beneficios):
+
+> {texto}
+
+Si el usuario NO encaja con su perfil CRM (ej: dijo que es médico general pero
+el CRM lo marca como jefe), confiá en lo que el USUARIO dice — no en el CRM.
+"""
+
+
     return f"""
 
 ---
@@ -341,7 +417,7 @@ def _format_course_context(
 {intro}### Brief del curso **{title}** (slug: `{slug}`) — fuente primaria, datos oficiales
 
 {brief}
-
+{personalized_pitch_block}
 ---
 
 ## INSTRUCCIÓN DE VENTA CONTEXTUAL

@@ -1108,16 +1108,10 @@ async def process_widget_message(
         "agent": agent_used,
     })
 
-    # ── Handoff notice si viene de selección de menú ──────────────────────────
-    if forced_agent and response_text:
-        notices = {
-            "ventas": "🎓 *Agente de Cursos*\n\n",
-            "cobranzas": "💳 *Área de Cobranzas y Pagos*\n\n",
-            "post_venta": "👤 *Soporte para Alumnos*\n\n",
-        }
-        notice = notices.get(forced_agent, "")
-        if notice:
-            response_text = notice + response_text
+    # Nota: antes se anteponía un "notice" cosmético ("🎓 Agente de Cursos",
+    # "💳 Área de Cobranzas y Pagos", "👤 Soporte para Alumnos") al primer
+    # mensaje tras selección de menú. Se removió — queda raro y no aporta.
+    # El bot ya se presenta con el tono adecuado en la respuesta misma.
 
     # Nota: la ficha de cobranzas ya se cachea por email en _build_user_context
     # (datos_deudor:{email}, TTL 2 h), por lo que no duplicamos la búsqueda acá.

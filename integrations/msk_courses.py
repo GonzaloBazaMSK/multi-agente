@@ -44,10 +44,10 @@ LANG_BY_COUNTRY: dict[str, str] = {
     "hn": "hn",
     "mx": "mx",
     "ni": "ni",
-    "pa": "pa",
+    "pa": "pnm",
     "py": "py",
     "pe": "pe",
-    "sv": "sv",
+    "sv": "sal",
     "uy": "uy",
     "ve": "ve",
 }

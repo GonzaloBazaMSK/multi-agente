@@ -28,6 +28,9 @@ media/
 # Logs
 *.log
 
+# Scripts de debug / testing local
+scripts/
+
 # Deploy scripts with credentials
 deploy_*.py
 

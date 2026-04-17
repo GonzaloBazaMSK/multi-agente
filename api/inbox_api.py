@@ -337,7 +337,7 @@ async def classify(conv_id: str, body: ClassifyBody):
     return {"ok": True}
 
 class QueueBody(BaseModel):
-    queue: Literal["sales", "billing", "post-sales", "support"]
+    queue: Literal["sales", "billing", "post-sales"]
 
 @router.post("/conversations/{conv_id}/queue")
 async def queue_set(conv_id: str, body: QueueBody):
@@ -373,6 +373,92 @@ async def takeover(conv_id: str, body: AssignBody):
     await cm.set_bot_paused(conv_id, True)
     await cm.set_needs_human(conv_id, False)
     return {"ok": True}
+
+
+# ─── Enviar mensaje desde el back-office (humano) ────────────────────────────
+
+class SendMessageBody(BaseModel):
+    text: str
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = "Agente humano"
+
+@router.post("/conversations/{conv_id}/send")
+async def send_message(conv_id: str, body: SendMessageBody):
+    """
+    Envía un mensaje desde la nueva UI del back-office (intervención humana).
+    Por ahora SOLO soporta widget — para WhatsApp queda pendiente.
+
+    Reusa exactamente el flujo del endpoint legacy `/inbox/{sid}/reply`:
+      1. Persiste el mensaje como role='assistant' con metadata.agent='humano'
+      2. Pausa el bot + asigna al agente
+      3. Broadcast del evento al SSE del inbox (lo recibe el widget abierto)
+    """
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(400, "text vacío")
+
+    # 1) Cargar conversación
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "select id, channel, external_id from public.conversations where id=$1",
+            conv_id,
+        )
+    if not row:
+        raise HTTPException(404, "Conversación no encontrada")
+
+    channel = row["channel"]
+    external_id = row["external_id"]
+
+    if channel != "widget":
+        raise HTTPException(
+            501,
+            f"Canal '{channel}' aún no soportado para envío desde la UI nueva. Solo widget por ahora."
+        )
+
+    # 2) Marcar takeover en meta
+    await cm.set_bot_paused(conv_id, True)
+    if body.agent_id:
+        await cm.assign(conv_id, body.agent_id)
+    await cm.set_needs_human(conv_id, False)
+
+    # 3) Persistir + broadcast usando el mismo flujo que el inbox legacy
+    from memory.conversation_store import get_conversation_store
+    from models.message import Message, MessageRole
+    from config.constants import Channel as Ch
+    from api.inbox import broadcast_event
+    import time as _time
+
+    store = await get_conversation_store()
+    conv = await store.get_by_external(Ch.WIDGET, external_id)
+    if not conv:
+        raise HTTPException(404, "Conversación no encontrada en store")
+
+    msg = Message(
+        role=MessageRole.ASSISTANT,
+        content=text,
+        metadata={"agent": "humano", "sender_name": body.agent_name or "Agente"},
+    )
+    await store.append_message(conv, msg)
+
+    # Broadcast al SSE — el widget abierto recibe este evento
+    broadcast_event({
+        "type": "new_message",
+        "session_id": external_id,
+        "role": "assistant",
+        "content": text,
+        "sender_name": body.agent_name or "Agente",
+        "timestamp": msg.timestamp.isoformat(),
+    })
+
+    # Limpiar typing lock
+    try:
+        await store._redis.delete(f"typing:{external_id}")
+        await store._redis.set(f"last_reply:{external_id}", str(_time.time()))
+    except Exception:
+        pass
+
+    return {"ok": True, "delivered": True, "channel": channel}
 
 
 # ─── Bulk ────────────────────────────────────────────────────────────────────

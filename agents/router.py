@@ -188,6 +188,28 @@ async def classify_intent(state: SupervisorState) -> dict:
             pass
 
     handoff = agent == AgentType.HUMAN.value
+
+    # Persistir queue + needs_human en conversation_meta para que el inbox
+    # del back-office los filtre. La queue NO cambia cuando el bot decide
+    # "humano" — sólo se levanta el flag needs_human (sigue en su cola
+    # original de ventas/cobranzas/post-venta).
+    if conversation_id:
+        try:
+            from memory import conversation_meta as cm
+            queue_map = {
+                AgentType.SALES.value:       "sales",
+                AgentType.CLOSER.value:      "sales",
+                AgentType.COLLECTIONS.value: "billing",
+                AgentType.POST_SALES.value:  "post-sales",
+            }
+            queue = queue_map.get(agent)
+            if queue:
+                await cm.set_queue(conversation_id, queue)
+            if handoff:
+                await cm.set_needs_human(conversation_id, True)
+        except Exception as e:
+            logger.warning("queue_persist_failed", error=str(e))
+
     return {
         "current_agent": agent,
         "handoff_requested": handoff,

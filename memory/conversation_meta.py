@@ -18,7 +18,7 @@ logger = structlog.get_logger(__name__)
 
 ConvStatus = Literal["open", "pending", "resolved"]
 LifecycleStage = Literal["new", "hot", "customer", "cold"]
-Queue = Literal["sales", "billing", "post-sales", "support"]
+Queue = Literal["sales", "billing", "post-sales"]
 
 
 # ─── Reads ───────────────────────────────────────────────────────────────────

@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MSK Console — Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          bg:        '#0a0a0a',
+          panel:     '#111111',
+          card:      '#171717',
+          hover:     '#1f1f1f',
+          border:    '#262626',
+          'border-2':'#3a3a3a',
+          fg:        '#fafafa',
+          'fg-muted':'#a1a1aa',
+          'fg-dim':  '#71717a',
+          accent:    '#a855f7',
+          'accent-2':'#9333ea',
+          success:   '#10b981',
+          warn:      '#f59e0b',
+          danger:    '#ef4444',
+          info:      '#3b82f6',
+        },
+        fontFamily: {
+          sans: ['Inter','ui-sans-serif','system-ui','sans-serif'],
+          mono: ['ui-monospace','SFMono-Regular','Menlo','monospace'],
+        }
+      }
+    }
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-feature-settings: 'cv11', 'ss01', 'cv02'; }
+  .scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scroll-thin::-webkit-scrollbar-track { background: transparent; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: #262626; border-radius: 3px; }
+  .scroll-thin::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+  .icon { width: 18px; height: 18px; stroke-width: 1.75; }
+  .icon-sm { width: 14px; height: 14px; stroke-width: 1.75; }
+
+  /* Tooltip rail */
+  .rail-item { position: relative; }
+  .rail-item .tooltip {
+    position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+    background: #1f1f1f; color: #fafafa; padding: 4px 8px; border-radius: 6px;
+    font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none;
+    transition: opacity 0.15s; z-index: 50; border: 1px solid #3a3a3a;
+  }
+  .rail-item:hover .tooltip { opacity: 1; }
+</style>
+</head>
+<body class="bg-bg text-fg font-sans antialiased min-h-screen">
+
+<div class="flex h-screen overflow-hidden">
+
+  <!-- ========================================================== -->
+  <!-- COL 1 — RAIL ESTRECHO (solo iconos, ~56px)                 -->
+  <!-- ========================================================== -->
+  <aside class="w-14 bg-panel border-r border-border flex flex-col items-center py-2 shrink-0">
+    <!-- Logo -->
+    <div class="w-9 h-9 rounded-md bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center text-white font-bold text-sm mb-3">M</div>
+
+    <!-- Workspace switcher (mini) -->
+    <div class="rail-item w-9 h-9 rounded-md bg-info/15 text-info text-[10px] font-bold flex items-center justify-center mb-3 cursor-pointer">
+      AR
+      <span class="tooltip">Workspace: Argentina</span>
+    </div>
+
+    <div class="w-8 h-px bg-border mb-3"></div>
+
+    <!-- Nav iconos -->
+    <nav class="flex flex-col items-center gap-1 flex-1">
+      <a href="#" data-page="inbox" class="rail-link active rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted relative">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+        <span class="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-accent text-white text-[9px] flex items-center justify-center font-bold">12</span>
+        <span class="tooltip">Inbox</span>
+      </a>
+      <a href="#" data-page="contacts" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+        <span class="tooltip">Contactos</span>
+      </a>
+      <a href="#" data-page="courses" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span class="tooltip">Catálogo de cursos</span>
+      </a>
+      <a href="#" data-page="agents" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="tooltip">Agentes IA</span>
+      </a>
+      <a href="#" data-page="prompts" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+        <span class="tooltip">Editor de prompts</span>
+      </a>
+      <a href="#" data-page="channels" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        <span class="tooltip">Canales</span>
+      </a>
+      <a href="#" data-page="analytics" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+        <span class="tooltip">Analytics</span>
+      </a>
+    </nav>
+
+    <!-- Bottom: settings + user -->
+    <div class="flex flex-col items-center gap-1 mt-auto">
+      <a href="#" data-page="settings" class="rail-link rail-item w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6M4.22 4.22l4.24 4.24m7.08 7.08l4.24 4.24M1 12h6m10 0h6M4.22 19.78l4.24-4.24m7.08-7.08l4.24-4.24"/></svg>
+        <span class="tooltip">Settings</span>
+      </a>
+      <a href="#" class="rail-item relative w-9 h-9 rounded-md flex items-center justify-center hover:bg-hover text-fg-muted">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-panel"></span>
+        <span class="tooltip">Notificaciones</span>
+      </a>
+      <div class="rail-item w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-xs font-bold flex items-center justify-center cursor-pointer ring-2 ring-success/40">
+        G
+        <span class="tooltip">Gonzalo Baza · gonzalobaza@msklatam.com</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ========================================================== -->
+  <!-- MAIN AREA — depende de la página activa                    -->
+  <!-- ========================================================== -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ====================================================== -->
+    <!-- PAGE: INBOX                                            -->
+    <!-- 2 columnas (lista + detalle) + panel contacto opcional  -->
+    <!-- ====================================================== -->
+    <section data-view="inbox" class="page flex-1 flex overflow-hidden">
+
+      <!-- COL: lista de conversaciones (con header de filtros + search adentro) -->
+      <div class="w-[340px] bg-panel border-r border-border flex flex-col shrink-0">
+        <!-- Header de la lista: tabs + search -->
+        <div class="border-b border-border">
+          <div class="flex items-center justify-between px-4 pt-3 pb-2">
+            <div class="text-sm font-semibold">Inbox</div>
+            <div class="flex items-center gap-1">
+              <button class="p-1 text-fg-dim hover:text-fg rounded hover:bg-hover" title="Filtros">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              </button>
+              <button class="p-1 text-fg-dim hover:text-fg rounded hover:bg-hover" title="Refrescar">
+                <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+          </div>
+          <!-- Search -->
+          <div class="px-4 pb-2">
+            <div class="relative">
+              <input class="w-full bg-bg border border-border rounded-md pl-8 pr-3 py-1.5 text-sm placeholder-fg-dim focus:outline-none focus:border-accent" placeholder="Buscar..." />
+              <svg class="icon-sm absolute left-2.5 top-2.5 text-fg-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            </div>
+          </div>
+          <!-- Tabs/filtros chips -->
+          <div class="flex gap-1 px-4 pb-2 overflow-x-auto scroll-thin">
+            <button class="text-[11px] px-2 py-1 rounded bg-accent/15 text-accent whitespace-nowrap">Todas <span class="opacity-70">126</span></button>
+            <button class="text-[11px] px-2 py-1 rounded text-fg-muted hover:bg-hover whitespace-nowrap">Mías <span class="opacity-50">8</span></button>
+            <button class="text-[11px] px-2 py-1 rounded text-fg-muted hover:bg-hover whitespace-nowrap">Sin asignar <span class="opacity-50">14</span></button>
+            <button class="text-[11px] px-2 py-1 rounded text-warn hover:bg-warn/10 whitespace-nowrap">⚠ Humano <span class="opacity-70">3</span></button>
+          </div>
+          <!-- Sub-filtros por lifecycle (chips) -->
+          <div class="flex gap-1 px-4 pb-3 overflow-x-auto scroll-thin border-t border-border pt-2">
+            <button class="text-[10px] px-2 py-0.5 rounded-full bg-info/10 text-info whitespace-nowrap flex items-center gap-1">● New 42</button>
+            <button class="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn whitespace-nowrap flex items-center gap-1">● Hot 18</button>
+            <button class="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success whitespace-nowrap flex items-center gap-1">● Customer 31</button>
+            <button class="text-[10px] px-2 py-0.5 rounded-full bg-zinc-700/40 text-fg-dim whitespace-nowrap flex items-center gap-1">● Cold 35</button>
+          </div>
+        </div>
+
+        <!-- Lista -->
+        <div class="flex-1 overflow-y-auto scroll-thin">
+          <div class="px-4 py-3 border-b border-border bg-card border-l-2 border-l-accent cursor-pointer">
+            <div class="flex items-start gap-3">
+              <div class="relative shrink-0">
+                <div class="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-sm font-bold flex items-center justify-center">G</div>
+                <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="Argentina">🇦🇷</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-sm font-medium truncate flex items-center gap-1.5">
+                    Gonzalo Baza
+                    <span class="text-[10px] text-fg-dim font-normal">· AR</span>
+                  </div>
+                  <div class="text-[10px] text-fg-dim shrink-0">10:34</div>
+                </div>
+                <div class="text-xs text-fg-muted truncate mt-0.5">Pasame el link de pago AMIR para empezar</div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn">Hot Lead</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success flex items-center gap-1">
+                    <svg class="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor"><path d="M17.6 6.32A8.78 8.78 0 0 0 12 4a8.79 8.79 0 0 0-7.46 13.4L4 22l4.7-1.23a8.79 8.79 0 0 0 12.7-7.45 8.74 8.74 0 0 0-3.8-7z"/></svg>
+                    WA
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-b border-border hover:bg-hover cursor-pointer">
+            <div class="flex items-start gap-3">
+              <div class="relative shrink-0">
+                <div class="w-9 h-9 rounded-full bg-blue-600 text-white text-sm font-bold flex items-center justify-center">L</div>
+                <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="México">🇲🇽</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-sm font-medium truncate flex items-center gap-1.5">
+                    Laura Martínez
+                    <span class="text-[10px] text-fg-dim font-normal">· MX</span>
+                  </div>
+                  <div class="text-[10px] text-fg-dim shrink-0">10:21</div>
+                </div>
+                <div class="text-xs text-fg-muted truncate mt-0.5">¿El curso AMIR tiene cuotas sin interés?</div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-info/15 text-info">New Lead</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">WA</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-b border-border hover:bg-hover cursor-pointer">
+            <div class="flex items-start gap-3">
+              <div class="relative shrink-0">
+                <div class="w-9 h-9 rounded-full bg-emerald-600 text-white text-sm font-bold flex items-center justify-center">M</div>
+                <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="Chile">🇨🇱</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-sm font-medium truncate flex items-center gap-1.5">
+                    Martín Suárez
+                    <span class="text-[10px] text-fg-dim font-normal">· CL</span>
+                  </div>
+                  <div class="text-[10px] text-fg-dim shrink-0">09:58</div>
+                </div>
+                <div class="text-xs text-fg-muted truncate mt-0.5">Quiero pagar con tarjeta cómo hago?</div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn">Hot Lead</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-accent/15 text-accent">Widget</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-b border-border hover:bg-hover cursor-pointer opacity-70">
+            <div class="flex items-start gap-3">
+              <div class="relative shrink-0">
+                <div class="w-9 h-9 rounded-full bg-zinc-700 text-white text-sm font-bold flex items-center justify-center">A</div>
+                <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="Colombia">🇨🇴</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-sm font-medium truncate flex items-center gap-1.5">
+                    Ana Rodríguez
+                    <span class="text-[10px] text-fg-dim font-normal">· CO</span>
+                  </div>
+                  <div class="text-[10px] text-fg-dim shrink-0">ayer</div>
+                </div>
+                <div class="text-xs text-fg-muted truncate mt-0.5">Gracias, lo voy a pensar y vuelvo</div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-fg-muted">Cold Lead</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">WA</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 py-3 border-b border-border hover:bg-hover cursor-pointer">
+            <div class="flex items-start gap-3">
+              <div class="relative shrink-0">
+                <div class="w-9 h-9 rounded-full bg-amber-600 text-white text-sm font-bold flex items-center justify-center">F</div>
+                <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="Uruguay">🇺🇾</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-baseline justify-between gap-2">
+                  <div class="text-sm font-medium truncate flex items-center gap-1.5">
+                    Federico Núñez
+                    <span class="text-[10px] text-fg-dim font-normal">· UY</span>
+                  </div>
+                  <div class="text-[10px] text-fg-dim shrink-0">ayer</div>
+                </div>
+                <div class="text-xs text-fg-muted truncate mt-0.5">¡Increíble el curso! Ya estoy haciendo el módulo 3</div>
+                <div class="flex items-center gap-1.5 mt-1.5">
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">Customer</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">WA</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COL: detalle de conversación -->
+      <div class="flex-1 flex flex-col bg-bg min-w-0">
+        <div class="px-6 py-3 border-b border-border flex items-center justify-between">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="relative shrink-0">
+              <div class="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-sm font-bold flex items-center justify-center">G</div>
+              <span class="absolute -bottom-0.5 -right-0.5 text-sm leading-none" title="Argentina">🇦🇷</span>
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold flex items-center gap-2">
+                <span class="truncate">Gonzalo Baza</span>
+                <span class="text-[11px] text-fg-dim font-normal">🇦🇷 Argentina</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn shrink-0">Hot Lead</span>
+              </div>
+              <div class="text-[11px] text-fg-dim truncate">+54 11 2887 8717 · WhatsApp · viendo Cardiología AMIR</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button class="text-xs px-2.5 py-1 rounded-md bg-hover hover:bg-border text-fg-muted">Asignar</button>
+            <button class="text-xs px-2.5 py-1 rounded-md bg-hover hover:bg-border text-fg-muted">Snooze</button>
+            <button class="text-xs px-2.5 py-1 rounded-md bg-warn/15 text-warn hover:bg-warn/25">Tomar control</button>
+            <button class="p-1.5 text-fg-dim hover:text-fg rounded hover:bg-hover" id="toggleContactPanel" title="Mostrar/ocultar info contacto">
+              <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Mensajes -->
+        <div class="flex-1 overflow-y-auto scroll-thin p-6 space-y-4">
+          <div class="flex justify-center"><span class="text-[10px] text-fg-dim">Hoy · 10:30</span></div>
+
+          <div class="flex gap-3">
+            <div class="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center shrink-0">🤖</div>
+            <div class="max-w-xl">
+              <div class="text-[10px] text-fg-dim mb-1">Bot · Sales Agent · 10:30</div>
+              <div class="bg-card rounded-lg px-4 py-2.5 text-sm">
+                ¡Hola Gonzalo! 👋 Veo que mirás <strong>Cardiología AMIR</strong>. Como asistente en cardiología en el Hospital Italiano, este curso te apunta directo al día a día clínico — ECG, eco, manejo de SCA y arritmias. ¿Vemos el temario o cómo es la inscripción?
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-3 justify-end">
+            <div class="max-w-xl">
+              <div class="text-[10px] text-fg-dim mb-1 text-right">Gonzalo · 10:32</div>
+              <div class="bg-accent/15 border border-accent/30 rounded-lg px-4 py-2.5 text-sm">Pasame el link de pago AMIR para empezar</div>
+            </div>
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-xs font-bold flex items-center justify-center shrink-0">G</div>
+          </div>
+
+          <div class="flex gap-3">
+            <div class="w-8 h-8 rounded-full bg-accent/20 text-accent text-xs font-bold flex items-center justify-center shrink-0">🤖</div>
+            <div class="max-w-xl">
+              <div class="text-[10px] text-fg-dim mb-1">Bot · Sales Agent · 10:33</div>
+              <div class="bg-info/10 border border-info/30 rounded-lg px-3 py-2 text-xs flex items-center gap-2 mb-2">
+                <svg class="icon-sm text-info" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <span class="font-mono text-info">create_payment_link(course="cardiologia-amir", country="AR")</span>
+                <span class="ml-auto text-[10px] text-success">200 OK · 1.2s</span>
+              </div>
+              <div class="bg-card rounded-lg px-4 py-2.5 text-sm">
+                ¡Genial Gonzalo! Te dejo el link de pago acá:<br/>
+                <a class="text-accent underline text-xs break-all">https://mp.com/p/AMIR-AR-29948</a><br/>
+                Completando el pago queda confirmada tu inscripción 🎉
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Composer -->
+        <div class="border-t border-border bg-panel p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-[10px] text-fg-dim flex items-center gap-1.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
+              Bot activo · respondiendo automáticamente
+            </span>
+            <button class="ml-auto text-[10px] text-warn hover:underline">Pausar bot</button>
+          </div>
+          <div class="bg-bg border border-border rounded-md p-2 flex items-end gap-2">
+            <textarea class="flex-1 bg-transparent text-sm placeholder-fg-dim focus:outline-none resize-none" rows="2" placeholder="Escribí un mensaje (intervendrás como humano)..."></textarea>
+            <div class="flex items-center gap-1">
+              <button class="p-1.5 text-fg-dim hover:text-fg rounded hover:bg-hover">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <button class="px-3 py-1.5 bg-accent text-white rounded text-xs font-medium hover:bg-accent-2">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- COL: panel contacto (colapsable) -->
+      <div id="contactPanel" class="w-72 bg-panel border-l border-border overflow-y-auto scroll-thin shrink-0">
+        <div class="p-4 border-b border-border">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="relative shrink-0">
+              <div class="w-12 h-12 rounded-full bg-gradient-to-br from-pink-500 to-fuchsia-600 text-white text-lg font-bold flex items-center justify-center">G</div>
+              <span class="absolute -bottom-0.5 -right-0.5 text-lg leading-none" title="Argentina">🇦🇷</span>
+            </div>
+            <div class="min-w-0">
+              <div class="text-sm font-semibold flex items-center gap-1.5">
+                Gonzalo Baza
+                <span class="text-[10px] text-fg-dim font-normal">🇦🇷 AR</span>
+              </div>
+              <div class="text-[11px] text-fg-dim truncate">gbaza2612@gmail.com</div>
+            </div>
+          </div>
+          <div class="flex gap-1.5">
+            <button class="flex-1 text-[10px] px-2 py-1 bg-hover hover:bg-border text-fg-muted rounded">Ver Zoho</button>
+            <button class="flex-1 text-[10px] px-2 py-1 bg-hover hover:bg-border text-fg-muted rounded">Editar</button>
+          </div>
+        </div>
+        <div class="p-4 space-y-3 text-xs">
+          <div>
+            <div class="text-fg-dim text-[10px] uppercase tracking-wider mb-1">Profesional</div>
+            <div class="space-y-1">
+              <div class="flex justify-between"><span class="text-fg-dim">Profesión</span><span>Personal médico</span></div>
+              <div class="flex justify-between"><span class="text-fg-dim">Especialidad</span><span>Cardiología</span></div>
+              <div class="flex justify-between"><span class="text-fg-dim">Cargo</span><span>Auxiliar - Asistente</span></div>
+              <div class="flex justify-between"><span class="text-fg-dim">Lugar</span><span>Hospital Italiano</span></div>
+            </div>
+          </div>
+          <div>
+            <div class="text-fg-dim text-[10px] uppercase tracking-wider mb-1">Aval jurisdiccional</div>
+            <div class="bg-success/10 border border-success/30 rounded px-2 py-1.5 text-success text-[11px]">✓ COLEMEMI · Misiones</div>
+          </div>
+          <div>
+            <div class="text-fg-dim text-[10px] uppercase tracking-wider mb-1">Cursos cursados (10)</div>
+            <ul class="space-y-1">
+              <li class="flex items-center gap-1.5"><span class="w-1 h-1 bg-success rounded-full"></span>Medicina Intensiva AMIR</li>
+              <li class="flex items-center gap-1.5"><span class="w-1 h-1 bg-success rounded-full"></span>Burnout en salud</li>
+              <li class="flex items-center gap-1.5"><span class="w-1 h-1 bg-success rounded-full"></span>Ecografía clínica</li>
+              <li class="flex items-center gap-1.5"><span class="w-1 h-1 bg-success rounded-full"></span>Nutrición</li>
+              <li class="text-fg-dim text-[10px] pl-2">+ 6 más</li>
+            </ul>
+          </div>
+          <div>
+            <div class="text-fg-dim text-[10px] uppercase tracking-wider mb-1">Scoring</div>
+            <div class="space-y-1.5">
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5"><span>Perfil</span><span>87/100</span></div>
+                <div class="bg-bg rounded-full h-1"><div class="bg-success h-1 rounded-full" style="width:87%"></div></div>
+              </div>
+              <div>
+                <div class="flex justify-between text-[10px] mb-0.5"><span>Venta</span><span>72/100</span></div>
+                <div class="bg-bg rounded-full h-1"><div class="bg-warn h-1 rounded-full" style="width:72%"></div></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="text-fg-dim text-[10px] uppercase tracking-wider mb-1">Etiquetas</div>
+            <div class="flex flex-wrap gap-1">
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-hover">cardio</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-hover">amir-interest</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-hover">italiano-staff</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- PAGE: COURSES                                          -->
+    <!-- ====================================================== -->
+    <section data-view="courses" class="page hidden flex-1 flex flex-col overflow-hidden">
+      <div class="px-6 py-4 border-b border-border flex items-center justify-between">
+        <div>
+          <h1 class="text-lg font-semibold">Catálogo de cursos</h1>
+          <p class="text-xs text-fg-dim mt-0.5">101 cursos · Argentina · 47 con pitch generado</p>
+        </div>
+        <div class="flex gap-2">
+          <div class="relative">
+            <input class="bg-bg border border-border rounded-md pl-8 pr-3 py-1.5 text-sm placeholder-fg-dim focus:outline-none focus:border-accent w-64" placeholder="Buscar curso..." />
+            <svg class="icon-sm absolute left-2.5 top-2.5 text-fg-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          </div>
+          <button class="text-xs px-3 py-1.5 bg-hover hover:bg-border text-fg-muted rounded-md">Sincronizar WP</button>
+          <button class="text-xs px-3 py-1.5 bg-accent hover:bg-accent-2 text-white rounded-md">Regenerar pitches</button>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto scroll-thin p-6">
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-card border border-border rounded-lg p-5 hover:border-accent/40 transition">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="text-xs text-fg-dim uppercase tracking-wider">Cardiología</div>
+                <div class="text-base font-semibold mt-0.5">Curso superior de Cardiología AMIR</div>
+                <div class="text-[10px] text-fg-dim mt-0.5 font-mono">cardiologia-amir</div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">pitch ✓</span>
+            </div>
+            <div class="text-xs text-fg-muted leading-relaxed mb-3">
+              Dominás la interpretación avanzada de ECG y ecocardiograma, manejo de síndrome coronario agudo y trastornos del ritmo, con foco en algoritmos clínicos aplicables a guardia y consultorio. Te sirve desde el médico generalista hasta el cardiólogo con trayectoria que consolida criterio.
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-fg-dim border-t border-border pt-3">
+              <div>400h · 6 módulos · AMIR</div>
+              <div>12x ARS 124.524</div>
+            </div>
+          </div>
+
+          <div class="bg-card border border-border rounded-lg p-5 hover:border-accent/40 transition">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="text-xs text-fg-dim uppercase tracking-wider">Medicina Interna</div>
+                <div class="text-base font-semibold mt-0.5">Curso superior de Medicina Interna</div>
+                <div class="text-[10px] text-fg-dim mt-0.5 font-mono">medicina-interna</div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">pitch ✓</span>
+            </div>
+            <div class="text-xs text-fg-muted leading-relaxed mb-3">
+              Recorrés 60 temas en 10 ejes (infecciones, cardio, neumo, nefro, endocrino, digestivo, neuro, reuma, hemato y clínica transversal). Desarrollado por más de 50 especialistas de hospitales universitarios, con evidencia 2023-2025.
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-fg-dim border-t border-border pt-3">
+              <div>400h · 60 temas · Tropos</div>
+              <div>12x ARS 131.066</div>
+            </div>
+          </div>
+
+          <div class="bg-card border border-border rounded-lg p-5 hover:border-accent/40 transition">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="text-xs text-fg-dim uppercase tracking-wider">Pediatría</div>
+                <div class="text-base font-semibold mt-0.5">Curso superior de Pediatría</div>
+                <div class="text-[10px] text-fg-dim mt-0.5 font-mono">pediatria</div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-success/15 text-success">pitch ✓</span>
+            </div>
+            <div class="text-xs text-fg-muted leading-relaxed mb-3">
+              Diagnóstico diferencial, manejo de emergencias y soporte vital avanzado en pediatría, abarcando desde patologías neonatales hasta enfermedades crónicas infantiles. 68 temas en áreas como inmunizaciones, endocrinología y hematooncología.
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-fg-dim border-t border-border pt-3">
+              <div>400h · 68 temas · AMIR</div>
+              <div>12x ARS 124.524</div>
+            </div>
+          </div>
+
+          <div class="bg-card border border-border rounded-lg p-5 hover:border-accent/40 transition opacity-60">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <div class="text-xs text-fg-dim uppercase tracking-wider">Diabetes</div>
+                <div class="text-base font-semibold mt-0.5">Diabetes gestacional y pregestacional</div>
+                <div class="text-[10px] text-fg-dim mt-0.5 font-mono">diabetes-gestacional</div>
+              </div>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-fg-dim/15 text-fg-dim">sin kb_ai</span>
+            </div>
+            <div class="text-xs text-fg-muted leading-relaxed mb-3 italic">
+              No hay pitch generado. Falta cargar kb_ai en WordPress.
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-fg-dim border-t border-border pt-3">
+              <div>· · ·</div>
+              <button class="text-accent hover:underline">Ver brief</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================================================== -->
+    <!-- PAGE: PROMPTS EDITOR                                   -->
+    <!-- ====================================================== -->
+    <section data-view="prompts" class="page hidden flex-1 flex overflow-hidden">
+      <div class="w-64 bg-panel border-r border-border overflow-y-auto scroll-thin">
+        <div class="p-3 border-b border-border">
+          <div class="text-sm font-semibold">Prompts del sistema</div>
+          <div class="text-[10px] text-fg-dim mt-0.5">Edición en vivo · cambios sin redeploy</div>
+        </div>
+        <nav class="p-2">
+          <a href="#" class="flex items-center justify-between px-2 py-1.5 rounded-md text-sm bg-hover text-fg">
+            <span>Sales Agent</span><span class="text-[10px] text-fg-dim">v3.2</span>
+          </a>
+          <a href="#" class="flex items-center justify-between px-2 py-1.5 rounded-md text-sm text-fg-muted hover:bg-hover">
+            <span>Greeting (gpt-4o-mini)</span><span class="text-[10px] text-fg-dim">v1.5</span>
+          </a>
+          <a href="#" class="flex items-center justify-between px-2 py-1.5 rounded-md text-sm text-fg-muted hover:bg-hover">
+            <span>Closer Agent</span><span class="text-[10px] text-fg-dim">v1.3</span>
+          </a>
+          <a href="#" class="flex items-center justify-between px-2 py-1.5 rounded-md text-sm text-fg-muted hover:bg-hover">
+            <span>Post-Sales</span><span class="text-[10px] text-fg-dim">v1.0</span>
+          </a>
+          <a href="#" class="flex items-center justify-between px-2 py-1.5 rounded-md text-sm text-fg-muted hover:bg-hover">
+            <span>Router</span><span class="text-[10px] text-fg-dim">v1.1</span>
+          </a>
+        </nav>
+      </div>
+      <div class="flex-1 flex flex-col bg-bg">
+        <div class="px-6 py-3 border-b border-border flex items-center justify-between">
+          <div>
+            <div class="text-sm font-semibold">Sales Agent · v3.2</div>
+            <div class="text-[11px] text-fg-dim">Última edición hace 12 min · 521 líneas</div>
+          </div>
+          <div class="flex gap-1.5">
+            <button class="text-xs px-2.5 py-1 rounded-md bg-hover hover:bg-border text-fg-muted">Diff vs v3.1</button>
+            <button class="text-xs px-2.5 py-1 rounded-md bg-info/15 text-info hover:bg-info/25">Probar en sandbox</button>
+            <button class="text-xs px-2.5 py-1 rounded-md bg-accent text-white hover:bg-accent-2">Guardar y aplicar</button>
+          </div>
+        </div>
+        <div class="flex-1 overflow-y-auto scroll-thin p-6 font-mono text-xs leading-relaxed">
+<pre class="text-fg-muted whitespace-pre-wrap"><span class="text-accent"># 🚨 LAS 4 REGLAS QUE NO PODÉS VIOLAR — LEELAS ANTES DE CADA RESPUESTA</span>
+
+1. <span class="text-fg">NO volqués el brief entero</span> de un curso de una. Cuando el usuario elige UN curso,
+   tu primera respuesta sobre ese curso es corta (4-5 líneas), con UN gancho, y termina
+   con una pregunta bifurcada que invite a elegir por dónde profundizar...
+
+2. <span class="text-fg">NO metas precio en la primera respuesta sobre un curso</span>, aunque el usuario
+   lo haya elegido del listado. El precio entra SOLO si: (a) lo pregunta explícitamente,
+   (b) da señal de compra, o (c) pide comparar precios.
+
+3. <span class="text-fg">NO uses el bloque "¿A quién está dirigido?"</span> si ya tenés el perfil del
+   usuario cargado en contexto...
+
+4. <span class="text-fg">Si el usuario contradice datos del CRM, creele al usuario.</span>
+
+<span class="text-accent">## CONTEXTO</span>
+- País del usuario: <span class="text-info">{country}</span>
+- Moneda: <span class="text-info">{currency}</span>
+- Canal: <span class="text-info">{channel}</span>
+...
+</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Páginas placeholder -->
+    <section data-view="contacts" class="page hidden flex-1 flex items-center justify-center"><div class="text-fg-dim text-sm">📇 Página de Contactos (mockup pendiente)</div></section>
+    <section data-view="agents" class="page hidden flex-1 flex items-center justify-center"><div class="text-fg-dim text-sm">🤖 Página de Agentes IA (mockup pendiente)</div></section>
+    <section data-view="channels" class="page hidden flex-1 flex items-center justify-center"><div class="text-fg-dim text-sm">📡 Página de Canales (mockup pendiente)</div></section>
+    <section data-view="analytics" class="page hidden flex-1 flex items-center justify-center"><div class="text-fg-dim text-sm">📊 Página de Analytics (mockup pendiente)</div></section>
+    <section data-view="settings" class="page hidden flex-1 flex items-center justify-center"><div class="text-fg-dim text-sm">⚙️ Página de Settings (mockup pendiente)</div></section>
+
+  </main>
+</div>
+
+<style>
+  .rail-link.active {
+    background: rgba(168, 85, 247, 0.18);
+    color: #fafafa;
+  }
+  .rail-link.active::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 22px;
+    background: #a855f7;
+    border-radius: 0 2px 2px 0;
+  }
+</style>
+
+<script>
+  const links = document.querySelectorAll('[data-page]');
+  const pages = document.querySelectorAll('[data-view]');
+  links.forEach(link => {
+    link.addEventListener('click', e => {
+      e.preventDefault();
+      const target = link.dataset.page;
+      links.forEach(l => l.classList.remove('active'));
+      link.classList.add('active');
+      pages.forEach(p => {
+        p.classList.toggle('hidden', p.dataset.view !== target);
+        p.classList.toggle('flex', p.dataset.view === target);
+      });
+    });
+  });
+
+  // Toggle del panel de contacto (3ra columna en Inbox)
+  const toggleBtn = document.getElementById('toggleContactPanel');
+  const panel = document.getElementById('contactPanel');
+  toggleBtn?.addEventListener('click', () => {
+    panel.classList.toggle('hidden');
+  });
+</script>
+</body>
+</html>

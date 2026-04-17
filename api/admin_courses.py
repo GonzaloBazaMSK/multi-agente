@@ -22,8 +22,11 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/admin/courses", tags=["admin-courses"])
 
-# Por ahora solo AR — agregar otros países acá cuando se habiliten
-ENABLED_COUNTRIES: list[str] = ["ar"]
+# Todos los países habilitados para sync
+ENABLED_COUNTRIES: list[str] = [
+    "ar", "mx", "cl", "co", "ec", "pe", "es",
+    "bo", "cr", "gt", "hn", "ni", "pa", "py", "sv", "uy", "ve",
+]
 
 
 @router.post("/sync")

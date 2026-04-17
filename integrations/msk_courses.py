@@ -33,23 +33,23 @@ logger = structlog.get_logger(__name__)
 
 # ── Mapeo país ISO-2 → lang del WP ──────────────────────────────────────────
 LANG_BY_COUNTRY: dict[str, str] = {
-    "ar": "arg",
-    "bo": "bol",
-    "cl": "chi",
-    "co": "col",
-    "cr": "cos",
-    "ec": "ecu",
-    "es": "esp",
-    "gt": "gua",
-    "hn": "hon",
-    "mx": "mex",
-    "ni": "nic",
-    "pa": "pan",
-    "py": "par",
-    "pe": "per",
-    "sv": "sal",
-    "uy": "uru",
-    "ve": "ven",
+    "ar": "arg",   # Argentina es el único con código de 3 letras
+    "bo": "bo",
+    "cl": "cl",
+    "co": "co",
+    "cr": "cr",
+    "ec": "ec",
+    "es": "es",
+    "gt": "gt",
+    "hn": "hn",
+    "mx": "mx",
+    "ni": "ni",
+    "pa": "pa",
+    "py": "py",
+    "pe": "pe",
+    "sv": "sv",
+    "uy": "uy",
+    "ve": "ve",
 }
 
 COUNTRY_LABEL: dict[str, str] = {

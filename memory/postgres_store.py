@@ -148,18 +148,13 @@ create table if not exists public.courses (
     duration_hours integer,
     modules_count integer,
     currency text,
-    regular_price numeric(14,2),
-    sale_price numeric(14,2),
     total_price numeric(14,2),
     max_installments integer,
     price_installments numeric(14,2),
-    is_free boolean not null default false,
     url text,
     image_url text,
-    excerpt text,
     brief_md text,
     raw jsonb not null default '{}'::jsonb,
-    source_cache text,
     source_updated_at timestamptz,
     synced_at timestamptz not null default now(),
     created_at timestamptz not null default now(),
@@ -447,14 +442,15 @@ async def upsert_course(row: dict) -> None:
             """
             insert into public.courses (
                 country, slug, product_id, title, categoria, cedente,
-                duration_hours, modules_count, currency, regular_price,
-                sale_price, total_price, max_installments, price_installments,
-                is_free, url, image_url, excerpt, brief_md, raw,
-                source_cache, source_updated_at, synced_at
+                duration_hours, modules_count, currency,
+                total_price, max_installments, price_installments,
+                url, image_url, brief_md, raw,
+                source_updated_at, synced_at
             ) values (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20::jsonb,
-                $21, $22, now()
+                $1, $2, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12,
+                $13, $14, $15, $16::jsonb,
+                $17, now()
             )
             on conflict (country, slug) do update set
                 product_id = excluded.product_id,
@@ -464,31 +460,24 @@ async def upsert_course(row: dict) -> None:
                 duration_hours = excluded.duration_hours,
                 modules_count = excluded.modules_count,
                 currency = excluded.currency,
-                regular_price = excluded.regular_price,
-                sale_price = excluded.sale_price,
                 total_price = excluded.total_price,
                 max_installments = excluded.max_installments,
                 price_installments = excluded.price_installments,
-                is_free = excluded.is_free,
                 url = excluded.url,
                 image_url = excluded.image_url,
-                excerpt = excluded.excerpt,
                 brief_md = excluded.brief_md,
                 raw = excluded.raw,
-                source_cache = excluded.source_cache,
                 source_updated_at = excluded.source_updated_at,
                 synced_at = now()
             """,
             row["country"], row["slug"], row.get("product_id"),
             row["title"], row.get("categoria"), row.get("cedente"),
             row.get("duration_hours"), row.get("modules_count"),
-            row.get("currency"), row.get("regular_price"),
-            row.get("sale_price"), row.get("total_price"),
+            row.get("currency"), row.get("total_price"),
             row.get("max_installments"), row.get("price_installments"),
-            bool(row.get("is_free", False)), row.get("url"),
-            row.get("image_url"), row.get("excerpt"),
+            row.get("url"), row.get("image_url"),
             row.get("brief_md"), json.dumps(row.get("raw", {}), default=str),
-            row.get("source_cache"), row.get("source_updated_at"),
+            row.get("source_updated_at"),
         )
 
 
@@ -514,8 +503,7 @@ async def list_courses(country: str, limit: int = 200) -> list[dict]:
             """
             select country, slug, product_id, title, categoria, cedente,
                    duration_hours, modules_count, currency, total_price,
-                   max_installments, price_installments, url, image_url,
-                   synced_at
+                   max_installments, price_installments, url, image_url, synced_at
             from public.courses
             where country = $1
             order by title asc

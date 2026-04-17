@@ -548,18 +548,13 @@ def to_row(item: dict, country: str) -> dict:
         "duration_hours": _to_int(item.get("duration")),
         "modules_count": _to_int(item.get("modules")),
         "currency": prices.get("currency"),
-        "regular_price": _to_float(prices.get("regular_price")),
-        "sale_price": _to_float(prices.get("sale_price")),
         "total_price": _to_float(prices.get("total_price")),
         "max_installments": _to_int(prices.get("max_installments")),
         "price_installments": _to_float(prices.get("price_installments")),
-        "is_free": bool(prices.get("is_free", False)),
         "url": url,
         "image_url": images.get("high") or images.get("medium") or images.get("low"),
-        "excerpt": html_to_text(item.get("excerpt") or ""),
         "brief_md": brief,
         "raw": item,
-        "source_cache": item.get("cache"),
         "source_updated_at": source_updated_at,
     }
 

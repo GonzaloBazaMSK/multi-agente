@@ -40,6 +40,15 @@ class UpdateUserRequest(BaseModel):
     queues: Optional[list[str]] = None
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    access_token: str
+    new_password: str
+
+
 async def get_current_user(x_session_token: Optional[str] = Header(None)) -> dict:
     """Dependencia FastAPI: verifica sesión en Redis."""
     if not x_session_token:
@@ -94,6 +103,55 @@ async def login(request: Request, req: LoginRequest):
     except Exception as e:
         logger.error("login_error", error=str(e))
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
+@router.post("/forgot-password")
+@auth_limiter.limit("3/minute")
+async def forgot_password(request: Request, req: ForgotPasswordRequest):
+    """
+    Dispara mail de recovery via Supabase Auth.
+
+    Respuesta intencionalmente genérica (no confirma si el email existe) para
+    evitar user enumeration. El user recibe un mail con un link que redirige a
+    /reset-password con un access_token en el hash fragment de la URL.
+    """
+    from integrations.supabase_client import send_password_recovery
+    # Origin del request → URL de redirect después del mail.
+    # Esto permite que dev (localhost) y prod (agentes.msklatam.com) usen el
+    # mismo backend sin hardcodear el dominio.
+    origin = request.headers.get("origin") or request.headers.get("referer", "").rstrip("/")
+    if not origin:
+        # Fallback al dominio prod
+        origin = "https://agentes.msklatam.com"
+    redirect_to = f"{origin}/reset-password"
+    try:
+        await send_password_recovery(req.email, redirect_to)
+    except Exception as e:
+        # No exponer el error al user — siempre devolver OK
+        logger.warning("forgot_password_error", error=str(e), email=req.email)
+    # Mensaje genérico independientemente del resultado
+    return {"ok": True, "message": "Si el email existe, te enviamos instrucciones para restablecer tu contraseña."}
+
+
+@router.post("/reset-password")
+@auth_limiter.limit("5/minute")
+async def reset_password(request: Request, req: ResetPasswordRequest):
+    """
+    Aplica la nueva password usando el access_token que vino del mail de recovery.
+    El frontend extrae el token del hash fragment (#access_token=...) y lo manda acá.
+    """
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
+    from integrations.supabase_client import update_user_password_with_token
+    try:
+        await update_user_password_with_token(req.access_token, req.new_password)
+    except ValueError as e:
+        # Token expirado o inválido
+        raise HTTPException(status_code=401, detail="El link de recuperación es inválido o ya expiró. Pedí uno nuevo.")
+    except Exception as e:
+        logger.error("reset_password_error", error=str(e))
+        raise HTTPException(status_code=500, detail="Error al actualizar la contraseña. Intentá de nuevo.")
+    return {"ok": True, "message": "Contraseña actualizada. Ya podés iniciar sesión."}
 
 
 @router.post("/logout")

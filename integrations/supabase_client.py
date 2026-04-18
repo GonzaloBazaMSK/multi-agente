@@ -85,6 +85,55 @@ async def delete_profile(profile_id: str) -> None:
             timeout=10,
         )
 
+async def send_password_recovery(email: str, redirect_to: str) -> dict:
+    """
+    Dispara el flow de "olvidé mi contraseña" de Supabase Auth.
+    Supabase manda un mail con un link tipo
+        https://<project>.supabase.co/auth/v1/verify?token=...&type=recovery&redirect_to=<redirect_to>
+    Cuando el user lo abre, Supabase redirige a `redirect_to` con
+    `#access_token=...&refresh_token=...&type=recovery` en el hash.
+
+    Importante: este endpoint NO confirma si el email existe (protección
+    contra user enumeration) — siempre devuelve 200 aunque no haya match.
+    El error de mail (SMTP, no llega) no se propaga acá.
+    """
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/auth/v1/recover",
+            headers=_headers(),
+            json={"email": email, "options": {"redirectTo": redirect_to}},
+            timeout=10,
+        )
+        # Supabase devuelve 200 incluso si el email no existe (anti-enum).
+        # Solo logueamos si el código es != 200 — algo raro pasó.
+        if resp.status_code != 200:
+            logger.warning("password_recovery_failed",
+                          email=email, status=resp.status_code, body=resp.text[:200])
+        return {"ok": resp.status_code == 200}
+
+
+async def update_user_password_with_token(access_token: str, new_password: str) -> dict:
+    """
+    Actualiza la password del user dueño del access_token.
+    El access_token viene del flow de recovery (Supabase lo embebe en el hash
+    de la URL al redirigir post-mail).
+    """
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SECRET_KEY,
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+            },
+            json={"password": new_password},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            raise ValueError(f"Reset failed: {resp.text}")
+        return resp.json()
+
+
 async def admin_create_auth_user(email: str, password: str, name: str) -> dict:
     """Crea usuario en Supabase Auth."""
     async with httpx.AsyncClient() as client:

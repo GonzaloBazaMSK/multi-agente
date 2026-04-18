@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +52,15 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-fg-muted mb-1">Contraseña</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-xs text-fg-muted">Contraseña</label>
+              <Link
+                href="/forgot-password"
+                className="text-[11px] text-accent hover:underline"
+              >
+                ¿La olvidaste?
+              </Link>
+            </div>
             <Input
               type="password"
               autoComplete="current-password"

@@ -1,0 +1,66 @@
+name: CI
+
+# Smoke + unit tests para evitar deploys de código que ni siquiera importa.
+# NO levanta servicios externos (Postgres, Redis, OpenAI). Si necesitás
+# integration tests reales, hace falta service containers + secretos.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python-tests:
+    name: Python smoke + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        # No necesita Redis ni Postgres reales — los tests son unit + import smoke.
+        # /health test acepta 'ok' o 'degraded'.
+        env:
+          ENVIRONMENT: test
+          OPENAI_API_KEY: sk-test-fake
+          REDIS_URL: redis://localhost:6379/0
+        run: pytest -v
+
+  frontend-build:
+    name: Next.js build check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Build
+        # output: 'standalone' está activo, esto ya valida que el build no rompa.
+        run: npm run build

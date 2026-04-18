@@ -62,13 +62,63 @@ async def ensure_meta(conversation_id: str) -> dict:
     return dict(row)
 
 
+# Paleta de gradients tailwind para colorear avatares de forma estable por id
+_AGENT_COLORS = [
+    "from-pink-500 to-fuchsia-600",
+    "from-blue-500 to-cyan-600",
+    "from-emerald-500 to-teal-600",
+    "from-amber-500 to-orange-600",
+    "from-violet-500 to-purple-600",
+    "from-rose-500 to-red-600",
+    "from-sky-500 to-indigo-600",
+    "from-lime-500 to-green-600",
+]
+
+
+def _derive_initials(name: str, email: str) -> str:
+    n = (name or email or "?").strip()
+    parts = [p for p in n.split() if p]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return (n[:2] or "?").upper()
+
+
+def _derive_color(seed: str) -> str:
+    # Hash estable → mismo color para el mismo agente entre sesiones
+    h = sum(ord(c) for c in (seed or ""))
+    return _AGENT_COLORS[h % len(_AGENT_COLORS)]
+
+
 async def list_agents() -> list[dict]:
+    """
+    Lista agentes humanos del workspace = profiles con role agente/supervisor/admin.
+    Initials y color se derivan client-side determinísticamente para que el
+    dropdown del inbox no necesite columnas cosméticas en profiles.
+    """
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "select id, name, email, initials, color, active from public.agents where active order by name"
+            """
+            select id::text as id, name, email, role, queues
+            from public.profiles
+            where role in ('admin', 'supervisor', 'agente')
+            order by name nulls last, email
+            """
         )
-    return [dict(r) for r in rows]
+    out = []
+    for r in rows:
+        d = dict(r)
+        out.append({
+            "id": d["id"],
+            "name": d["name"] or d["email"],
+            "email": d["email"],
+            "initials": _derive_initials(d.get("name") or "", d.get("email") or ""),
+            "color": _derive_color(d["id"]),
+            "active": True,
+            "role": d["role"],
+            "queues": d.get("queues") or [],
+        })
+    return out
 
 
 # ─── Writes ──────────────────────────────────────────────────────────────────
@@ -87,7 +137,7 @@ async def assign(conversation_id: str, agent_id: Optional[str]) -> None:
             await conn.execute(
                 """
                 update public.conversation_meta
-                set assigned_agent_id=$2, assigned_at=now()
+                set assigned_agent_id=$2::uuid, assigned_at=now()
                 where conversation_id=$1
                 """,
                 conversation_id, agent_id,
@@ -232,7 +282,7 @@ async def bulk_assign(conversation_ids: list[str], agent_id: Optional[str]) -> i
             r = await conn.execute(
                 """
                 update public.conversation_meta
-                set assigned_agent_id=$2, assigned_at=now()
+                set assigned_agent_id=$2::uuid, assigned_at=now()
                 where conversation_id = any($1::uuid[])
                 """,
                 conversation_ids, agent_id,

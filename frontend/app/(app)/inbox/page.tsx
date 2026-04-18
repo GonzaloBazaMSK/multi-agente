@@ -12,6 +12,7 @@ import {
   type ConversationListItem,
 } from "@/lib/mock-data";
 import { useInboxSSE } from "@/lib/api/sse";
+import { useAuth } from "@/lib/auth";
 import {
   useConversations,
   useMessages,
@@ -29,9 +30,13 @@ import {
   useAIInsights,
 } from "@/lib/api/inbox";
 
-const ME_ID = "u-gbaza"; // TODO: leer del auth
-
 export default function InboxPage() {
+  // El id del agente actual sale del JWT (profiles.id uuid).
+  // Si no hay sesión (modo dev con admin key), queda vacío y los filtros
+  // de "mías" no matchean nada — comportamiento esperado.
+  const { user } = useAuth();
+  const ME_ID = user?.id ?? "";
+
   const [selectedId, setSelectedId] = useState<string>("");
   const [showContactPanel, setShowContactPanel] = useState(true);
 
@@ -156,7 +161,14 @@ export default function InboxPage() {
   };
   const handleClassify   = (stage: LifecycleStage)  => effectiveSelectedId && classifyM.mutate({ id: effectiveSelectedId, lifecycle: stage });
   const handleToggleBot  = ()                        => selected && toggleBotM.mutate({ id: selected.id, paused: !selected.botPaused });
-  const handleTakeover   = ()                        => effectiveSelectedId && takeoverM.mutate({ id: effectiveSelectedId, agentId: ME_ID });
+  const handleTakeover   = ()                        => {
+    if (!effectiveSelectedId) return;
+    if (!ME_ID) {
+      alert("Iniciá sesión para tomar la conversación");
+      return;
+    }
+    takeoverM.mutate({ id: effectiveSelectedId, agentId: ME_ID });
+  };
 
   // Bulk
   const handleBulkToggle = (id: string) => {

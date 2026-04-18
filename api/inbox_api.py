@@ -128,39 +128,11 @@ async def list_agents():
     return await cm.list_agents()
 
 
-class CreateAgentBody(BaseModel):
-    id: str
-    name: str
-    email: Optional[str] = None
-    initials: Optional[str] = None
-    color: Optional[str] = "from-pink-500 to-fuchsia-600"
-
-@router.post("/agents")
-async def create_agent(body: CreateAgentBody):
-    pool = await postgres_store.get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            insert into public.agents (id, name, email, initials, color, active)
-            values ($1, $2, $3, $4, $5, true)
-            on conflict (id) do update set
-              name=excluded.name, email=excluded.email,
-              initials=excluded.initials, color=excluded.color, active=true
-            """,
-            body.id, body.name, body.email, body.initials or body.name[:2].upper(), body.color,
-        )
-    return {"ok": True}
-
-
-@router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: str):
-    pool = await postgres_store.get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "update public.agents set active = false where id = $1",
-            agent_id,
-        )
-    return {"ok": True}
+# NOTE: POST/DELETE /agents fueron eliminados en migration 004.
+# Los agentes humanos = profiles. Para crearlos/borrarlos usar:
+#   POST   /auth/users
+#   DELETE /auth/users/{profile_id}
+# El GET /agents de arriba lee de profiles via cm.list_agents().
 
 
 # Países "primarios" — los que tienen su propia sub-cola en el inbox.
@@ -462,7 +434,7 @@ async def list_conversations(
             last_message=last_msg or "",
             last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat() if (r["last_message_at"] or r["updated_at"]) else "",
             message_count=r["message_count"] or 0,
-            assigned_agent_id=r["assigned_agent_id"],
+            assigned_agent_id=str(r["assigned_agent_id"]) if r["assigned_agent_id"] else None,
             status=r["status"] or "open",
             lifecycle=r["lifecycle"] or "new",
             lifecycle_is_manual=bool(r["lifecycle_is_manual"]),

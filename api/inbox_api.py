@@ -133,6 +133,65 @@ async def list_agents():
 PRIMARY_COUNTRIES = {"AR", "CL", "EC", "MX", "CO"}
 
 
+@router.get("/courses")
+async def list_courses(country: str = "AR", limit: int = 200):
+    """Lista de cursos del país con pitch_hook + pitch_by_profile."""
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select slug, title, categoria, currency, max_installments,
+                   price_installments, pitch_hook, pitch_by_profile,
+                   (raw->'kb_ai') is not null as has_kb_ai
+            from public.courses
+            where country = $1
+            order by categoria asc, title asc
+            limit $2
+            """,
+            country.lower(), limit,
+        )
+    out = []
+    import json as _json
+    for r in rows:
+        pbp = r["pitch_by_profile"]
+        if isinstance(pbp, str):
+            try: pbp = _json.loads(pbp)
+            except Exception: pbp = {}
+        out.append({
+            "slug": r["slug"],
+            "title": r["title"],
+            "categoria": r["categoria"],
+            "currency": r["currency"],
+            "max_installments": r["max_installments"],
+            "price_installments": float(r["price_installments"]) if r["price_installments"] else None,
+            "pitch_hook": r["pitch_hook"],
+            "pitch_by_profile": pbp,
+            "has_kb_ai": bool(r["has_kb_ai"]),
+        })
+    return out
+
+
+class UpdatePitchHookBody(BaseModel):
+    pitch_hook: str
+
+@router.put("/courses/{country}/{slug}/pitch-hook")
+async def update_pitch_hook(country: str, slug: str, body: UpdatePitchHookBody):
+    """Edita manualmente el pitch_hook de un curso."""
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "update public.courses set pitch_hook=$1 where country=$2 and slug=$3",
+            body.pitch_hook, country.lower(), slug,
+        )
+    # Invalidar cache Redis del curso
+    try:
+        from integrations import courses_cache
+        await courses_cache.invalidate_country(country.lower())
+    except Exception:
+        pass
+    return {"ok": True}
+
+
 @router.get("/queue-stats")
 async def queue_stats():
     """
@@ -352,6 +411,120 @@ async def get_messages(conv_id: str):
     return out
 
 
+@router.get("/conversations/{conv_id}/ai-insights")
+async def get_ai_insights(conv_id: str):
+    """
+    Genera resumen + próximo paso + razones del scoring de la conversación
+    usando OpenAI gpt-4o-mini con los últimos 20 mensajes como contexto.
+    Cacheado en Redis 5 min (no regenerar en cada refresh).
+    """
+    from memory.conversation_store import get_conversation_store
+    import json as _json
+
+    store = await get_conversation_store()
+    cache_key = f"ai_insights:{conv_id}"
+
+    # Cache hit
+    cached = await store._redis.get(cache_key)
+    if cached:
+        try:
+            return _json.loads(cached)
+        except Exception:
+            pass
+
+    # Cargar mensajes
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select role, content, metadata, created_at
+            from public.messages
+            where conversation_id = $1
+            order by created_at desc
+            limit 20
+            """,
+            conv_id,
+        )
+        # Cargar perfil del usuario también
+        conv_row = await conn.fetchrow(
+            "select user_profile from public.conversations where id = $1",
+            conv_id,
+        )
+
+    if not rows:
+        return {
+            "summary": "Conversación sin mensajes todavía.",
+            "nextStep": "Esperar al primer turno del usuario.",
+            "scoringReasons": [],
+        }
+
+    # Reconstruir cronológico
+    msgs = list(reversed(rows))
+    transcript = "\n".join(
+        f"[{m['role']}] {m['content'][:300]}" for m in msgs
+    )
+    profile = conv_row["user_profile"] if conv_row else {}
+    if isinstance(profile, str):
+        try: profile = _json.loads(profile)
+        except Exception: profile = {}
+
+    profile_str = "\n".join(f"  - {k}: {v}" for k, v in (profile or {}).items() if v) or "  (sin datos)"
+
+    from openai import AsyncOpenAI
+    from config.settings import get_settings
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise HTTPException(500, "OPENAI_API_KEY no configurada")
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    system = """Sos un asistente que analiza conversaciones del bot de ventas de MSK Latam (cursos médicos) y produce insights accionables para el agente humano.
+
+Devolvé SOLO un JSON con esta estructura:
+{
+  "summary": "<resumen 1-2 oraciones de la conversación>",
+  "nextStep": "<próximo paso recomendado para cerrar la venta o avanzar — 1-2 oraciones>",
+  "scoringReasons": ["<razón 1>", "<razón 2>", "<razón 3>", "<razón 4>"]
+}
+
+Reglas:
+- summary: descriptivo, sin opinión
+- nextStep: accionable, concreto (ej: "Enviar link de pago AMIR + cupón BOT20 si no responde en 24h")
+- scoringReasons: 3-5 bullets cortos sobre por qué este lead es caliente/tibio/frio
+- En español argentino profesional
+- DEVOLVER SOLO EL JSON, sin comillas decorativas ni texto extra."""
+
+    user_msg = f"PERFIL DEL CONTACTO:\n{profile_str}\n\nTRANSCRIPCIÓN (últimos {len(msgs)} mensajes):\n{transcript}"
+
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.3,
+            max_tokens=600,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        data = _json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        logger.warning("ai_insights_failed", conv_id=conv_id, error=str(e))
+        return {
+            "summary": "(no se pudieron generar insights — error LLM)",
+            "nextStep": "Revisar manualmente la conversación.",
+            "scoringReasons": [],
+        }
+
+    out = {
+        "summary": data.get("summary") or "",
+        "nextStep": data.get("nextStep") or "",
+        "scoringReasons": data.get("scoringReasons") or [],
+    }
+    # Cache 5 min
+    await store._redis.setex(cache_key, 300, _json.dumps(out))
+    return out
+
+
 @router.get("/contacts/{email}")
 async def get_contact(email: str):
     """
@@ -565,10 +738,10 @@ async def send_message(conv_id: str, body: SendMessageBody):
     channel = row["channel"]
     external_id = row["external_id"]
 
-    if channel != "widget":
+    if channel not in ("widget", "whatsapp"):
         raise HTTPException(
             501,
-            f"Canal '{channel}' aún no soportado para envío desde la UI nueva. Solo widget por ahora."
+            f"Canal '{channel}' aún no soportado para envío desde la UI nueva."
         )
 
     # 2) Marcar takeover en meta
@@ -585,7 +758,8 @@ async def send_message(conv_id: str, body: SendMessageBody):
     import time as _time
 
     store = await get_conversation_store()
-    conv = await store.get_by_external(Ch.WIDGET, external_id)
+    ch_enum = Ch.WHATSAPP if channel == "whatsapp" else Ch.WIDGET
+    conv = await store.get_by_external(ch_enum, external_id)
     if not conv:
         raise HTTPException(404, "Conversación no encontrada en store")
 
@@ -615,7 +789,7 @@ async def send_message(conv_id: str, body: SendMessageBody):
     )
     await store.append_message(conv, msg)
 
-    # Broadcast al SSE — el widget abierto recibe este evento
+    # Broadcast al SSE — UI del back-office se entera al toque
     broadcast_event({
         "type": "new_message",
         "session_id": external_id,
@@ -625,6 +799,25 @@ async def send_message(conv_id: str, body: SendMessageBody):
         "attachments": attachments_meta,
         "timestamp": msg.timestamp.isoformat(),
     })
+
+    # Push real al canal del usuario
+    if channel == "whatsapp":
+        try:
+            from integrations.whatsapp_meta import WhatsAppMetaClient
+            wa = WhatsAppMetaClient()
+            phone = (conv.context or {}).get("phone") if conv.context else None
+            phone = phone or external_id
+            # Enviar texto
+            if final_text:
+                await wa.send_text(phone, final_text)
+            # Si hay adjuntos, mandar URL como mensaje aparte (Meta Cloud API
+            # soporta media via URL — por ahora mandamos el link público R2)
+            for a in body.attachments:
+                if a.url:
+                    await wa.send_text(phone, a.url)
+        except Exception as e:
+            logger.warning("inbox_send_wa_failed", conv_id=conv_id, error=str(e))
+            return {"ok": False, "delivered": False, "channel": channel, "error": str(e)}
 
     # Limpiar typing lock
     try:

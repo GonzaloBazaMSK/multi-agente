@@ -262,6 +262,15 @@ export function useMessages(conversationId: string | null) {
   });
 }
 
+export function useAIInsights(conversationId: string | null) {
+  return useQuery<{ summary: string; nextStep: string; scoringReasons: string[] }>({
+    queryKey: ["inbox", "ai-insights", conversationId],
+    queryFn: () => api.get(`/inbox/conversations/${conversationId}/ai-insights`),
+    enabled: !!conversationId,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useContact(email: string | null) {
   return useQuery({
     queryKey: ["inbox", "contact", email],

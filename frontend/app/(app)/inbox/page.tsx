@@ -26,6 +26,7 @@ import {
   useBulkResolve,
   useBulkSnooze,
   useQueueStats,
+  useAIInsights,
 } from "@/lib/api/inbox";
 
 const ME_ID = "u-gbaza"; // TODO: leer del auth
@@ -57,6 +58,19 @@ export default function InboxPage() {
   const selected = items.find((c) => c.id === effectiveSelectedId) ?? null;
   const messagesQ = useMessages(effectiveSelectedId || null);
   const contactQ = useContact(selected?.contact.email ?? null);
+  const aiInsightsQ = useAIInsights(effectiveSelectedId || null);
+
+  // Mergear AI insights al contact (sobreescribe los mock con los reales)
+  const contactWithInsights = contactQ.data
+    ? {
+        ...contactQ.data,
+        ai: aiInsightsQ.data ?? contactQ.data.ai ?? {
+          summary: aiInsightsQ.isLoading ? "Generando insights con IA..." : "—",
+          nextStep: "—",
+          scoringReasons: [],
+        },
+      }
+    : null;
 
   // ── Counts (calculados client-side sobre la lista filtrada) ──────────
   const counts = useMemo(() => {
@@ -182,7 +196,7 @@ export default function InboxPage() {
         counts={counts}
       />
       <ConversationDetail
-        contact={contactQ.data ?? null}
+        contact={contactWithInsights}
         conversation={selected}
         messages={messagesQ.data ?? []}
         onToggleContactPanel={() => setShowContactPanel((s) => !s)}
@@ -192,7 +206,7 @@ export default function InboxPage() {
         onToggleBot={handleToggleBot}
         onClassify={handleClassify}
       />
-      {showContactPanel && <ContactPanel contact={contactQ.data ?? null} />}
+      {showContactPanel && <ContactPanel contact={contactWithInsights} />}
     </>
   );
 }

@@ -166,11 +166,11 @@ export function Composer({
   const [sendError, setSendError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
-  const canSend = !!conversationId && channel === "widget";
+  const canSend = !!conversationId && (channel === "widget" || channel === "whatsapp");
   const sendDisabledReason = !conversationId
     ? "Seleccioná una conversación"
-    : channel !== "widget"
-      ? `Envío desde la UI aún no soportado para canal '${channel}' (solo widget por ahora)`
+    : !canSend
+      ? `Envío desde la UI no soportado para canal '${channel}'`
       : "";
 
   const handleSend = async () => {

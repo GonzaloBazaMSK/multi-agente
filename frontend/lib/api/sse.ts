@@ -2,17 +2,24 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { getAuthToken } from "@/lib/auth";
 
 /**
  * Suscribe al SSE del inbox y refetcha conversaciones + mensajes
  * cuando llega un evento nuevo (sin esperar polling de 15s).
+ *
+ * Auth: EventSource no permite headers custom, así que mandamos el JWT como
+ * query param `?token=`. El backend lo valida igual que `x-session-token`.
+ * (Usábamos el admin key acá pero estaba expuesto en el bundle del browser
+ * y bypaseaba el login — ver lib/api.ts para contexto.)
  */
 export function useInboxSSE(currentConversationId: string | null) {
   const qc = useQueryClient();
 
   useEffect(() => {
-    const adminKey = process.env.NEXT_PUBLIC_ADMIN_KEY || "change-this-secret";
-    const url = `/api/inbox/stream?key=${encodeURIComponent(adminKey)}`;
+    const token = getAuthToken();
+    if (!token) return; // sin token no hay SSE — el guard ya redirige a /login
+    const url = `/api/inbox/stream?token=${encodeURIComponent(token)}`;
 
     let es: EventSource | null = null;
     let retryTimeout: ReturnType<typeof setTimeout> | null = null;

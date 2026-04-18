@@ -404,10 +404,13 @@ export async function uploadFile(file: File): Promise<UploadedAttachment> {
   const fd = new FormData();
   fd.append("file", file);
 
-  const adminKey = process.env.NEXT_PUBLIC_ADMIN_KEY || "change-this-secret";
+  // Auth: solo session token, NO admin key. Ver lib/api.ts.
+  const token = typeof window !== "undefined" ? localStorage.getItem("msk_console_token") : null;
+  const headers: Record<string, string> = {};
+  if (token) headers["x-session-token"] = token;
   const res = await fetch(`/api/inbox/upload`, {
     method: "POST",
-    headers: { "x-admin-key": adminKey },
+    headers,
     body: fd,
   });
   if (!res.ok) {

@@ -84,17 +84,37 @@ class MessageOut(BaseModel):
 # ─── Reads ───────────────────────────────────────────────────────────────────
 
 @router.get("/stream")
-async def stream(admin_key: Optional[str] = Query(None, alias="key")):
+async def stream(
+    admin_key: Optional[str] = Query(None, alias="key"),
+    session_token: Optional[str] = Query(None, alias="token"),
+):
     """
     SSE para nuevos eventos del inbox (mensajes, asignaciones, etc).
-    Auth: pasar `?key=<admin_key>` (EventSource no permite headers custom).
+    Auth: EventSource no permite headers custom, así que aceptamos:
+      - `?token=<session_token>` (preferido, lo que usa el frontend logueado).
+      - `?key=<admin_key>` (compat para herramientas internas/scripts).
     Reusa el bus broadcast del inbox legacy.
     """
     from config.settings import get_settings
     expected = get_settings().app_secret_key  # mismo que verify_admin_key
-    # Permitimos también el x-admin-key si viene
-    if admin_key != "change-this-secret" and admin_key != expected:
-        raise HTTPException(401, "key inválida")
+
+    authed = False
+    # 1. Token de sesión: misma validación que get_current_user (Redis).
+    if session_token:
+        from memory.conversation_store import get_conversation_store
+        store = await get_conversation_store()
+        sess = await store._redis.get(f"session:{session_token}")
+        if sess:
+            authed = True
+    # 2. Admin key: solo el secreto real, sin fallback hardcodeado.
+    #    (Antes aceptábamos también "change-this-secret" como fallback —
+    #    eso permitía que el frontend bypaseara el login en cualquier env
+    #    que no hubiera rotado el secret. Removido.)
+    if not authed and admin_key and admin_key == expected:
+        authed = True
+
+    if not authed:
+        raise HTTPException(401, "no autenticado")
 
     from api.inbox import _sse_clients
     from fastapi.responses import StreamingResponse

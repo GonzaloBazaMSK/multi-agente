@@ -30,10 +30,12 @@ Crear `.env.local` (ignorado por git):
 ```bash
 # A dónde apunta el proxy /api/*  (default: http://localhost:8000)
 API_BASE_URL=http://localhost:8000
-
-# Admin key para los endpoints protegidos del API (mismo que en el server)
-NEXT_PUBLIC_ADMIN_KEY=change-this-secret
 ```
+
+> **NO uses `NEXT_PUBLIC_ADMIN_KEY`.** Cualquier env var prefijada con
+> `NEXT_PUBLIC_` se embebe en el bundle JS que descarga el browser, así que
+> el admin key quedaba expuesto a cualquier visitante. La auth del frontend
+> es solo via `x-session-token` (JWT emitido por `/auth/login`).
 
 ## Estructura
 

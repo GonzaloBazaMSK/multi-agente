@@ -28,14 +28,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Load token from localStorage on mount + validate with /auth/me
-  // En dev, si no hay token NO redirige — usa el admin key del env como
-  // fallback para que el equipo pueda ver el inbox sin loguearse.
+  // Rutas que NO requieren auth (las únicas accesibles sin token).
+  const PUBLIC_ROUTES = ["/login", "/forgot-password", "/reset-password"];
+  const isPublicRoute = PUBLIC_ROUTES.some((p) => pathname?.startsWith(p));
+
+  // Load token from localStorage on mount + validate with /auth/me.
+  // ANTES: si no había token, dejaba pasar al inbox y la UI usaba un
+  // admin key embebido en el bundle → cualquiera entraba sin loguearse.
+  // AHORA: sin token o con token inválido → redirect a /login (excepto
+  // para las rutas públicas como /login mismo o /forgot-password).
   useEffect(() => {
     const t = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
     if (!t) {
       setLoading(false);
-      // No redirect — el user puede ver el inbox con admin key
+      if (!isPublicRoute) router.replace("/login");
       return;
     }
     setToken(t);
@@ -48,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {
         localStorage.removeItem(TOKEN_KEY);
         setToken(null);
-        // Tampoco redirect en error — solo cae al fallback
+        if (!isPublicRoute) router.replace("/login");
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps

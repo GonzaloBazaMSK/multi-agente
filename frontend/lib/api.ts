@@ -13,9 +13,14 @@
  * empiezan con /auth y los rutea sin el prefijo /api. Era el bug que hacía
  * que la pantalla de Configuración mostrara "Necesitás iniciar sesión como
  * admin" aunque estuvieras logueado como admin.
+ *
+ * SEGURIDAD: este cliente NO manda X-Admin-Key. El admin key es un secret
+ * server-side (cron, scripts, webhooks internos) y cualquier cosa prefijada
+ * con NEXT_PUBLIC_* se embebe en el bundle JS del browser — así que poner
+ * el admin key acá lo expone a cualquier visitante que abra devtools.
+ * La única credencial del browser es `x-session-token` (JWT emitido por
+ * /auth/login). Si no hay token → 401 → el guard de cliente manda a /login.
  */
-
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "change-this-secret";
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -32,7 +37,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-admin-key": ADMIN_KEY,
     ...(init.headers as Record<string, string> || {}),
   };
   if (token) headers["x-session-token"] = token;

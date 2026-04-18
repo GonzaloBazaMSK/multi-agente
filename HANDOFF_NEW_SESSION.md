@@ -3,6 +3,14 @@
 Documento de contexto para retomar el trabajo en una sesión nueva sin perder
 información. Pegá esto al inicio de la conversación nueva.
 
+> **🚨 LEER PRIMERO**: `PROJECT_CONTEXT.md` (en la raíz del repo). Tiene
+> 700+ líneas con TODO el conocimiento del proyecto: arquitectura completa,
+> dominio de negocio MSK, multi-agente LangGraph, lógica del inbox (queues +
+> países + lifecycle + snooze), DB schema real, endpoints catalogados,
+> frontend, deploy, gotchas de Postgres/Supabase, decisiones de diseño,
+> protocolo de cómo trabajar con Gonzalo, archivos clave detallados, TODOs
+> priorizados. Este HANDOFF es solo el resumen ejecutivo.
+
 ---
 
 ## 🎯 Qué es esto
@@ -284,6 +292,26 @@ Y agregado `demo` al regex de prefijos: `^/(...|demo)/` para `/demo/curso/...`.
 **Verificación**:
 - ✅ `GET /widget.js` → 200, 36943 bytes
 - ✅ `GET /msk` → 200, 44520 bytes
+
+### 3. Diagnóstico: "no veo conversaciones de visitantes anónimos"
+
+**Verificación realizada**: 12 conversaciones anónimas existen en la DB
+(widget, `user_profile.email = null`). El endpoint `/api/inbox/conversations`
+las devuelve sin filtrar. El frontend `apiToListItem` las renderiza con
+`name: "Visitante anónimo"`.
+
+**Hipótesis del por qué no se ven**:
+1. Filtro activo que las excluye (vista "Mías" / lifecycle ≠ new / país ≠ AR /
+   queue ≠ sales). Las anónimas tienen `assigned=null`, `needs_human=false`,
+   `lifecycle=new`, `queue=sales`, `country=AR`.
+2. **Atenuadas por opacity-75**: en `conversation-list.tsx:470`,
+   `!item.unread && !isSnoozed && "opacity-75"`. Como nunca implementamos
+   read-tracking, TODAS las convs vienen con `unread=false` y todas se ven al
+   75%. Las anónimas se "esconden" más por no tener nombre llamativo.
+
+**Acción pendiente**: confirmar con Gonzalo qué filtros tiene activos. Si todo
+está limpio y aún no las ve, debug deeper (¿algo de cache de TanStack que
+sirvió la respuesta vieja?).
 
 ---
 

@@ -218,6 +218,34 @@ multi-agente/
 4. **Cron de snooze**: `start_inbox_jobs()` arranca en cada worker uvicorn.
    Si hay 2+ workers, corre 2x. Debería usar el lock Redis como
    `autonomous_scheduler`.
+5. **`get_auth_user_by_email` no filtra**: en `integrations/supabase_client.py`
+   pasa `params={"email": email}` al admin endpoint de Supabase, pero ese
+   endpoint NO filtra por email (es solo paginación). Devuelve `users[0]` que
+   es el primer user de toda la lista, no el buscado. Hoy no afecta el login
+   (Supabase Auth verifica password directo) pero podría romper otros usos.
+   Fix: filtrar manualmente por email en el código después de listar.
+
+---
+
+## 🔧 Fix aplicado en última sesión (17/04/2026)
+
+**Síntoma**: el user no podía loguearse con `gonzalobaza@msklatam.com`.
+
+**Root cause**: el frontend pegaba a `/api/auth/login`, `/api/auth/me`,
+`/api/auth/logout` pero los endpoints reales son `/auth/*` (sin prefix `/api/`).
+Nginx pasaba el path entero a FastAPI → 404, que el form interpretaba como
+credenciales mal.
+
+**Fix**: commit `35a727f` — `frontend/lib/auth.tsx` ahora usa `/auth/*` directo.
+La rule de nginx ya rutea `/auth/*` a FastAPI (puerto 8000).
+
+**Verificación**:
+- ✅ Cuenta `gonzalobaza@msklatam.com` confirmada en Supabase desde el 13/4
+- ✅ Role `admin`, NO baneada
+- ✅ Último login exitoso registrado: `2026-04-17T23:10:18Z`
+- ✅ `POST https://agentes.msklatam.com/auth/login` responde 401 con creds
+   inválidas (no 404)
+- ✅ UI rebuildeada y deployada en prod
 
 ---
 

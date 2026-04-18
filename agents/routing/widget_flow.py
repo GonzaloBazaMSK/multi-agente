@@ -2,7 +2,6 @@
 Máquina de estados del menú inicial del widget.
 
 Gestiona el flujo de botones antes de delegar a los agentes IA.
-Reemplaza el Drawflow (flow_runner) para sesiones del widget web.
 
 Estados por sesión (Redis):
   None             → primera vez, no iniciado

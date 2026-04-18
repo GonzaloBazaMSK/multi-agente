@@ -50,7 +50,7 @@ from api.inbox import router as inbox_router
 from api.inbox_api import router as inbox_api_router
 from api.templates import router as templates_router
 from api.admin_prompts import router as admin_prompts_router
-from api.flows import router as flows_router
+from api.widget_config import router as widget_config_router
 from api.auth import router as auth_router
 from api.redis_admin import router as redis_admin_router
 from api.customer_auth import router as customer_auth_router
@@ -187,7 +187,7 @@ def create_app() -> FastAPI:
     app.include_router(inbox_api_router)
     app.include_router(templates_router)
     app.include_router(admin_prompts_router)
-    app.include_router(flows_router)
+    app.include_router(widget_config_router)
     app.include_router(redis_admin_router)
     app.include_router(reports_router)
     app.include_router(test_agent_router)
@@ -223,36 +223,15 @@ def create_app() -> FastAPI:
 
     @app.get("/widget.js")
     async def serve_widget_js():
-        """Script del widget embebible para WordPress."""
+        """Widget embebible — JS que cargan los sitios externos
+        (msklatam.com, msklatam.tech) vía <script src=".../widget.js">."""
         js_file = Path(__file__).parent / "widget" / "static" / "chat.js"
         return FileResponse(str(js_file), media_type="application/javascript")
 
-    @app.get("/msk")
-    async def serve_msk_page():
-        """Sitio web MSK Latam — demo con login de clientes."""
-        html_file = Path(__file__).parent / "widget" / "test.html"
-        return FileResponse(str(html_file), media_type="text/html")
-
-    @app.get("/demo/curso/cardiologia-amir")
-    async def serve_demo_cardiologia_amir():
-        """Página de prueba: simula estar en /curso/cardiologia-amir.
-        El widget se carga con data-page-slug='cardiologia-amir', lo que
-        permite probar el routing contextual (pre-compra vs cobranzas)."""
-        html_file = Path(__file__).parent / "widget" / "curso_cardiologia_amir.html"
-        return FileResponse(str(html_file), media_type="text/html")
-
-    @app.get("/test")
-    async def serve_test_redirect():
-        """Redirige /test → /msk."""
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/msk", status_code=301)
-
-    # Rutas legacy de la UI vieja (widget/*.html) — todas las páginas fueron
-    # migradas a Next.js en frontend/app/(app)/*. Los HTMLs se borraron pero
-    # dejamos redirects 301 para que bookmarks viejos del equipo sigan
-    # cayendo en la UI nueva.
-    # El único que sigue sirviendo HTML es /admin/flows-ui (builder Drawflow
-    # no migrado — canvas complejo).
+    # Redirects 301 a la UI nueva (Next.js) — bookmarks viejos del equipo
+    # siguen cayendo en la pantalla correcta. Toda la UI admin vive hoy en
+    # Next.js bajo el mismo dominio; estas rutas FastAPI solo empujan al
+    # destino correcto.
     from fastapi.responses import RedirectResponse
 
     @app.get("/inbox-ui")
@@ -264,13 +243,6 @@ def create_app() -> FastAPI:
     @app.get("/admin/prompts-ui")
     async def redirect_prompts_ui():
         return RedirectResponse(url="/prompts", status_code=301)
-
-    @app.get("/admin/flows-ui")
-    async def serve_flows_page():
-        """Visual flow builder (Drawflow) — única página HTML legacy activa.
-        La UI nueva (/flows) linkea acá para editar la topología de nodos."""
-        html_file = Path(__file__).parent / "widget" / "flows.html"
-        return FileResponse(str(html_file), media_type="text/html")
 
     @app.get("/admin/users-ui")
     async def redirect_users_ui():
@@ -291,6 +263,20 @@ def create_app() -> FastAPI:
     @app.get("/admin/test-agent-ui")
     async def redirect_test_agent_ui():
         return RedirectResponse(url="/test-agent", status_code=301)
+
+    @app.get("/admin/flows-ui")
+    @app.get("/admin/channels-ui")
+    async def redirect_channels_ui():
+        # /flows ya no existe (Drawflow builder eliminado, dead code).
+        # La config del widget embebible ahora vive en /channels.
+        return RedirectResponse(url="/channels", status_code=301)
+
+    # Compat: el widget JS embebido en sitios externos puede tener el bundle
+    # viejo cacheado apuntando a /admin/flows/widget-config/public. Redirect
+    # temporal al endpoint canónico; se puede borrar tras unas semanas.
+    @app.get("/admin/flows/widget-config/public", include_in_schema=False)
+    async def redirect_legacy_widget_config_public():
+        return RedirectResponse(url="/admin/widget-config/public", status_code=301)
 
     return app
 

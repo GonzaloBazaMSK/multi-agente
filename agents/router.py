@@ -498,32 +498,13 @@ async def route_message(
     if conversation_id:
         structlog.contextvars.bind_contextvars(conversation_id=str(conversation_id))
 
-    # ── Guardar el forced_agent del parámetro antes de que el flow lo pise ──
+    # El flow-builder Drawflow y `agents/flow_runner.py` se eliminaron: el
+    # runner nunca se invocaba en producción (0 sesiones con `flow_state:*` en
+    # Redis) y el widget real usa `agents.routing.widget_flow` (máquina de
+    # estados hardcoded). El parámetro `skip_flow` quedó como no-op por
+    # compatibilidad con los callers existentes.
     _param_forced_agent = forced_agent  # puede ser None si no viene del widget
-
-    # ── Check active flow (Drawflow) — solo si no fue forzado por el caller ──
     _flow_forced_agent: str | None = None
-    if not _param_forced_agent:
-        try:
-            from agents.flow_runner import run_flow_step
-            _session_key = conversation_id or phone or "unknown"
-            flow_result = None if skip_flow else await run_flow_step(_session_key, user_message)
-            if flow_result is not None:
-                if not flow_result.get("agent"):
-                    # Flow handled this step directly
-                    return {
-                        "response": flow_result.get("response", ""),
-                        "agent_used": "flow",
-                        "handoff_requested": bool(flow_result.get("handoff")),
-                        "handoff_reason": "Derivado por flujo" if flow_result.get("handoff") else "",
-                        "link_rebill_enviado": False,
-                        "verificar_pago": False,
-                        "phone": phone,
-                    }
-                # Flow says use a specific agent — skip LLM router
-                _flow_forced_agent = flow_result.get("agent")
-        except Exception as _fe:
-            logger.warning("flow_runner_error", error=str(_fe))
 
     supervisor = _get_supervisor()
 

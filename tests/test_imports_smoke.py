@@ -27,7 +27,7 @@ IMPORTS = [
     "api.admin",
     "api.webhooks",
     "api.widget",
-    "api.flows",
+    "api.widget_config",
     # Memory layer
     "memory.conversation_store",
     "memory.conversation_meta",
@@ -35,7 +35,6 @@ IMPORTS = [
     # Agentes
     "agents.classifier",
     "agents.router",
-    "agents.flow_runner",
     # Utils
     "utils.audit",
     "utils.circuit_breaker",

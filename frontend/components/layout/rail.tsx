@@ -13,7 +13,6 @@ import {
   Bell,
   LogOut,
   MessageSquare,
-  GitBranch,
   Users,
 } from "lucide-react";
 import { cn, initials } from "@/lib/utils";
@@ -38,7 +37,6 @@ const NAV: RailLink[] = [
   { href: "/templates", label: "Plantillas HSM",      icon: MessageSquare, min: "supervisor" },
   { href: "/agents",    label: "Agentes IA",          icon: Bot,          min: "admin" },
   { href: "/prompts",   label: "Editor de prompts",   icon: FileCode,     min: "admin" },
-  { href: "/flows",     label: "Flujos",              icon: GitBranch,    min: "admin" },
   { href: "/channels",  label: "Canales",             icon: Plug,         min: "admin" },
 ];
 

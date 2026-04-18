@@ -247,74 +247,50 @@ def create_app() -> FastAPI:
         from fastapi.responses import RedirectResponse
         return RedirectResponse(url="/msk", status_code=301)
 
+    # Rutas legacy de la UI vieja (widget/*.html) — todas las páginas fueron
+    # migradas a Next.js en frontend/app/(app)/*. Los HTMLs se borraron pero
+    # dejamos redirects 301 para que bookmarks viejos del equipo sigan
+    # cayendo en la UI nueva.
+    # El único que sigue sirviendo HTML es /admin/flows-ui (builder Drawflow
+    # no migrado — canvas complejo).
+    from fastapi.responses import RedirectResponse
+
     @app.get("/inbox-ui")
     @app.get("/inbox-ui/{session_id}")
-    async def serve_inbox_page(session_id: str = ""):
-        """Dashboard de conversaciones para agentes humanos."""
-        html_file = Path(__file__).parent / "widget" / "inbox.html"
-        return FileResponse(
-            str(html_file),
-            media_type="text/html",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
-        )
+    async def redirect_inbox_ui(session_id: str = ""):
+        target = f"/inbox?conv={session_id}" if session_id else "/inbox"
+        return RedirectResponse(url=target, status_code=301)
 
     @app.get("/admin/prompts-ui")
-    async def serve_admin_prompts_page():
-        """Editor de prompts para administradores."""
-        html_file = Path(__file__).parent / "widget" / "admin_prompts.html"
-        return FileResponse(str(html_file), media_type="text/html")
+    async def redirect_prompts_ui():
+        return RedirectResponse(url="/prompts", status_code=301)
 
     @app.get("/admin/flows-ui")
     async def serve_flows_page():
-        """Visual flow builder para flujos de conversación."""
+        """Visual flow builder (Drawflow) — única página HTML legacy activa.
+        La UI nueva (/flows) linkea acá para editar la topología de nodos."""
         html_file = Path(__file__).parent / "widget" / "flows.html"
         return FileResponse(str(html_file), media_type="text/html")
 
-    @app.get("/login")
-    async def serve_login():
-        """Página de login para el panel de administración."""
-        html_file = Path(__file__).parent / "widget" / "login.html"
-        return FileResponse(str(html_file), media_type="text/html")
-
     @app.get("/admin/users-ui")
-    async def serve_users_page():
-        """Gestión de usuarios — solo admin."""
-        html_file = Path(__file__).parent / "widget" / "users.html"
-        return FileResponse(str(html_file), media_type="text/html")
+    async def redirect_users_ui():
+        return RedirectResponse(url="/users", status_code=301)
 
     @app.get("/admin/redis-ui")
-    async def serve_redis_page():
-        """Visor de Redis para administradores."""
-        html_file = Path(__file__).parent / "widget" / "redis.html"
-        return FileResponse(str(html_file), media_type="text/html")
+    async def redirect_redis_ui():
+        return RedirectResponse(url="/redis", status_code=301)
 
     @app.get("/admin/templates-ui")
-    async def serve_templates_page():
-        """Gestor de plantillas HSM de WhatsApp."""
-        html_file = Path(__file__).parent / "widget" / "templates.html"
-        return FileResponse(str(html_file), media_type="text/html")
+    async def redirect_templates_ui():
+        return RedirectResponse(url="/templates", status_code=301)
 
     @app.get("/admin/dashboard-ui")
-    async def serve_dashboard_page():
-        """Dashboard de métricas para administradores."""
-        html_file = Path(__file__).parent / "widget" / "dashboard.html"
-        return FileResponse(
-            str(html_file),
-            media_type="text/html",
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"},
-        )
+    async def redirect_dashboard_ui():
+        return RedirectResponse(url="/dashboard", status_code=301)
 
     @app.get("/admin/test-agent-ui")
-    async def serve_test_agent_page():
-        """Sandbox para probar los agentes IA sin afectar producción."""
-        html_file = Path(__file__).parent / "widget" / "test-agent.html"
-        return FileResponse(str(html_file), media_type="text/html")
-
-    @app.get("/audio-test")
-    async def serve_audio_test():
-        """Página de diagnóstico de audio."""
-        html_file = Path(__file__).parent / "widget" / "audio_test.html"
-        return FileResponse(str(html_file), media_type="text/html")
+    async def redirect_test_agent_ui():
+        return RedirectResponse(url="/test-agent", status_code=301)
 
     return app
 

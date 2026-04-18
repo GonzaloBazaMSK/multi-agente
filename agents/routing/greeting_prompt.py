@@ -1,7 +1,7 @@
 """
 Prompt del sistema para el saludo personalizado del widget.
 
-Este archivo es editable desde el panel de administración en /admin/prompts-ui.
+Este archivo es editable desde el panel de administración en /prompts.
 Los datos dinámicos del cliente (nombre, profesión, especialidad, cursos)
 se agregan automáticamente en el código — editá solo las instrucciones estáticas.
 """

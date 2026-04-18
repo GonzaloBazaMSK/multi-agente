@@ -1,7 +1,7 @@
 """
 Prompt del clasificador / orquestador de agentes.
 
-Este archivo es editable desde el panel de administración en /admin/prompts-ui.
+Este archivo es editable desde el panel de administración en /prompts.
 El clasificador decide a qué agente derivar cada mensaje del usuario.
 """
 

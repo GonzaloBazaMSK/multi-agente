@@ -1,12 +1,15 @@
 """
-Endpoints de administración para editar prompts de agentes:
-- GET  /admin/prompts          → sirve la UI de edición de prompts
+Endpoints de administración para editar prompts de agentes.
+
 - GET  /admin/prompts/{agent}  → retorna el contenido del prompt del agente
 - POST /admin/prompts/{agent}  → guarda nuevo contenido en el archivo del prompt
+
+La UI para editarlos vive en el frontend Next.js (/prompts). La ruta vieja
+`GET /admin/prompts` que servía `widget/admin_prompts.html` se eliminó con
+la migración — bookmarks viejos se redirigen en main.py (redirect_prompts_ui).
 """
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from api.auth import require_role
 import structlog
@@ -28,13 +31,6 @@ PROMPT_FILES = {
 
 class PromptUpdate(BaseModel):
     content: str
-
-
-@router.get("/prompts", include_in_schema=False)
-async def serve_prompts_ui():
-    """Sirve la página HTML del editor de prompts."""
-    html_file = BASE_DIR / "widget" / "admin_prompts.html"
-    return FileResponse(str(html_file), media_type="text/html")
 
 
 @router.get("/prompts/{agent}")

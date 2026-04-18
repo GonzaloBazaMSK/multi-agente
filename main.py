@@ -102,12 +102,8 @@ async def lifespan(app: FastAPI):
     # Iniciar listener de Redis Pub/Sub para SSE cross-worker
     import asyncio
     from api.inbox import start_pubsub_listener
-    from utils.inbox_jobs import start_inbox_jobs
     pubsub_task = asyncio.create_task(start_pubsub_listener())
     logger.info("pubsub_listener_started")
-
-    # Cron del inbox: despertar snoozed + notif Slack
-    start_inbox_jobs()
 
     # Scheduler autónomo: retargeting cycle cada 1h + auto-retry diario 10am.
     # Solo 1 worker debe correr el scheduler — usamos lock en Redis.

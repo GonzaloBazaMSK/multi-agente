@@ -45,7 +45,6 @@ export type InboxView =
   | "queue"          // esperando agente humano
   | "human-attn"    // en atención humana (bot pausado)
   | "with-bot"      // con bot activo
-  | "snoozed"
   | "resolved";
 
 /** Filtro legacy (lo dejo por compat) */
@@ -77,8 +76,6 @@ export type ConversationListItem = {
   assignedTo: string | null;
   /** true si requiere atención humana (escaló del bot) */
   needsHuman: boolean;
-  /** true si está snoozed hasta cierto momento (UI lo grisa) */
-  snoozedUntil: string | null;
   /** true si el bot está pausado en esta conversación */
   botPaused: boolean;
   /** estado de la conversación (abierta/pendiente/resuelta) */

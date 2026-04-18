@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Filter, RefreshCw, AlarmClock, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2 } from "lucide-react";
+import { Search, Filter, RefreshCw, Bot, MessageSquare, Smartphone, X, Inbox as InboxIcon, Mail, UserCheck, Hourglass, User, CheckCircle2 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,6 @@ interface Props {
   onBulkClear: () => void;
   onBulkAssign: (agentId: string | null) => void;
   onBulkResolve: () => void;
-  onBulkSnooze: (until: string) => void;
 
   view: InboxView;
   onViewChange: (v: InboxView) => void;
@@ -61,7 +60,6 @@ interface Props {
     queue: number;
     humanAttn: number;
     withBot: number;
-    snoozed: number;
     resolved: number;
     byLifecycle: Record<LifecycleStage, number>;
     byChannel: Record<Channel, number>;
@@ -95,7 +93,6 @@ const SECONDARY_VIEWS: {
   { value: "queue",      label: "En cola (esperando agente)", icon: Hourglass,    countKey: "queue" },
   { value: "human-attn", label: "En atención humana",         icon: User,         countKey: "humanAttn" },
   { value: "with-bot",   label: "Con bot",                    icon: Bot,          countKey: "withBot" },
-  { value: "snoozed",    label: "Snoozed",                    icon: AlarmClock,   countKey: "snoozed" },
   { value: "resolved",   label: "Resueltas",                  icon: CheckCircle2, countKey: "resolved" },
 ];
 
@@ -109,7 +106,6 @@ export function ConversationList({
   onBulkClear,
   onBulkAssign,
   onBulkResolve,
-  onBulkSnooze,
   view,
   onViewChange,
   lifecycle,
@@ -175,23 +171,6 @@ export function ConversationList({
                   <DropdownItem onClick={() => { onBulkAssign(null); close(); }} variant="danger">
                     Quitar asignación a todas
                   </DropdownItem>
-                </>
-              )}
-            </Dropdown>
-            <Dropdown
-              align="left"
-              trigger={
-                <Button variant="secondary" size="sm">
-                  <AlarmClock className="w-3 h-3" /> Snooze
-                </Button>
-              }
-            >
-              {(close) => (
-                <>
-                  <DropdownItem onClick={() => { onBulkSnooze("en 1 hora"); close(); }}>En 1 hora</DropdownItem>
-                  <DropdownItem onClick={() => { onBulkSnooze("en 4 horas"); close(); }}>En 4 horas</DropdownItem>
-                  <DropdownItem onClick={() => { onBulkSnooze("mañana 09:00"); close(); }}>Mañana</DropdownItem>
-                  <DropdownItem onClick={() => { onBulkSnooze("la próxima semana"); close(); }}>Próxima semana</DropdownItem>
                 </>
               )}
             </Dropdown>
@@ -465,7 +444,6 @@ export function ConversationList({
         ) : (
           items.map((item) => {
             const active = item.id === selectedId;
-            const isSnoozed = !!item.snoozedUntil;
             const isChecked = bulkSelected.has(item.id);
             return (
               <div
@@ -474,8 +452,7 @@ export function ConversationList({
                   "group w-full text-left border-b border-border transition-colors flex",
                   active ? "bg-card border-l-2 border-l-accent" : "hover:bg-hover",
                   isChecked && "bg-accent/10",
-                  !item.unread && !isSnoozed && "opacity-75",
-                  isSnoozed && "opacity-50"
+                  !item.unread && "opacity-75"
                 )}
               >
                 {/* Columna del checkbox — siempre 24px, evita pisarse con avatar */}
@@ -523,11 +500,6 @@ export function ConversationList({
                       {item.botPaused && (
                         <Badge variant="muted" title="Bot pausado">
                           <Bot className="w-2.5 h-2.5" /> Off
-                        </Badge>
-                      )}
-                      {isSnoozed && (
-                        <Badge variant="muted" title={`Snooze: ${item.snoozedUntil}`}>
-                          <AlarmClock className="w-2.5 h-2.5" /> {item.snoozedUntil}
                         </Badge>
                       )}
                       {item.status === "resolved" && (

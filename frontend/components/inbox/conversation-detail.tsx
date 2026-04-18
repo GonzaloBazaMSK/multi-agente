@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import {
   PanelRightClose,
   UserPlus,
-  AlarmClock,
   Bot,
   Pause,
   Play,
@@ -41,7 +40,6 @@ interface Props {
   onToggleContactPanel: () => void;
   /** Acciones (mutaciones) sobre la conversación */
   onAssign:        (agentId: string | null) => void;
-  onSnooze:        (until: string | null) => void;
   onTakeoverHuman: () => void;
   onToggleBot:     () => void;
   onClassify:      (stage: LifecycleStage) => void;
@@ -53,7 +51,6 @@ export function ConversationDetail({
   messages,
   onToggleContactPanel,
   onAssign,
-  onSnooze,
   onTakeoverHuman,
   onToggleBot,
   onClassify,
@@ -176,33 +173,6 @@ export function ConversationDetail({
                 <DropdownItem onClick={() => { onAssign(null); close(); }}>
                   Quitar asignación
                 </DropdownItem>
-              </>
-            )}
-          </Dropdown>
-
-          {/* Snooze */}
-          <Dropdown
-            trigger={
-              <Button variant="secondary" size="sm">
-                <AlarmClock className="w-3.5 h-3.5" /> Snooze
-              </Button>
-            }
-          >
-            {(close) => (
-              <>
-                <DropdownLabel>Postergar hasta</DropdownLabel>
-                <DropdownItem onClick={() => { onSnooze("en 1 hora");      close(); }}>En 1 hora</DropdownItem>
-                <DropdownItem onClick={() => { onSnooze("en 4 horas");     close(); }}>En 4 horas</DropdownItem>
-                <DropdownItem onClick={() => { onSnooze("mañana 09:00");   close(); }}>Mañana a la mañana</DropdownItem>
-                <DropdownItem onClick={() => { onSnooze("la próxima semana"); close(); }}>La semana que viene</DropdownItem>
-                {conversation.snoozedUntil && (
-                  <>
-                    <DropdownSeparator />
-                    <DropdownItem onClick={() => { onSnooze(null); close(); }} variant="danger">
-                      Cancelar snooze
-                    </DropdownItem>
-                  </>
-                )}
               </>
             )}
           </Dropdown>

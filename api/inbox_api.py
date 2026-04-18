@@ -10,7 +10,6 @@ Endpoints:
 
   POST /api/inbox/conversations/{id}/assign     {agent_id|null}
   POST /api/inbox/conversations/{id}/status     {status}
-  POST /api/inbox/conversations/{id}/snooze     {until_iso|null}
   POST /api/inbox/conversations/{id}/classify   {lifecycle}
   POST /api/inbox/conversations/{id}/queue      {queue}
   POST /api/inbox/conversations/{id}/bot        {paused}
@@ -19,7 +18,6 @@ Endpoints:
 
   POST /api/inbox/bulk/assign     {ids[], agent_id|null}
   POST /api/inbox/bulk/status     {ids[], status}
-  POST /api/inbox/bulk/snooze     {ids[], until_iso}
 
   POST /api/inbox/llm/correct-spelling  {text}
 """
@@ -71,7 +69,6 @@ class ConversationOut(BaseModel):
     queue: str = "sales"
     bot_paused: bool = False
     needs_human: bool = False
-    snoozed_until: Optional[str] = None
     tags: list[str] = []
     unread: bool = False  # placeholder (necesita read_status separado)
 
@@ -367,14 +364,11 @@ async def list_conversations(
         where_parts.append("(cm.bot_paused = true OR cm.assigned_agent_id is not null)")
     elif view == "with-bot":
         where_parts.append("(cm.bot_paused = false AND coalesce(cm.needs_human,false) = false)")
-    elif view == "snoozed":
-        where_parts.append("cm.snoozed_until is not null AND cm.snoozed_until > now()")
     elif view == "resolved":
         where_parts.append("cm.status = 'resolved'")
     elif view in (None, "all"):
-        # default: ocultar resueltas y snoozed activos
+        # default: ocultar resueltas
         where_parts.append("(cm.status is null OR cm.status != 'resolved')")
-        where_parts.append("(cm.snoozed_until is null OR cm.snoozed_until < now())")
 
     where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -392,7 +386,6 @@ async def list_conversations(
             cm.queue,
             cm.bot_paused,
             cm.needs_human,
-            cm.snoozed_until,
             cm.tags,
             coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lifecycle,
             (cm.lifecycle_override is not null) as lifecycle_is_manual
@@ -444,7 +437,6 @@ async def list_conversations(
             queue=r["queue"] or "sales",
             bot_paused=bool(r["bot_paused"]),
             needs_human=bool(r["needs_human"]),
-            snoozed_until=r["snoozed_until"].isoformat() if r["snoozed_until"] else None,
             tags=list(r["tags"] or []),
         ))
     return out
@@ -675,16 +667,6 @@ class StatusBody(BaseModel):
 async def status(conv_id: str, body: StatusBody):
     await cm.set_status(conv_id, body.status)
     return {"ok": True}
-
-class SnoozeBody(BaseModel):
-    until_iso: Optional[str] = None
-    duration: Optional[Literal["1h", "4h", "tomorrow", "next-week"]] = None
-
-@router.post("/conversations/{conv_id}/snooze")
-async def snooze(conv_id: str, body: SnoozeBody):
-    until = body.until_iso or _resolve_duration(body.duration)
-    await cm.snooze(conv_id, until)
-    return {"ok": True, "until": until}
 
 class ClassifyBody(BaseModel):
     lifecycle: Literal["new", "hot", "customer", "cold"]
@@ -932,20 +914,6 @@ async def bulk_status(body: BulkStatusBody):
     n = await cm.bulk_set_status(body.ids, body.status)
     return {"ok": True, "updated": n}
 
-class BulkSnoozeBody(BaseModel):
-    ids: list[str]
-    until_iso: Optional[str] = None
-    duration: Optional[Literal["1h", "4h", "tomorrow", "next-week"]] = None
-
-@router.post("/bulk/snooze")
-async def bulk_snooze(body: BulkSnoozeBody):
-    until = body.until_iso or _resolve_duration(body.duration)
-    if not until:
-        raise HTTPException(400, "until_iso o duration requeridos")
-    n = await cm.bulk_snooze(body.ids, until)
-    return {"ok": True, "updated": n}
-
-
 # ─── LLM: Corrección ortográfica ─────────────────────────────────────────────
 
 class CorrectBody(BaseModel):
@@ -1006,23 +974,8 @@ async def correct_spelling(body: CorrectBody):
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
-def _resolve_duration(d: Optional[str]) -> Optional[str]:
-    if not d:
-        return None
-    now = datetime.now(timezone.utc)
-    if d == "1h":
-        delta = timedelta(hours=1)
-    elif d == "4h":
-        delta = timedelta(hours=4)
-    elif d == "tomorrow":
-        # mañana 9am hora local del server (UTC-3 AR)
-        tomorrow = (now + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
-        return tomorrow.isoformat()
-    elif d == "next-week":
-        delta = timedelta(days=7)
-    else:
-        return None
-    return (now + delta).isoformat()
+# (Antes vivía acá `_resolve_duration` para el snooze. Removido junto con la
+#  feature de snooze.)
 
 
 _COUNTRY_MAP = {

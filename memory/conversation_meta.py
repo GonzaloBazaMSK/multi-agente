@@ -154,30 +154,6 @@ async def set_status(conversation_id: str, status: ConvStatus) -> None:
         )
 
 
-async def snooze(conversation_id: str, until_iso: Optional[str]) -> None:
-    """Postergar hasta `until_iso` (ISO 8601). None = cancela snooze."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute("select public.ensure_conversation_meta($1::uuid)", conversation_id)
-        if until_iso is None:
-            await conn.execute(
-                "update public.conversation_meta set snoozed_until=null, snoozed_at=null where conversation_id=$1",
-                conversation_id,
-            )
-        else:
-            # asyncpg requiere datetime.datetime, no str (con statement_cache_size=0)
-            from datetime import datetime
-            until_dt = datetime.fromisoformat(until_iso)
-            await conn.execute(
-                """
-                update public.conversation_meta
-                set snoozed_until=$2, snoozed_at=now()
-                where conversation_id=$1
-                """,
-                conversation_id, until_dt,
-            )
-
-
 async def classify(conversation_id: str, lifecycle: LifecycleStage) -> None:
     """Override manual del lifecycle (humano > bot)."""
     pool = await get_pool()
@@ -310,44 +286,8 @@ async def bulk_set_status(conversation_ids: list[str], status: ConvStatus) -> in
         return 0
 
 
-async def bulk_snooze(conversation_ids: list[str], until_iso: str) -> int:
-    from datetime import datetime
-    until_dt = datetime.fromisoformat(until_iso)
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.executemany(
-            "select public.ensure_conversation_meta($1::uuid)",
-            [(cid,) for cid in conversation_ids],
-        )
-        r = await conn.execute(
-            """
-            update public.conversation_meta
-            set snoozed_until=$2, snoozed_at=now()
-            where conversation_id = any($1::uuid[])
-            """,
-            conversation_ids, until_dt,
-        )
-    try:
-        return int(r.split()[-1])
-    except Exception:
-        return 0
-
-
-# ─── Cron: despertar conversaciones snoozed vencidas ─────────────────────────
-
-async def wake_expired_snoozed() -> list[str]:
-    """Despierta conversaciones cuyo snoozed_until ya pasó. Devuelve sus IDs."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            update public.conversation_meta
-            set snoozed_until = null, snoozed_at = null
-            where snoozed_until is not null and snoozed_until < now()
-            returning conversation_id
-            """
-        )
-    ids = [str(r["conversation_id"]) for r in rows]
-    if ids:
-        logger.info("snooze_wake", count=len(ids), ids=ids[:10])
-    return ids
+# ─── Snooze removed ──────────────────────────────────────────────────────────
+# La feature de snooze fue removida — no agregaba valor real al flujo y
+# requería un cron de wake-up. Si volvés a necesitar postergar conversaciones,
+# usá `set_status(conv_id, "pending")` y filtrá por status en el inbox.
+# Migración 006 dropea las columnas snoozed_until/snoozed_at.

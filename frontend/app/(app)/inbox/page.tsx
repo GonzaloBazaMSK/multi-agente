@@ -19,14 +19,12 @@ import {
   useMessages,
   useContact,
   useAssign,
-  useSnooze,
   useClassify,
   useToggleBot,
   useTakeover,
   useSetStatus,
   useBulkAssign,
   useBulkResolve,
-  useBulkSnooze,
   useQueueStats,
   useAIInsights,
 } from "@/lib/api/inbox";
@@ -145,7 +143,7 @@ export default function InboxPage() {
     const byLifecycle: Record<LifecycleStage, number> = { new: 0, hot: 0, customer: 0, cold: 0 };
     const byChannel:   Record<Channel, number> = { whatsapp: 0, widget: 0 };
     const byQueue:     Record<Queue, number> = { sales: 0, billing: 0, "post-sales": 0 };
-    let unread = 0, mine = 0, qcount = 0, humanAttn = 0, withBot = 0, snoozed = 0, resolved = 0;
+    let unread = 0, mine = 0, qcount = 0, humanAttn = 0, withBot = 0, resolved = 0;
     for (const c of items) {
       byLifecycle[c.lifecycle]++;
       byChannel[c.channel]++;
@@ -155,47 +153,26 @@ export default function InboxPage() {
       if (c.assignedTo === null && c.needsHuman) qcount++;
       if (c.botPaused || c.assignedTo !== null) humanAttn++;
       if (!c.botPaused && !c.needsHuman) withBot++;
-      if (c.snoozedUntil) snoozed++;
       if (c.status === "resolved") resolved++;
     }
     return {
       total: items.length,
-      unread, mine, queue: qcount, humanAttn, withBot, snoozed, resolved,
+      unread, mine, queue: qcount, humanAttn, withBot, resolved,
       byLifecycle, byChannel, byQueue,
     };
   }, [items]);
 
   // ── Mutations ──────────────────────────────────────────────────────────
   const assignM    = useAssign();
-  const snoozeM    = useSnooze();
   const classifyM  = useClassify();
   const toggleBotM = useToggleBot();
   const takeoverM  = useTakeover();
   const statusM    = useSetStatus();
   const bulkAssignM  = useBulkAssign();
   const bulkResolveM = useBulkResolve();
-  const bulkSnoozeM  = useBulkSnooze();
-
-  // El UI manda strings tipo "en 1 hora" — los mapeamos al `duration` que entiende
-  // el backend (1h, 4h, tomorrow, next-week).
-  const UI_TO_DURATION: Record<string, "1h" | "4h" | "tomorrow" | "next-week"> = {
-    "en 1 hora": "1h",
-    "en 4 horas": "4h",
-    "mañana 09:00": "tomorrow",
-    "la próxima semana": "next-week",
-  };
 
   // Por conversación
   const handleAssign     = (agentId: string | null) => effectiveSelectedId && assignM.mutate({ id: effectiveSelectedId, agentId });
-  const handleSnooze     = (until: string | null) => {
-    if (!effectiveSelectedId) return;
-    if (until === null) {
-      snoozeM.mutate({ id: effectiveSelectedId, untilIso: undefined });
-    } else {
-      const dur = UI_TO_DURATION[until];
-      snoozeM.mutate({ id: effectiveSelectedId, duration: dur ?? "1h" });
-    }
-  };
   const handleClassify   = (stage: LifecycleStage)  => effectiveSelectedId && classifyM.mutate({ id: effectiveSelectedId, lifecycle: stage });
   const handleToggleBot  = ()                        => selected && toggleBotM.mutate({ id: selected.id, paused: !selected.botPaused });
   const handleTakeover   = ()                        => {
@@ -229,18 +206,6 @@ export default function InboxPage() {
     bulkResolveM.mutate({ ids: [...bulkSelected] });
     setBulkSelected(new Set());
   };
-  const handleBulkSnooze = (until: string) => {
-    // until viene como "en 1 hora" del UI; mapear a duration backend
-    const durationMap: Record<string, string> = {
-      "en 1 hora": "1h",
-      "en 4 horas": "4h",
-      "mañana 09:00": "tomorrow",
-      "la próxima semana": "next-week",
-    };
-    const duration = durationMap[until] || "1h";
-    bulkSnoozeM.mutate({ ids: [...bulkSelected], duration });
-    setBulkSelected(new Set());
-  };
 
   return (
     <>
@@ -254,7 +219,6 @@ export default function InboxPage() {
         onBulkClear={handleBulkClear}
         onBulkAssign={handleBulkAssign}
         onBulkResolve={handleBulkResolve}
-        onBulkSnooze={handleBulkSnooze}
         view={view}
         onViewChange={setView}
         lifecycle={lifecycle}
@@ -276,7 +240,6 @@ export default function InboxPage() {
         messages={messagesQ.data ?? []}
         onToggleContactPanel={() => setShowContactPanel((s) => !s)}
         onAssign={handleAssign}
-        onSnooze={handleSnooze}
         onTakeoverHuman={handleTakeover}
         onToggleBot={handleToggleBot}
         onClassify={handleClassify}

@@ -37,7 +37,6 @@ export type ApiConversation = {
   queue: Queue;
   bot_paused: boolean;
   needs_human: boolean;
-  snoozed_until: string | null;
   tags: string[];
   unread: boolean;
 };
@@ -133,7 +132,6 @@ export function apiToListItem(c: ApiConversation): ConversationListItem {
     unread: c.unread,
     assignedTo: c.assigned_agent_id,
     needsHuman: c.needs_human,
-    snoozedUntil: c.snoozed_until,
     botPaused: c.bot_paused,
     status: c.status,
     tags: c.tags,
@@ -304,15 +302,6 @@ export function useAssign() {
   });
 }
 
-export function useSnooze() {
-  const invalidate = useInvalidateConversations();
-  return useMutation({
-    mutationFn: ({ id, duration, untilIso }: { id: string; duration?: string; untilIso?: string }) =>
-      api.post(`/inbox/conversations/${id}/snooze`, { duration, until_iso: untilIso }),
-    onSuccess: invalidate,
-  });
-}
-
 export function useClassify() {
   const invalidate = useInvalidateConversations();
   return useMutation({
@@ -363,15 +352,6 @@ export function useBulkResolve() {
   return useMutation({
     mutationFn: ({ ids }: { ids: string[] }) =>
       api.post(`/inbox/bulk/status`, { ids, status: "resolved" }),
-    onSuccess: invalidate,
-  });
-}
-
-export function useBulkSnooze() {
-  const invalidate = useInvalidateConversations();
-  return useMutation({
-    mutationFn: ({ ids, duration }: { ids: string[]; duration: string }) =>
-      api.post(`/inbox/bulk/snooze`, { ids, duration }),
     onSuccess: invalidate,
   });
 }

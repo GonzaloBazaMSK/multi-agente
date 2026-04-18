@@ -2,6 +2,17 @@
  * Cliente de la API. En dev, las llamadas a /api/* las redirige
  * next.config.mjs (rewrites) al FastAPI local. En prod, Nginx hace lo mismo
  * en agentes.msklatam.com → /api/* → FastAPI.
+ *
+ * IMPORTANTE: el backend tiene DOS familias de routes:
+ *   - /auth/*   → router de auth, montado SIN prefijo /api
+ *                  (login, /auth/users, /auth/me, etc.)
+ *   - /api/*    → todo el resto (inbox, prompts, channels, courses, ...)
+ *
+ * Si llamás `api.get("/auth/users")` ingenuamente, queda `/api/auth/users`
+ * que NO existe en el backend → 404. Por eso `request()` detecta paths que
+ * empiezan con /auth y los rutea sin el prefijo /api. Era el bug que hacía
+ * que la pantalla de Configuración mostrara "Necesitás iniciar sesión como
+ * admin" aunque estuvieras logueado como admin.
  */
 
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || "change-this-secret";
@@ -26,7 +37,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   if (token) headers["x-session-token"] = token;
 
-  const res = await fetch(`/api${path}`, { ...init, headers });
+  // Routes /auth/* viven en el root, no debajo de /api. Ver header del archivo.
+  const url = path.startsWith("/auth/") ? path : `/api${path}`;
+  const res = await fetch(url, { ...init, headers });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");

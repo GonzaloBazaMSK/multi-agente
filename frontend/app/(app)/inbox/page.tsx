@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationDetail } from "@/components/inbox/conversation-detail";
 import { ContactPanel } from "@/components/inbox/contact-panel";
@@ -37,8 +38,35 @@ export default function InboxPage() {
   const { user } = useAuth();
   const ME_ID = user?.id ?? "";
 
-  const [selectedId, setSelectedId] = useState<string>("");
+  // selectedId vive en la URL (?conv=<uuid>) para que la URL sea compartible.
+  // Si abrís /inbox?conv=abc-123, se selecciona esa conversación.
+  // Si hacés click en otra, la URL se actualiza con replace (no agrega al
+  // history — alt-tab + back no spamea entries del browser).
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlConvId = searchParams.get("conv") ?? "";
+  const [selectedId, setSelectedId] = useState<string>(urlConvId);
   const [showContactPanel, setShowContactPanel] = useState(true);
+
+  // URL → state: si el querystring cambia (deep link, back/forward), sincronizamos.
+  useEffect(() => {
+    if (urlConvId !== selectedId) setSelectedId(urlConvId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlConvId]);
+
+  // state → URL: cuando el user clickea otra conv, reflejamos en el querystring.
+  const handleSelectConv = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      if (id) params.set("conv", id);
+      else params.delete("conv");
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
 
   const [view, setView] = useState<InboxView>("all");
   const [lifecycle, setLifecycle] = useState<LifecycleStage | null>(null);
@@ -59,6 +87,15 @@ export default function InboxPage() {
   // Auto-seleccionar la primera cuando carga
   const effectiveSelectedId =
     selectedId && items.find((c) => c.id === selectedId) ? selectedId : items[0]?.id ?? "";
+
+  // Si la lista cargó y la URL todavía no tiene ?conv=, reflejamos la
+  // auto-selección para que el link sea compartible apenas abrís /inbox.
+  useEffect(() => {
+    if (effectiveSelectedId && !urlConvId) {
+      handleSelectConv(effectiveSelectedId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveSelectedId, urlConvId]);
 
   const selected = items.find((c) => c.id === effectiveSelectedId) ?? null;
   const messagesQ = useMessages(effectiveSelectedId || null);
@@ -210,7 +247,7 @@ export default function InboxPage() {
       <ConversationList
         items={items}
         selectedId={effectiveSelectedId}
-        onSelect={setSelectedId}
+        onSelect={handleSelectConv}
         bulkSelected={bulkSelected}
         onBulkToggle={handleBulkToggle}
         onBulkSelectAll={handleBulkSelectAll}

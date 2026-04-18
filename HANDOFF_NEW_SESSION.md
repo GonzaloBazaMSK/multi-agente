@@ -227,9 +227,11 @@ multi-agente/
 
 ---
 
-## 🔧 Fix aplicado en última sesión (17/04/2026)
+## 🔧 Fixes aplicados en última sesión (17/04/2026)
 
-**Síntoma**: el user no podía loguearse con `gonzalobaza@msklatam.com`.
+### 1. Login fallido para `gonzalobaza@msklatam.com`
+
+**Síntoma**: el user no podía loguearse.
 
 **Root cause**: el frontend pegaba a `/api/auth/login`, `/api/auth/me`,
 `/api/auth/logout` pero los endpoints reales son `/auth/*` (sin prefix `/api/`).
@@ -246,6 +248,42 @@ La rule de nginx ya rutea `/auth/*` a FastAPI (puerto 8000).
 - ✅ `POST https://agentes.msklatam.com/auth/login` responde 401 con creds
    inválidas (no 404)
 - ✅ UI rebuildeada y deployada en prod
+
+### 2. Widget embebido roto en msklatam.tech
+
+**Síntoma**: el widget de WordPress (`<script src="https://agentes.msklatam.com/widget.js">`)
+dejó de cargarse → no aparecía el chat en `msklatam.tech`.
+
+**Root cause**: cuando se agregó la UI Next.js, el regex de nginx que rutea
+endpoints de FastAPI requería `/` después del prefix:
+`location ~ ^/(widget|webhook|...)/`. O sea:
+- `/widget/static/...` → FastAPI ✅
+- `/widget.js` (sin `/` después) → cae en `location /` → Next.js → 404 ❌
+
+Mismo problema con `/msk`, `/test`, `/audio-test`, `/health`, `/inbox-ui`,
+`/demo/curso/...`.
+
+**Fix**: agregadas rules `location = /<path>` exactas en
+`/etc/nginx/sites-available/agentes.msklatam.com` apuntando a FastAPI:
+```
+location = /widget.js  { proxy_pass http://127.0.0.1:8000; ... }
+location = /msk        { proxy_pass http://127.0.0.1:8000; ... }
+location = /test       { proxy_pass http://127.0.0.1:8000; ... }
+location = /audio-test { proxy_pass http://127.0.0.1:8000; ... }
+location = /health     { proxy_pass http://127.0.0.1:8000; ... }
+location = /inbox-ui   { proxy_pass http://127.0.0.1:8000; ... }
+```
+Y agregado `demo` al regex de prefijos: `^/(...|demo)/` para `/demo/curso/...`.
+
+**Config nginx persistido en repo**: `deploy/nginx-agentes.msklatam.com.conf`
+(si hay que rehacer el server, copiar este archivo a
+`/etc/nginx/sites-available/agentes.msklatam.com` y `nginx -t && systemctl reload nginx`).
+
+**Backup del config previo**: `/etc/nginx/sites-available/agentes.msklatam.com.bak.<timestamp>`.
+
+**Verificación**:
+- ✅ `GET /widget.js` → 200, 36943 bytes
+- ✅ `GET /msk` → 200, 44520 bytes
 
 ---
 

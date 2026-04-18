@@ -185,7 +185,13 @@ async def create_user(req: CreateUserRequest, user: dict = Depends(require_role(
     auth_result = await admin_create_auth_user(req.email, req.password, req.name)
     if "error" in auth_result or auth_result.get("msg"):
         raise HTTPException(status_code=400, detail=str(auth_result))
-    profile = await create_profile(req.email, req.name, req.role, req.queues)
+    # Reusamos el id del auth.user para que profiles.id == auth.users.id.
+    # Sin esto, Postgres genera un uuid nuevo y los dos quedan desfasados —
+    # ese era el bug que arregló la migración 005.
+    auth_user_id = auth_result.get("id") or auth_result.get("user", {}).get("id")
+    profile = await create_profile(
+        req.email, req.name, req.role, req.queues, auth_user_id=auth_user_id
+    )
     return profile
 
 

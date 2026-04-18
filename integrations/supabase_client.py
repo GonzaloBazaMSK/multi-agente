@@ -53,12 +53,26 @@ async def list_profiles() -> list:
         )
         return resp.json() if isinstance(resp.json(), list) else []
 
-async def create_profile(email: str, name: str, role: str, queues: list) -> dict:
+async def create_profile(
+    email: str, name: str, role: str, queues: list, auth_user_id: str | None = None
+) -> dict:
+    """
+    Crea un row en public.profiles.
+
+    OJO: si tenés el id del auth.users (devuelto por admin_create_auth_user),
+    pasalo en `auth_user_id`. Si no lo pasás, Postgres genera un uuid nuevo
+    y profiles.id queda DESINCRONIZADO con auth.users.id — bug latente que
+    fue arreglado en migrations/005_resync_profile_ids.sql. Este parámetro
+    es lo que evita que vuelva a pasar.
+    """
+    payload: dict = {"email": email, "name": name, "role": role, "queues": queues}
+    if auth_user_id:
+        payload["id"] = auth_user_id
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{SUPABASE_URL}/rest/v1/profiles",
             headers=_headers(),
-            json={"email": email, "name": name, "role": role, "queues": queues},
+            json=payload,
             timeout=10,
         )
         data = resp.json()

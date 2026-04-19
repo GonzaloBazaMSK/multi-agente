@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/api/auth/login": {
+    "/api/v1/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -14,14 +14,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Login */
-        post: operations["login_api_auth_login_post"];
+        post: operations["login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/forgot-password": {
+    "/api/v1/auth/forgot-password": {
         parameters: {
             query?: never;
             header?: never;
@@ -38,14 +38,14 @@ export interface paths {
          *     evitar user enumeration. El user recibe un mail con un link que redirige a
          *     /reset-password con un access_token en el hash fragment de la URL.
          */
-        post: operations["forgot_password_api_auth_forgot_password_post"];
+        post: operations["forgot_password_api_v1_auth_forgot_password_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/reset-password": {
+    "/api/v1/auth/reset-password": {
         parameters: {
             query?: never;
             header?: never;
@@ -59,14 +59,14 @@ export interface paths {
          * @description Aplica la nueva password usando el access_token que vino del mail de recovery.
          *     El frontend extrae el token del hash fragment (#access_token=...) y lo manda acá.
          */
-        post: operations["reset_password_api_auth_reset_password_post"];
+        post: operations["reset_password_api_v1_auth_reset_password_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/logout": {
+    "/api/v1/auth/logout": {
         parameters: {
             query?: never;
             header?: never;
@@ -76,14 +76,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Logout */
-        post: operations["logout_api_auth_logout_post"];
+        post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/me": {
+    "/api/v1/auth/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -91,7 +91,7 @@ export interface paths {
             cookie?: never;
         };
         /** Me */
-        get: operations["me_api_auth_me_get"];
+        get: operations["me_api_v1_auth_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -100,7 +100,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/queues": {
+    "/api/v1/auth/queues": {
         parameters: {
             query?: never;
             header?: never;
@@ -108,7 +108,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Queues */
-        get: operations["get_queues_api_auth_queues_get"];
+        get: operations["get_queues_api_v1_auth_queues_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -117,7 +117,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/users": {
+    "/api/v1/auth/users": {
         parameters: {
             query?: never;
             header?: never;
@@ -125,17 +125,17 @@ export interface paths {
             cookie?: never;
         };
         /** List Users */
-        get: operations["list_users_api_auth_users_get"];
+        get: operations["list_users_api_v1_auth_users_get"];
         put?: never;
         /** Create User */
-        post: operations["create_user_api_auth_users_post"];
+        post: operations["create_user_api_v1_auth_users_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/users/{profile_id}": {
+    "/api/v1/auth/users/{profile_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -146,14 +146,14 @@ export interface paths {
         put?: never;
         post?: never;
         /** Delete User */
-        delete: operations["delete_user_api_auth_users__profile_id__delete"];
+        delete: operations["delete_user_api_v1_auth_users__profile_id__delete"];
         options?: never;
         head?: never;
         /** Update User */
-        patch: operations["update_user_api_auth_users__profile_id__patch"];
+        patch: operations["update_user_api_v1_auth_users__profile_id__patch"];
         trace?: never;
     };
-    "/api/auth/agent-status": {
+    "/api/v1/auth/agent-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -164,20 +164,20 @@ export interface paths {
          * Get Agent Status
          * @description Obtiene el estado de disponibilidad del agente actual.
          */
-        get: operations["get_agent_status_api_auth_agent_status_get"];
+        get: operations["get_agent_status_api_v1_auth_agent_status_get"];
         put?: never;
         /**
          * Set Agent Status
          * @description Actualiza el estado de disponibilidad del agente.
          */
-        post: operations["set_agent_status_api_auth_agent_status_post"];
+        post: operations["set_agent_status_api_v1_auth_agent_status_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/stream": {
+    "/api/v1/inbox/stream": {
         parameters: {
             query?: never;
             header?: never;
@@ -192,7 +192,7 @@ export interface paths {
          *       - `?key=<admin_key>` (compat para herramientas internas/scripts).
          *     Reusa el bus broadcast del inbox legacy.
          */
-        get: operations["stream_api_inbox_stream_get"];
+        get: operations["stream_api_v1_inbox_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -201,7 +201,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/agents": {
+    "/api/v1/inbox/agents": {
         parameters: {
             query?: never;
             header?: never;
@@ -209,7 +209,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Agents */
-        get: operations["list_agents_api_inbox_agents_get"];
+        get: operations["list_agents_api_v1_inbox_agents_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -218,7 +218,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/analytics": {
+    "/api/v1/inbox/analytics": {
         parameters: {
             query?: never;
             header?: never;
@@ -229,7 +229,7 @@ export interface paths {
          * Analytics
          * @description Métricas básicas para la página /analytics.
          */
-        get: operations["analytics_api_inbox_analytics_get"];
+        get: operations["analytics_api_v1_inbox_analytics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -238,7 +238,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/courses": {
+    "/api/v1/inbox/courses": {
         parameters: {
             query?: never;
             header?: never;
@@ -249,7 +249,7 @@ export interface paths {
          * List Courses
          * @description Lista de cursos del país con pitch_hook + pitch_by_profile.
          */
-        get: operations["list_courses_api_inbox_courses_get"];
+        get: operations["list_courses_api_v1_inbox_courses_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -258,7 +258,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/courses/{country}/{slug}/pitch-hook": {
+    "/api/v1/inbox/courses/{country}/{slug}/pitch-hook": {
         parameters: {
             query?: never;
             header?: never;
@@ -270,7 +270,7 @@ export interface paths {
          * Update Pitch Hook
          * @description Edita manualmente el pitch_hook de un curso.
          */
-        put: operations["update_pitch_hook_api_inbox_courses__country___slug__pitch_hook_put"];
+        put: operations["update_pitch_hook_api_v1_inbox_courses__country___slug__pitch_hook_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -278,7 +278,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/queue-stats": {
+    "/api/v1/inbox/queue-stats": {
         parameters: {
             query?: never;
             header?: never;
@@ -291,7 +291,7 @@ export interface paths {
          *     las mismas 6 sub-categorías: AR, CL, EC, MX, CO, MP. Países no primarios
          *     se acumulan en "MP" (multi-país).
          */
-        get: operations["queue_stats_api_inbox_queue_stats_get"];
+        get: operations["queue_stats_api_v1_inbox_queue_stats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -300,7 +300,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations": {
+    "/api/v1/inbox/conversations": {
         parameters: {
             query?: never;
             header?: never;
@@ -317,7 +317,7 @@ export interface paths {
          *         sus colas (profiles.queues). Este enforcement es server-side para que
          *         un agente no pueda ver convs ajenas aunque forcee un query param.
          */
-        get: operations["list_conversations_api_inbox_conversations_get"];
+        get: operations["list_conversations_api_v1_inbox_conversations_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -326,7 +326,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/messages": {
+    "/api/v1/inbox/conversations/{conv_id}/messages": {
         parameters: {
             query?: never;
             header?: never;
@@ -337,7 +337,7 @@ export interface paths {
          * Get Messages
          * @description Mensajes de una conversación, en orden cronológico.
          */
-        get: operations["get_messages_api_inbox_conversations__conv_id__messages_get"];
+        get: operations["get_messages_api_v1_inbox_conversations__conv_id__messages_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -346,7 +346,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/ai-insights": {
+    "/api/v1/inbox/conversations/{conv_id}/ai-insights": {
         parameters: {
             query?: never;
             header?: never;
@@ -359,7 +359,7 @@ export interface paths {
          *     usando OpenAI gpt-4o-mini con los últimos 20 mensajes como contexto.
          *     Cacheado en Redis 5 min (no regenerar en cada refresh).
          */
-        get: operations["get_ai_insights_api_inbox_conversations__conv_id__ai_insights_get"];
+        get: operations["get_ai_insights_api_v1_inbox_conversations__conv_id__ai_insights_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -368,7 +368,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/contacts/{email}": {
+    "/api/v1/inbox/contacts/{email}": {
         parameters: {
             query?: never;
             header?: never;
@@ -380,7 +380,7 @@ export interface paths {
          * @description Trae perfil completo del contacto desde Zoho (datos personales + cursos +
          *     cobranzas). Para la card derecha del inbox.
          */
-        get: operations["get_contact_api_inbox_contacts__email__get"];
+        get: operations["get_contact_api_v1_inbox_contacts__email__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -389,7 +389,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/assign": {
+    "/api/v1/inbox/conversations/{conv_id}/assign": {
         parameters: {
             query?: never;
             header?: never;
@@ -399,14 +399,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Assign */
-        post: operations["assign_api_inbox_conversations__conv_id__assign_post"];
+        post: operations["assign_api_v1_inbox_conversations__conv_id__assign_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/audit-log": {
+    "/api/v1/inbox/audit-log": {
         parameters: {
             query?: never;
             header?: never;
@@ -414,7 +414,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Audit Log */
-        get: operations["get_audit_log_api_inbox_audit_log_get"];
+        get: operations["get_audit_log_api_v1_inbox_audit_log_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -423,7 +423,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/status": {
+    "/api/v1/inbox/conversations/{conv_id}/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -433,14 +433,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Status */
-        post: operations["status_api_inbox_conversations__conv_id__status_post"];
+        post: operations["status_api_v1_inbox_conversations__conv_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/classify": {
+    "/api/v1/inbox/conversations/{conv_id}/classify": {
         parameters: {
             query?: never;
             header?: never;
@@ -450,14 +450,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Classify */
-        post: operations["classify_api_inbox_conversations__conv_id__classify_post"];
+        post: operations["classify_api_v1_inbox_conversations__conv_id__classify_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/queue": {
+    "/api/v1/inbox/conversations/{conv_id}/queue": {
         parameters: {
             query?: never;
             header?: never;
@@ -467,14 +467,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Queue Set */
-        post: operations["queue_set_api_inbox_conversations__conv_id__queue_post"];
+        post: operations["queue_set_api_v1_inbox_conversations__conv_id__queue_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/bot": {
+    "/api/v1/inbox/conversations/{conv_id}/bot": {
         parameters: {
             query?: never;
             header?: never;
@@ -484,14 +484,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Bot Toggle */
-        post: operations["bot_toggle_api_inbox_conversations__conv_id__bot_post"];
+        post: operations["bot_toggle_api_v1_inbox_conversations__conv_id__bot_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/tags": {
+    "/api/v1/inbox/conversations/{conv_id}/tags": {
         parameters: {
             query?: never;
             header?: never;
@@ -501,14 +501,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Tags */
-        post: operations["tags_api_inbox_conversations__conv_id__tags_post"];
+        post: operations["tags_api_v1_inbox_conversations__conv_id__tags_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/takeover": {
+    "/api/v1/inbox/conversations/{conv_id}/takeover": {
         parameters: {
             query?: never;
             header?: never;
@@ -521,14 +521,14 @@ export interface paths {
          * Takeover
          * @description Tomar control humano: pausa bot + asigna al agente + saca needs_human.
          */
-        post: operations["takeover_api_inbox_conversations__conv_id__takeover_post"];
+        post: operations["takeover_api_v1_inbox_conversations__conv_id__takeover_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/upload": {
+    "/api/v1/inbox/upload": {
         parameters: {
             query?: never;
             header?: never;
@@ -542,14 +542,14 @@ export interface paths {
          * @description Sube un archivo a R2 y devuelve la URL pública. Usado por el composer
          *     para audio + adjuntos antes de enviarlos al canal.
          */
-        post: operations["upload_attachment_api_inbox_upload_post"];
+        post: operations["upload_attachment_api_v1_inbox_upload_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/conversations/{conv_id}/send": {
+    "/api/v1/inbox/conversations/{conv_id}/send": {
         parameters: {
             query?: never;
             header?: never;
@@ -570,14 +570,14 @@ export interface paths {
          *       2. Pausa el bot + asigna al agente
          *       3. Broadcast del evento al SSE del inbox (lo recibe el widget abierto)
          */
-        post: operations["send_message_api_inbox_conversations__conv_id__send_post"];
+        post: operations["send_message_api_v1_inbox_conversations__conv_id__send_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/bulk/assign": {
+    "/api/v1/inbox/bulk/assign": {
         parameters: {
             query?: never;
             header?: never;
@@ -587,14 +587,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Bulk Assign */
-        post: operations["bulk_assign_api_inbox_bulk_assign_post"];
+        post: operations["bulk_assign_api_v1_inbox_bulk_assign_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/bulk/status": {
+    "/api/v1/inbox/bulk/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -604,14 +604,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Bulk Status */
-        post: operations["bulk_status_api_inbox_bulk_status_post"];
+        post: operations["bulk_status_api_v1_inbox_bulk_status_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/llm/correct-spelling": {
+    "/api/v1/inbox/llm/correct-spelling": {
         parameters: {
             query?: never;
             header?: never;
@@ -624,14 +624,14 @@ export interface paths {
          * Correct Spelling
          * @description Corrige ortografía + gramática usando OpenAI, respetando el estilo.
          */
-        post: operations["correct_spelling_api_inbox_llm_correct_spelling_post"];
+        post: operations["correct_spelling_api_v1_inbox_llm_correct_spelling_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/inbox/metrics": {
+    "/api/v1/inbox/metrics": {
         parameters: {
             query?: never;
             header?: never;
@@ -646,7 +646,7 @@ export interface paths {
          *     7 días aproximado, tabla de agentes (nombre + estado en Redis), FRT
          *     promedio por agente, alertas de inactividad en convs con humano.
          */
-        get: operations["get_metrics_api_inbox_metrics_get"];
+        get: operations["get_metrics_api_v1_inbox_metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -655,7 +655,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/status": {
+    "/api/v1/admin/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -666,7 +666,7 @@ export interface paths {
          * Get Status
          * @description Estado general del sistema.
          */
-        get: operations["get_status_api_admin_status_get"];
+        get: operations["get_status_api_v1_admin_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -675,7 +675,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/channels-status": {
+    "/api/v1/admin/channels-status": {
         parameters: {
             query?: never;
             header?: never;
@@ -690,7 +690,7 @@ export interface paths {
          *     aplica, hace un ping básico a la API remota. Si falla, mostramos el error
          *     para que el admin vea qué se rompió.
          */
-        get: operations["channels_status_api_admin_channels_status_get"];
+        get: operations["channels_status_api_v1_admin_channels_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -699,7 +699,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/courses/sync": {
+    "/api/v1/admin/courses/sync": {
         parameters: {
             query?: never;
             header?: never;
@@ -712,14 +712,14 @@ export interface paths {
          * Sync All
          * @description Sincroniza todos los países en `ENABLED_COUNTRIES`.
          */
-        post: operations["sync_all_api_admin_courses_sync_post"];
+        post: operations["sync_all_api_v1_admin_courses_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/courses/sync/{country}": {
+    "/api/v1/admin/courses/sync/{country}": {
         parameters: {
             query?: never;
             header?: never;
@@ -729,14 +729,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Sync One */
-        post: operations["sync_one_api_admin_courses_sync__country__post"];
+        post: operations["sync_one_api_v1_admin_courses_sync__country__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/courses": {
+    "/api/v1/admin/courses": {
         parameters: {
             query?: never;
             header?: never;
@@ -744,7 +744,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Courses */
-        get: operations["list_courses_api_admin_courses_get"];
+        get: operations["list_courses_api_v1_admin_courses_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -753,7 +753,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/courses/{country}/{slug}": {
+    "/api/v1/admin/courses/{country}/{slug}": {
         parameters: {
             query?: never;
             header?: never;
@@ -761,7 +761,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Course */
-        get: operations["get_course_api_admin_courses__country___slug__get"];
+        get: operations["get_course_api_v1_admin_courses__country___slug__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -770,7 +770,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/courses/{country}/{slug}/raw": {
+    "/api/v1/admin/courses/{country}/{slug}/raw": {
         parameters: {
             query?: never;
             header?: never;
@@ -781,7 +781,7 @@ export interface paths {
          * Get Course Raw
          * @description Devuelve el JSON crudo del WP tal como se guardó en la última sync.
          */
-        get: operations["get_course_raw_api_admin_courses__country___slug__raw_get"];
+        get: operations["get_course_raw_api_v1_admin_courses__country___slug__raw_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -790,7 +790,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/prompts/{agent}": {
+    "/api/v1/admin/prompts/{agent}": {
         parameters: {
             query?: never;
             header?: never;
@@ -801,20 +801,20 @@ export interface paths {
          * Get Prompt
          * @description Retorna el contenido del archivo de prompt del agente indicado.
          */
-        get: operations["get_prompt_api_admin_prompts__agent__get"];
+        get: operations["get_prompt_api_v1_admin_prompts__agent__get"];
         put?: never;
         /**
          * Save Prompt
          * @description Guarda el nuevo contenido en el archivo de prompt del agente.
          */
-        post: operations["save_prompt_api_admin_prompts__agent__post"];
+        post: operations["save_prompt_api_v1_admin_prompts__agent__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/widget-config/public": {
+    "/api/v1/admin/widget-config/public": {
         parameters: {
             query?: never;
             header?: never;
@@ -826,7 +826,7 @@ export interface paths {
          * @description Config del widget — accesible sin auth porque la consume el <script>
          *     que se embebe en sitios externos (msklatam.tech, etc).
          */
-        get: operations["get_public_api_admin_widget_config_public_get"];
+        get: operations["get_public_api_v1_admin_widget_config_public_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -835,7 +835,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/widget-config": {
+    "/api/v1/admin/widget-config": {
         parameters: {
             query?: never;
             header?: never;
@@ -843,17 +843,17 @@ export interface paths {
             cookie?: never;
         };
         /** Get Config */
-        get: operations["get_config_api_admin_widget_config_get"];
+        get: operations["get_config_api_v1_admin_widget_config_get"];
         put?: never;
         /** Save Config */
-        post: operations["save_config_api_admin_widget_config_post"];
+        post: operations["save_config_api_v1_admin_widget_config_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/keys": {
+    "/api/v1/admin/redis/keys": {
         parameters: {
             query?: never;
             header?: never;
@@ -864,7 +864,7 @@ export interface paths {
          * List Keys
          * @description Lista claves Redis con tipo, TTL y tamaño.
          */
-        get: operations["list_keys_api_admin_redis_keys_get"];
+        get: operations["list_keys_api_v1_admin_redis_keys_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -873,7 +873,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/key": {
+    "/api/v1/admin/redis/key": {
         parameters: {
             query?: never;
             header?: never;
@@ -884,20 +884,20 @@ export interface paths {
          * Get Key
          * @description Obtiene el valor completo de una clave.
          */
-        get: operations["get_key_api_admin_redis_key_get"];
+        get: operations["get_key_api_v1_admin_redis_key_get"];
         put?: never;
         post?: never;
         /**
          * Delete Key
          * @description Elimina una clave (excepto claves protegidas: session:*, flow:*, widget:config).
          */
-        delete: operations["delete_key_api_admin_redis_key_delete"];
+        delete: operations["delete_key_api_v1_admin_redis_key_delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/delete-pattern": {
+    "/api/v1/admin/redis/delete-pattern": {
         parameters: {
             query?: never;
             header?: never;
@@ -910,14 +910,14 @@ export interface paths {
          * Delete By Pattern
          * @description Elimina claves que coincidan con el patrón (excepto claves protegidas).
          */
-        post: operations["delete_by_pattern_api_admin_redis_delete_pattern_post"];
+        post: operations["delete_by_pattern_api_v1_admin_redis_delete_pattern_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/flush-conversations": {
+    "/api/v1/admin/redis/flush-conversations": {
         parameters: {
             query?: never;
             header?: never;
@@ -931,14 +931,14 @@ export interface paths {
          * @description Elimina TODAS las conversaciones y datos de sesión.
          *     Conserva: widget:config, auth tokens, flows, templates.
          */
-        post: operations["flush_conversations_api_admin_redis_flush_conversations_post"];
+        post: operations["flush_conversations_api_v1_admin_redis_flush_conversations_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/nuclear-reset": {
+    "/api/v1/admin/redis/nuclear-reset": {
         parameters: {
             query?: never;
             header?: never;
@@ -952,14 +952,14 @@ export interface paths {
          * @description RESET TOTAL: Redis (conversaciones + caches) + Supabase (customers + auth users).
          *     Conserva: widget:config, flow:*, session:* (admin auth), perfiles de agentes (profiles).
          */
-        post: operations["nuclear_reset_api_admin_redis_nuclear_reset_post"];
+        post: operations["nuclear_reset_api_v1_admin_redis_nuclear_reset_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/redis/stats": {
+    "/api/v1/admin/redis/stats": {
         parameters: {
             query?: never;
             header?: never;
@@ -970,7 +970,7 @@ export interface paths {
          * Get Stats
          * @description Estadísticas rápidas de Redis.
          */
-        get: operations["get_stats_api_admin_redis_stats_get"];
+        get: operations["get_stats_api_v1_admin_redis_stats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -979,7 +979,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/reports/overview": {
+    "/api/v1/admin/reports/overview": {
         parameters: {
             query?: never;
             header?: never;
@@ -990,7 +990,7 @@ export interface paths {
          * Overview
          * @description KPIs principales del rango (tarjetas arriba del dashboard).
          */
-        get: operations["overview_api_admin_reports_overview_get"];
+        get: operations["overview_api_v1_admin_reports_overview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -999,7 +999,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/reports/leaderboard": {
+    "/api/v1/admin/reports/leaderboard": {
         parameters: {
             query?: never;
             header?: never;
@@ -1010,7 +1010,7 @@ export interface paths {
          * Leaderboard
          * @description Ranking de agentes por total de cierres y ventas cerradas.
          */
-        get: operations["leaderboard_api_admin_reports_leaderboard_get"];
+        get: operations["leaderboard_api_v1_admin_reports_leaderboard_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1019,7 +1019,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/reports/categories": {
+    "/api/v1/admin/reports/categories": {
         parameters: {
             query?: never;
             header?: never;
@@ -1030,7 +1030,7 @@ export interface paths {
          * Categories
          * @description Breakdown por categoría de closing_note.
          */
-        get: operations["categories_api_admin_reports_categories_get"];
+        get: operations["categories_api_v1_admin_reports_categories_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1039,7 +1039,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/reports/timeline": {
+    "/api/v1/admin/reports/timeline": {
         parameters: {
             query?: never;
             header?: never;
@@ -1050,7 +1050,7 @@ export interface paths {
          * Timeline
          * @description Cierres por día (bar chart). Días sin cierres incluidos con 0.
          */
-        get: operations["timeline_api_admin_reports_timeline_get"];
+        get: operations["timeline_api_v1_admin_reports_timeline_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1059,7 +1059,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/test-agent": {
+    "/api/v1/admin/test-agent": {
         parameters: {
             query?: never;
             header?: never;
@@ -1073,14 +1073,14 @@ export interface paths {
          * @description Invoca el supervisor multi-agente con un prompt de test.
          *     NO persiste nada en Redis/Postgres. Retorna respuesta + metadata.
          */
-        post: operations["test_agent_api_admin_test_agent_post"];
+        post: operations["test_agent_api_v1_admin_test_agent_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/autonomous/status": {
+    "/api/v1/admin/autonomous/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -1091,7 +1091,7 @@ export interface paths {
          * Status
          * @description Estado actual del scheduler + última run del retargeting.
          */
-        get: operations["status_api_admin_autonomous_status_get"];
+        get: operations["status_api_v1_admin_autonomous_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1100,7 +1100,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/autonomous/recent": {
+    "/api/v1/admin/autonomous/recent": {
         parameters: {
             query?: never;
             header?: never;
@@ -1111,7 +1111,7 @@ export interface paths {
          * Recent Actions
          * @description Últimas acciones del retargeting (basadas en keys retarget_sent:* con TTL).
          */
-        get: operations["recent_actions_api_admin_autonomous_recent_get"];
+        get: operations["recent_actions_api_v1_admin_autonomous_recent_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1120,7 +1120,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/autonomous/run-now": {
+    "/api/v1/admin/autonomous/run-now": {
         parameters: {
             query?: never;
             header?: never;
@@ -1133,14 +1133,14 @@ export interface paths {
          * Run Now
          * @description Dispara un ciclo de retargeting manualmente.
          */
-        post: operations["run_now_api_admin_autonomous_run_now_post"];
+        post: operations["run_now_api_v1_admin_autonomous_run_now_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/autonomous/retry-now": {
+    "/api/v1/admin/autonomous/retry-now": {
         parameters: {
             query?: never;
             header?: never;
@@ -1153,14 +1153,14 @@ export interface paths {
          * Retry Now
          * @description Dispara el ciclo de auto-retry de descartados manualmente.
          */
-        post: operations["retry_now_api_admin_autonomous_retry_now_post"];
+        post: operations["retry_now_api_v1_admin_autonomous_retry_now_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/admin/autonomous/toggle": {
+    "/api/v1/admin/autonomous/toggle": {
         parameters: {
             query?: never;
             header?: never;
@@ -1173,14 +1173,14 @@ export interface paths {
          * Toggle
          * @description Toggle on/off del sistema autónomo.
          */
-        post: operations["toggle_api_admin_autonomous_toggle_post"];
+        post: operations["toggle_api_v1_admin_autonomous_toggle_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/templates/send": {
+    "/api/v1/templates/send": {
         parameters: {
             query?: never;
             header?: never;
@@ -1194,14 +1194,14 @@ export interface paths {
          * @description Recibe datos de Zoho CRM y envía una plantilla de WhatsApp.
          *     Acepta tanto JSON como form-urlencoded (como enviaba Botmaker/Deluge).
          */
-        post: operations["send_template_api_templates_send_post"];
+        post: operations["send_template_api_v1_templates_send_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/templates/hsm": {
+    "/api/v1/templates/hsm": {
         parameters: {
             query?: never;
             header?: never;
@@ -1213,7 +1213,7 @@ export interface paths {
          * @description Lista las plantillas aprobadas de Meta Business Manager.
          *     Se cachean en Redis 5 minutos para no saturar la API de Meta.
          */
-        get: operations["list_hsm_templates_api_templates_hsm_get"];
+        get: operations["list_hsm_templates_api_v1_templates_hsm_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1222,7 +1222,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/templates/send-hsm": {
+    "/api/v1/templates/send-hsm": {
         parameters: {
             query?: never;
             header?: never;
@@ -1236,14 +1236,14 @@ export interface paths {
          * @description Envía una plantilla HSM a un contacto de WhatsApp desde el inbox.
          *     Guarda el mensaje en la conversación y notifica via SSE.
          */
-        post: operations["send_hsm_api_templates_send_hsm_post"];
+        post: operations["send_hsm_api_v1_templates_send_hsm_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/templates/hsm/all": {
+    "/api/v1/templates/hsm/all": {
         parameters: {
             query?: never;
             header?: never;
@@ -1255,7 +1255,7 @@ export interface paths {
          * @description Lista TODAS las plantillas (no solo aprobadas) para la gestión admin.
          *     Incluye: APPROVED, PENDING, REJECTED.
          */
-        get: operations["list_all_templates_api_templates_hsm_all_get"];
+        get: operations["list_all_templates_api_v1_templates_hsm_all_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1264,7 +1264,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/templates/hsm/create": {
+    "/api/v1/templates/hsm/create": {
         parameters: {
             query?: never;
             header?: never;
@@ -1278,14 +1278,14 @@ export interface paths {
          * @description Crea una nueva plantilla en Meta Business Manager.
          *     La plantilla queda en estado PENDING hasta que Meta la apruebe (24-48h).
          */
-        post: operations["create_template_api_templates_hsm_create_post"];
+        post: operations["create_template_api_v1_templates_hsm_create_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/templates/hsm/upload-media": {
+    "/api/v1/templates/hsm/upload-media": {
         parameters: {
             query?: never;
             header?: never;
@@ -1300,14 +1300,14 @@ export interface paths {
          *     Sube a Meta via Resumable Upload API y retorna el header_handle.
          *     Acepta multipart/form-data con campo 'file'.
          */
-        post: operations["upload_header_media_api_templates_hsm_upload_media_post"];
+        post: operations["upload_header_media_api_v1_templates_hsm_upload_media_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/templates/hsm/{template_name}": {
+    "/api/v1/templates/hsm/{template_name}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1322,7 +1322,7 @@ export interface paths {
          * @description Elimina una plantilla de Meta Business Manager.
          *     Solo admin puede eliminar plantillas.
          */
-        delete: operations["delete_template_endpoint_api_templates_hsm__template_name__delete"];
+        delete: operations["delete_template_endpoint_api_v1_templates_hsm__template_name__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1647,15 +1647,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/health": {
+    "/api/v1/health/ready": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Health */
-        get: operations["health_health_get"];
+        /**
+         * Health Ready
+         * @description Readiness probe — chequea dependencias críticas con timeout
+         *     corto. Devuelve 200 si todo OK, 503 si algo crítico falla.
+         *
+         *     Críticas (sin ellas el servicio no funciona): Redis, Postgres.
+         *     Opcionales (degradan pero no tumban): OpenAI, Pinecone, Zoho.
+         */
+        get: operations["health_ready_api_v1_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1723,8 +1730,8 @@ export interface components {
             /** Size */
             size?: number | null;
         };
-        /** Body_upload_attachment_api_inbox_upload_post */
-        Body_upload_attachment_api_inbox_upload_post: {
+        /** Body_upload_attachment_api_v1_inbox_upload_post */
+        Body_upload_attachment_api_v1_inbox_upload_post: {
             /** File */
             file: string;
         };
@@ -2213,7 +2220,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    login_api_auth_login_post: {
+    login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2246,7 +2253,7 @@ export interface operations {
             };
         };
     };
-    forgot_password_api_auth_forgot_password_post: {
+    forgot_password_api_v1_auth_forgot_password_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2279,7 +2286,7 @@ export interface operations {
             };
         };
     };
-    reset_password_api_auth_reset_password_post: {
+    reset_password_api_v1_auth_reset_password_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2312,7 +2319,7 @@ export interface operations {
             };
         };
     };
-    logout_api_auth_logout_post: {
+    logout_api_v1_auth_logout_post: {
         parameters: {
             query?: never;
             header?: {
@@ -2343,7 +2350,7 @@ export interface operations {
             };
         };
     };
-    me_api_auth_me_get: {
+    me_api_v1_auth_me_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2374,7 +2381,7 @@ export interface operations {
             };
         };
     };
-    get_queues_api_auth_queues_get: {
+    get_queues_api_v1_auth_queues_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2394,7 +2401,7 @@ export interface operations {
             };
         };
     };
-    list_users_api_auth_users_get: {
+    list_users_api_v1_auth_users_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2425,7 +2432,7 @@ export interface operations {
             };
         };
     };
-    create_user_api_auth_users_post: {
+    create_user_api_v1_auth_users_post: {
         parameters: {
             query?: never;
             header?: {
@@ -2460,7 +2467,7 @@ export interface operations {
             };
         };
     };
-    delete_user_api_auth_users__profile_id__delete: {
+    delete_user_api_v1_auth_users__profile_id__delete: {
         parameters: {
             query?: never;
             header?: {
@@ -2493,7 +2500,7 @@ export interface operations {
             };
         };
     };
-    update_user_api_auth_users__profile_id__patch: {
+    update_user_api_v1_auth_users__profile_id__patch: {
         parameters: {
             query?: never;
             header?: {
@@ -2530,7 +2537,7 @@ export interface operations {
             };
         };
     };
-    get_agent_status_api_auth_agent_status_get: {
+    get_agent_status_api_v1_auth_agent_status_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2561,7 +2568,7 @@ export interface operations {
             };
         };
     };
-    set_agent_status_api_auth_agent_status_post: {
+    set_agent_status_api_v1_auth_agent_status_post: {
         parameters: {
             query?: never;
             header?: {
@@ -2596,7 +2603,7 @@ export interface operations {
             };
         };
     };
-    stream_api_inbox_stream_get: {
+    stream_api_v1_inbox_stream_get: {
         parameters: {
             query?: {
                 key?: string | null;
@@ -2631,7 +2638,7 @@ export interface operations {
             };
         };
     };
-    list_agents_api_inbox_agents_get: {
+    list_agents_api_v1_inbox_agents_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2663,7 +2670,7 @@ export interface operations {
             };
         };
     };
-    analytics_api_inbox_analytics_get: {
+    analytics_api_v1_inbox_analytics_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -2697,7 +2704,7 @@ export interface operations {
             };
         };
     };
-    list_courses_api_inbox_courses_get: {
+    list_courses_api_v1_inbox_courses_get: {
         parameters: {
             query?: {
                 country?: string;
@@ -2732,7 +2739,7 @@ export interface operations {
             };
         };
     };
-    update_pitch_hook_api_inbox_courses__country___slug__pitch_hook_put: {
+    update_pitch_hook_api_v1_inbox_courses__country___slug__pitch_hook_put: {
         parameters: {
             query?: never;
             header?: {
@@ -2771,7 +2778,7 @@ export interface operations {
             };
         };
     };
-    queue_stats_api_inbox_queue_stats_get: {
+    queue_stats_api_v1_inbox_queue_stats_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2803,7 +2810,7 @@ export interface operations {
             };
         };
     };
-    list_conversations_api_inbox_conversations_get: {
+    list_conversations_api_v1_inbox_conversations_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -2847,7 +2854,7 @@ export interface operations {
             };
         };
     };
-    get_messages_api_inbox_conversations__conv_id__messages_get: {
+    get_messages_api_v1_inbox_conversations__conv_id__messages_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2881,7 +2888,7 @@ export interface operations {
             };
         };
     };
-    get_ai_insights_api_inbox_conversations__conv_id__ai_insights_get: {
+    get_ai_insights_api_v1_inbox_conversations__conv_id__ai_insights_get: {
         parameters: {
             query?: never;
             header?: {
@@ -2915,7 +2922,7 @@ export interface operations {
             };
         };
     };
-    get_contact_api_inbox_contacts__email__get: {
+    get_contact_api_v1_inbox_contacts__email__get: {
         parameters: {
             query?: never;
             header?: {
@@ -2949,7 +2956,7 @@ export interface operations {
             };
         };
     };
-    assign_api_inbox_conversations__conv_id__assign_post: {
+    assign_api_v1_inbox_conversations__conv_id__assign_post: {
         parameters: {
             query?: never;
             header?: {
@@ -2987,7 +2994,7 @@ export interface operations {
             };
         };
     };
-    get_audit_log_api_inbox_audit_log_get: {
+    get_audit_log_api_v1_inbox_audit_log_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3023,7 +3030,7 @@ export interface operations {
             };
         };
     };
-    status_api_inbox_conversations__conv_id__status_post: {
+    status_api_v1_inbox_conversations__conv_id__status_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3061,7 +3068,7 @@ export interface operations {
             };
         };
     };
-    classify_api_inbox_conversations__conv_id__classify_post: {
+    classify_api_v1_inbox_conversations__conv_id__classify_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3099,7 +3106,7 @@ export interface operations {
             };
         };
     };
-    queue_set_api_inbox_conversations__conv_id__queue_post: {
+    queue_set_api_v1_inbox_conversations__conv_id__queue_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3137,7 +3144,7 @@ export interface operations {
             };
         };
     };
-    bot_toggle_api_inbox_conversations__conv_id__bot_post: {
+    bot_toggle_api_v1_inbox_conversations__conv_id__bot_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3175,7 +3182,7 @@ export interface operations {
             };
         };
     };
-    tags_api_inbox_conversations__conv_id__tags_post: {
+    tags_api_v1_inbox_conversations__conv_id__tags_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3213,7 +3220,7 @@ export interface operations {
             };
         };
     };
-    takeover_api_inbox_conversations__conv_id__takeover_post: {
+    takeover_api_v1_inbox_conversations__conv_id__takeover_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3251,7 +3258,7 @@ export interface operations {
             };
         };
     };
-    upload_attachment_api_inbox_upload_post: {
+    upload_attachment_api_v1_inbox_upload_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3263,7 +3270,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_inbox_upload_post"];
+                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_v1_inbox_upload_post"];
             };
         };
         responses: {
@@ -3287,7 +3294,7 @@ export interface operations {
             };
         };
     };
-    send_message_api_inbox_conversations__conv_id__send_post: {
+    send_message_api_v1_inbox_conversations__conv_id__send_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3325,7 +3332,7 @@ export interface operations {
             };
         };
     };
-    bulk_assign_api_inbox_bulk_assign_post: {
+    bulk_assign_api_v1_inbox_bulk_assign_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3361,7 +3368,7 @@ export interface operations {
             };
         };
     };
-    bulk_status_api_inbox_bulk_status_post: {
+    bulk_status_api_v1_inbox_bulk_status_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3397,7 +3404,7 @@ export interface operations {
             };
         };
     };
-    correct_spelling_api_inbox_llm_correct_spelling_post: {
+    correct_spelling_api_v1_inbox_llm_correct_spelling_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3433,7 +3440,7 @@ export interface operations {
             };
         };
     };
-    get_metrics_api_inbox_metrics_get: {
+    get_metrics_api_v1_inbox_metrics_get: {
         parameters: {
             query?: never;
             header?: {
@@ -3465,7 +3472,7 @@ export interface operations {
             };
         };
     };
-    get_status_api_admin_status_get: {
+    get_status_api_v1_admin_status_get: {
         parameters: {
             query?: never;
             header: {
@@ -3496,7 +3503,7 @@ export interface operations {
             };
         };
     };
-    channels_status_api_admin_channels_status_get: {
+    channels_status_api_v1_admin_channels_status_get: {
         parameters: {
             query?: never;
             header?: {
@@ -3528,7 +3535,7 @@ export interface operations {
             };
         };
     };
-    sync_all_api_admin_courses_sync_post: {
+    sync_all_api_v1_admin_courses_sync_post: {
         parameters: {
             query?: {
                 /** @description Borrar slugs discontinuados */
@@ -3562,7 +3569,7 @@ export interface operations {
             };
         };
     };
-    sync_one_api_admin_courses_sync__country__post: {
+    sync_one_api_v1_admin_courses_sync__country__post: {
         parameters: {
             query?: {
                 prune?: boolean;
@@ -3597,7 +3604,7 @@ export interface operations {
             };
         };
     };
-    list_courses_api_admin_courses_get: {
+    list_courses_api_v1_admin_courses_get: {
         parameters: {
             query: {
                 /** @description ISO-2 country code */
@@ -3632,7 +3639,7 @@ export interface operations {
             };
         };
     };
-    get_course_api_admin_courses__country___slug__get: {
+    get_course_api_v1_admin_courses__country___slug__get: {
         parameters: {
             query?: never;
             header: {
@@ -3666,7 +3673,7 @@ export interface operations {
             };
         };
     };
-    get_course_raw_api_admin_courses__country___slug__raw_get: {
+    get_course_raw_api_v1_admin_courses__country___slug__raw_get: {
         parameters: {
             query?: never;
             header: {
@@ -3700,7 +3707,7 @@ export interface operations {
             };
         };
     };
-    get_prompt_api_admin_prompts__agent__get: {
+    get_prompt_api_v1_admin_prompts__agent__get: {
         parameters: {
             query?: never;
             header?: {
@@ -3733,7 +3740,7 @@ export interface operations {
             };
         };
     };
-    save_prompt_api_admin_prompts__agent__post: {
+    save_prompt_api_v1_admin_prompts__agent__post: {
         parameters: {
             query?: never;
             header?: {
@@ -3770,7 +3777,7 @@ export interface operations {
             };
         };
     };
-    get_public_api_admin_widget_config_public_get: {
+    get_public_api_v1_admin_widget_config_public_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3790,7 +3797,7 @@ export interface operations {
             };
         };
     };
-    get_config_api_admin_widget_config_get: {
+    get_config_api_v1_admin_widget_config_get: {
         parameters: {
             query?: never;
             header?: {
@@ -3821,7 +3828,7 @@ export interface operations {
             };
         };
     };
-    save_config_api_admin_widget_config_post: {
+    save_config_api_v1_admin_widget_config_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3856,7 +3863,7 @@ export interface operations {
             };
         };
     };
-    list_keys_api_admin_redis_keys_get: {
+    list_keys_api_v1_admin_redis_keys_get: {
         parameters: {
             query?: {
                 pattern?: string;
@@ -3890,7 +3897,7 @@ export interface operations {
             };
         };
     };
-    get_key_api_admin_redis_key_get: {
+    get_key_api_v1_admin_redis_key_get: {
         parameters: {
             query: {
                 key: string;
@@ -3923,7 +3930,7 @@ export interface operations {
             };
         };
     };
-    delete_key_api_admin_redis_key_delete: {
+    delete_key_api_v1_admin_redis_key_delete: {
         parameters: {
             query: {
                 key: string;
@@ -3956,7 +3963,7 @@ export interface operations {
             };
         };
     };
-    delete_by_pattern_api_admin_redis_delete_pattern_post: {
+    delete_by_pattern_api_v1_admin_redis_delete_pattern_post: {
         parameters: {
             query?: never;
             header?: {
@@ -3991,7 +3998,7 @@ export interface operations {
             };
         };
     };
-    flush_conversations_api_admin_redis_flush_conversations_post: {
+    flush_conversations_api_v1_admin_redis_flush_conversations_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4022,7 +4029,7 @@ export interface operations {
             };
         };
     };
-    nuclear_reset_api_admin_redis_nuclear_reset_post: {
+    nuclear_reset_api_v1_admin_redis_nuclear_reset_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4053,7 +4060,7 @@ export interface operations {
             };
         };
     };
-    get_stats_api_admin_redis_stats_get: {
+    get_stats_api_v1_admin_redis_stats_get: {
         parameters: {
             query?: never;
             header?: {
@@ -4084,7 +4091,7 @@ export interface operations {
             };
         };
     };
-    overview_api_admin_reports_overview_get: {
+    overview_api_v1_admin_reports_overview_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -4117,7 +4124,7 @@ export interface operations {
             };
         };
     };
-    leaderboard_api_admin_reports_leaderboard_get: {
+    leaderboard_api_v1_admin_reports_leaderboard_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -4150,7 +4157,7 @@ export interface operations {
             };
         };
     };
-    categories_api_admin_reports_categories_get: {
+    categories_api_v1_admin_reports_categories_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -4183,7 +4190,7 @@ export interface operations {
             };
         };
     };
-    timeline_api_admin_reports_timeline_get: {
+    timeline_api_v1_admin_reports_timeline_get: {
         parameters: {
             query?: {
                 days?: number;
@@ -4216,7 +4223,7 @@ export interface operations {
             };
         };
     };
-    test_agent_api_admin_test_agent_post: {
+    test_agent_api_v1_admin_test_agent_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4251,7 +4258,7 @@ export interface operations {
             };
         };
     };
-    status_api_admin_autonomous_status_get: {
+    status_api_v1_admin_autonomous_status_get: {
         parameters: {
             query?: never;
             header?: {
@@ -4282,7 +4289,7 @@ export interface operations {
             };
         };
     };
-    recent_actions_api_admin_autonomous_recent_get: {
+    recent_actions_api_v1_admin_autonomous_recent_get: {
         parameters: {
             query?: never;
             header?: {
@@ -4313,7 +4320,7 @@ export interface operations {
             };
         };
     };
-    run_now_api_admin_autonomous_run_now_post: {
+    run_now_api_v1_admin_autonomous_run_now_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4344,7 +4351,7 @@ export interface operations {
             };
         };
     };
-    retry_now_api_admin_autonomous_retry_now_post: {
+    retry_now_api_v1_admin_autonomous_retry_now_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4375,7 +4382,7 @@ export interface operations {
             };
         };
     };
-    toggle_api_admin_autonomous_toggle_post: {
+    toggle_api_v1_admin_autonomous_toggle_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4406,7 +4413,7 @@ export interface operations {
             };
         };
     };
-    send_template_api_templates_send_post: {
+    send_template_api_v1_templates_send_post: {
         parameters: {
             query?: never;
             header: {
@@ -4437,7 +4444,7 @@ export interface operations {
             };
         };
     };
-    list_hsm_templates_api_templates_hsm_get: {
+    list_hsm_templates_api_v1_templates_hsm_get: {
         parameters: {
             query?: never;
             header?: {
@@ -4468,7 +4475,7 @@ export interface operations {
             };
         };
     };
-    send_hsm_api_templates_send_hsm_post: {
+    send_hsm_api_v1_templates_send_hsm_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4503,7 +4510,7 @@ export interface operations {
             };
         };
     };
-    list_all_templates_api_templates_hsm_all_get: {
+    list_all_templates_api_v1_templates_hsm_all_get: {
         parameters: {
             query?: never;
             header?: {
@@ -4534,7 +4541,7 @@ export interface operations {
             };
         };
     };
-    create_template_api_templates_hsm_create_post: {
+    create_template_api_v1_templates_hsm_create_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4569,7 +4576,7 @@ export interface operations {
             };
         };
     };
-    upload_header_media_api_templates_hsm_upload_media_post: {
+    upload_header_media_api_v1_templates_hsm_upload_media_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4600,7 +4607,7 @@ export interface operations {
             };
         };
     };
-    delete_template_endpoint_api_templates_hsm__template_name__delete: {
+    delete_template_endpoint_api_v1_templates_hsm__template_name__delete: {
         parameters: {
             query?: never;
             header?: {
@@ -5055,7 +5062,7 @@ export interface operations {
             };
         };
     };
-    health_health_get: {
+    health_ready_api_v1_health_ready_get: {
         parameters: {
             query?: never;
             header?: never;

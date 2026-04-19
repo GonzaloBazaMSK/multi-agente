@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   Inbox,
   BookOpen,
@@ -11,12 +11,11 @@ import {
   BarChart3,
   Settings,
   Bell,
-  LogOut,
   MessageSquare,
-  Users,
 } from "lucide-react";
-import { cn, initials } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useAuth, hasRole, type Role } from "@/lib/auth";
+import { UserMenu } from "./user-menu";
 
 type RailLink = {
   href: string;
@@ -27,9 +26,7 @@ type RailLink = {
   min?: Role;
 };
 
-// Orden = orden en el rail. Los que tienen `min` se filtran según rol del
-// usuario logueado. Items nuevos (templates, flujos, equipo) salen de la
-// paridad con la UI vieja — ver HANDOFF_QA_PARITY.md.
+// Orden = orden en el rail. Los que tienen `min` se filtran según rol.
 const NAV: RailLink[] = [
   { href: "/inbox",     label: "Inbox",               icon: Inbox },
   { href: "/analytics", label: "Analytics",           icon: BarChart3,    min: "supervisor" },
@@ -42,17 +39,8 @@ const NAV: RailLink[] = [
 
 export function Rail() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, logout } = useAuth();
-  const avatarInitials = user?.name ? initials(user.name) : "·";
-  const tooltip = user
-    ? `${user.name} · ${user.email}${user.role ? ` (${user.role})` : ""} · click para cerrar sesión`
-    : "Sin sesión · click para iniciar sesión";
-
-  // Filtrado por rol. Sin user (pre-login) el rail se muestra vacío —
-  // igualmente el AppLayout redirige a /login antes de renderizar.
+  const { user } = useAuth();
   const visibleNav = NAV.filter((item) => !item.min || hasRole(user, item.min));
-  const canSeeTeam = hasRole(user, "supervisor");
 
   return (
     <aside className="w-14 bg-panel border-r border-border flex flex-col items-center py-2 shrink-0">
@@ -63,7 +51,7 @@ export function Rail() {
 
       <div className="w-8 h-px bg-border mb-3" />
 
-      {/* Nav */}
+      {/* Nav principal */}
       <nav className="flex flex-col items-center gap-1 flex-1">
         {visibleNav.map((item) => {
           const active = pathname.startsWith(item.href);
@@ -74,7 +62,7 @@ export function Rail() {
               href={item.href}
               className={cn(
                 "rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center transition-colors",
-                active ? "bg-accent/18 text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+                active ? "bg-accent/18 text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
               )}
               data-tooltip={item.label}
             >
@@ -92,29 +80,15 @@ export function Rail() {
         })}
       </nav>
 
-      {/* Bottom */}
+      {/* Bottom: configuración + notificaciones + avatar con menú */}
       <div className="flex flex-col items-center gap-1 mt-auto">
-        {canSeeTeam && (
-          <Link
-            href="/users"
-            className={cn(
-              "rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center",
-              pathname.startsWith("/users")
-                ? "bg-accent/18 text-fg"
-                : "text-fg-muted hover:bg-hover hover:text-fg"
-            )}
-            data-tooltip="Equipo"
-          >
-            <Users className="w-[18px] h-[18px]" />
-          </Link>
-        )}
         <Link
           href="/settings"
           className={cn(
             "rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center",
             pathname.startsWith("/settings")
               ? "bg-accent/18 text-fg"
-              : "text-fg-muted hover:bg-hover hover:text-fg"
+              : "text-fg-muted hover:bg-hover hover:text-fg",
           )}
           data-tooltip="Configuración"
         >
@@ -127,20 +101,10 @@ export function Rail() {
           <Bell className="w-[18px] h-[18px]" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-panel" />
         </button>
-        <button
-          type="button"
-          onClick={() => (user ? logout() : router.push("/login"))}
-          className={cn(
-            "rail-tooltip-wrap w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center cursor-pointer transition-opacity hover:opacity-80",
-            user
-              ? "bg-gradient-to-br from-pink-500 to-fuchsia-600 ring-2 ring-success/40"
-              : "bg-fg-muted ring-2 ring-border"
-          )}
-          data-tooltip={tooltip}
-          aria-label={tooltip}
-        >
-          {user ? avatarInitials : <LogOut className="w-3.5 h-3.5" />}
-        </button>
+        {/* Avatar con dropdown — estado + config + logout. Reemplaza el
+            botón directo de logout que teníamos antes (mala UX: un click
+            accidental y cerrabas sesión). */}
+        <UserMenu />
       </div>
 
       <style jsx global>{`

@@ -39,3 +39,8 @@ APScheduler>=3.10.4
 # contadores de requests, size de responses. Scrapeable por Prometheus
 # self-hosted en el mismo droplet (ver docker-compose.yml).
 prometheus-fastapi-instrumentator>=7.0.0
+
+# Alembic — migraciones versionadas de Postgres con rollback. Reemplaza
+# los scripts SQL manuales que vivían en migrations/ sin tracking.
+alembic>=1.13.0
+sqlalchemy>=2.0.0   # Alembic lo necesita aunque usemos asyncpg puro en la app

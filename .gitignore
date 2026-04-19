@@ -40,3 +40,16 @@ deploy_*.py
 .claude/settings.local.json
 .claude/file-history/
 .claude/sessions/
+
+# Playwright — outputs de tests (traces, screenshots, videos, html report)
+frontend/test-results/
+frontend/playwright-report/
+frontend/playwright/.cache/
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+
+# Node modules
+node_modules/

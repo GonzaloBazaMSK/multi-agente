@@ -44,3 +44,9 @@ prometheus-fastapi-instrumentator>=7.0.0
 # los scripts SQL manuales que vivían en migrations/ sin tracking.
 alembic>=1.13.0
 sqlalchemy>=2.0.0   # Alembic lo necesita aunque usemos asyncpg puro en la app
+
+# Dramatiq — task queue para offload de trabajo pesado (LangGraph, Zoho
+# sync) a workers separados del request cycle de uvicorn. Broker Redis
+# (ya lo tenemos). Alternativa a Celery que es más simple y
+# asyncio-native.
+dramatiq[redis]>=1.17.0

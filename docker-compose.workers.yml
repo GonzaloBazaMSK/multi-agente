@@ -1,0 +1,36 @@
+# Workers dramatiq para offload de LangGraph + webhooks pesados.
+# Aplicar con:
+#   docker compose -f docker-compose.yml -f docker-compose.workers.yml up -d
+#
+# Flow recomendado:
+#   1. Deploy api con el nuevo código (tasks.py existe pero nadie lo usa).
+#   2. Levantar workers con este compose.
+#   3. Cambiar `background_tasks.add_task(process_wa_meta, payload)` por
+#      `process_whatsapp_meta_task.send(payload)` en api/webhooks.py
+#      (un commit que activa el dispatch).
+#   4. Los webhooks empiezan a encolar; los workers procesan.
+#
+# Rollback: volver al commit anterior → background_tasks vuelve. Los
+# workers pueden apagarse sin impacto (la cola se vacía sola).
+services:
+  worker-whatsapp:
+    build: .
+    container_name: multiagente-worker-whatsapp-1
+    command: dramatiq utils.tasks -p 2 -t 4 --queues whatsapp
+    env_file: .env
+    depends_on:
+      - redis
+      - api
+    restart: unless-stopped
+    # Usa la misma imagen que `api` — no replica código. Solo cambia el
+    # entrypoint al worker de dramatiq.
+
+  worker-payments:
+    build: .
+    container_name: multiagente-worker-payments-1
+    command: dramatiq utils.tasks -p 1 -t 2 --queues payments
+    env_file: .env
+    depends_on:
+      - redis
+      - api
+    restart: unless-stopped

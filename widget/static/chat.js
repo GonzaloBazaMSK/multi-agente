@@ -186,7 +186,11 @@
     const link = document.createElement("link");
     link.id = "cm-widget-css";
     link.rel = "stylesheet";
-    link.href = `${CONFIG.apiUrl}/static/chat.css`;
+    // Cache-bust: versión del bundle → cada deploy del widget.js cambia
+    // este string y el browser descarga CSS nuevo. Sin esto, un browser
+    // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
+    const CSS_VERSION = "20260420-3";
+    link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
     // Aplicar color primario custom si difiere del default

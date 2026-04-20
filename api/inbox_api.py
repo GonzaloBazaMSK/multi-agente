@@ -199,60 +199,255 @@ def _agent_queue_scope_sql(user_queues: list[str]) -> str | None:
 
 @router.get("/analytics")
 async def analytics(days: int = 30):
-    """Métricas básicas para la página /analytics."""
+    """Dashboard operativo del contact center.
+
+    Métricas incluidas:
+      - Totales (convs, msgs, activas hoy, resueltas, hot leads)
+      - SLA: % respondidas <15m / <1h por agente humano
+      - TMR (tiempo mediano a primera respuesta humana, en minutos)
+      - Takeover rate (% de convs donde un humano intervino)
+      - Bot resolution rate (% resueltas solo con bot)
+      - Stale now (convs sin respuesta humana > 2h, SNAPSHOT actual)
+      - Daily volume (convs + msgs por día)
+      - Heatmap 7×24 (día de semana × hora local AR)
+      - Agent leaderboard (convs atendidas + TMR individual)
+      - Breakdowns por canal, cola, país, lifecycle
+      - Handoffs al humano (convs con needs_human=true actualmente)
+
+    El humano se identifica por `messages.metadata->>'agent' = 'humano'`
+    (es la convención del inbox — ver api/inbox_api.py:send_reply).
+    """
     pool = await postgres_store.get_pool()
+    d = int(days)
     async with pool.acquire() as conn:
-        # Conteos generales — usamos f-string con int(days) para evitar SQL injection
-        # y sortear el bug de asyncpg con $1::interval (que espera timedelta, no str)
+        # ─────────────── Totals ───────────────
         total_convs = await conn.fetchval(
-            f"select count(*) from public.conversations where created_at > now() - interval '{int(days)} days'"
+            f"select count(*) from public.conversations where created_at > now() - interval '{d} days'"
         )
         total_msgs = await conn.fetchval(
-            f"select count(*) from public.messages where created_at > now() - interval '{int(days)} days'"
+            f"select count(*) from public.messages where created_at > now() - interval '{d} days'"
         )
         active_today = await conn.fetchval(
             "select count(*) from public.conversations where updated_at > now() - interval '24 hours'"
         )
         resolved_count = await conn.fetchval(
-            "select count(*) from public.conversation_meta where status = 'resolved'"
+            f"""
+            select count(*) from public.conversation_meta cm
+            join public.conversations c on c.id = cm.conversation_id
+            where cm.status = 'resolved' and c.created_at > now() - interval '{d} days'
+            """
         )
-        # Convs por día
-        daily = await conn.fetch(f"""
-            select date_trunc('day', created_at)::date as day, count(*)::int as cnt
+        hot_leads = await conn.fetchval(
+            f"""
+            select count(*) from public.conversation_meta cm
+            join public.conversations c on c.id = cm.conversation_id
+            where coalesce(cm.lifecycle_override, cm.lifecycle_auto) = 'hot'
+              and c.created_at > now() - interval '{d} days'
+            """
+        )
+
+        # ─────────────── SLA + TMR ───────────────
+        # Para cada conv del período, calculamos:
+        #   - primer msg del cliente
+        #   - primer msg humano posterior (role=assistant + metadata.agent='humano')
+        # diff en minutos = TMR individual
+        #
+        # WITH: una fila por conv con "first_user" y "first_human".
+        sla_rows = await conn.fetch(
+            f"""
+            with first_user as (
+                select conversation_id, min(created_at) as t
+                from public.messages
+                where role = 'user'
+                group by conversation_id
+            ),
+            first_human as (
+                select conversation_id, min(created_at) as t
+                from public.messages
+                where role = 'assistant' and metadata->>'agent' = 'humano'
+                group by conversation_id
+            ),
+            pairs as (
+                select
+                    c.id as conv_id,
+                    fu.t as t_user,
+                    fh.t as t_human,
+                    extract(epoch from (fh.t - fu.t))/60.0 as tmr_minutes
+                from public.conversations c
+                join first_user fu on fu.conversation_id = c.id
+                left join first_human fh on fh.conversation_id = c.id
+                where c.created_at > now() - interval '{d} days'
+            )
+            select
+                count(*) filter (where t_human is not null) as answered_human,
+                count(*) as total_with_user,
+                count(*) filter (where tmr_minutes <= 15) as under_15m,
+                count(*) filter (where tmr_minutes <= 60) as under_60m,
+                percentile_cont(0.5) within group (order by tmr_minutes) filter (where t_human is not null) as tmr_p50,
+                percentile_cont(0.9) within group (order by tmr_minutes) filter (where t_human is not null) as tmr_p90
+            from pairs
+            """
+        )
+        sla = sla_rows[0] if sla_rows else None
+        answered_human = int(sla["answered_human"] or 0) if sla else 0
+        total_with_user = int(sla["total_with_user"] or 0) if sla else 0
+        takeover_rate = round(answered_human / total_with_user * 100, 1) if total_with_user else 0
+        bot_only_rate = round(100 - takeover_rate, 1) if total_with_user else 0
+        under_15m = int(sla["under_15m"] or 0) if sla else 0
+        under_60m = int(sla["under_60m"] or 0) if sla else 0
+        # SLA denominador = convs que RECIBIERON respuesta humana (si no hubo takeover, el
+        # SLA humano no aplica — lo bot lo atendió). Si querés ver "de lo humano, cuánto
+        # dentro de 15m".
+        sla_15m_pct = round(under_15m / answered_human * 100, 1) if answered_human else 0
+        sla_60m_pct = round(under_60m / answered_human * 100, 1) if answered_human else 0
+        tmr_p50 = round(float(sla["tmr_p50"]), 1) if sla and sla["tmr_p50"] else 0
+        tmr_p90 = round(float(sla["tmr_p90"]), 1) if sla and sla["tmr_p90"] else 0
+
+        # ─────────────── Stale now (snapshot) ───────────────
+        stale_now = await conn.fetchval(
+            """
+            with last_msg as (
+                select distinct on (conversation_id)
+                    conversation_id, role, created_at
+                from public.messages
+                order by conversation_id, created_at desc
+            )
+            select count(*)
+            from public.conversation_meta cm
+            join last_msg lm on lm.conversation_id = cm.conversation_id
+            where cm.assigned_agent_id is not null
+              and cm.status in ('open', 'pending')
+              and lm.role = 'user'
+              and lm.created_at < now() - interval '2 hours'
+              and lm.created_at > now() - interval '24 hours'
+            """
+        )
+        needs_human_now = await conn.fetchval(
+            "select count(*) from public.conversation_meta where needs_human = true and status in ('open','pending')"
+        )
+        open_convs_now = await conn.fetchval(
+            "select count(*) from public.conversation_meta where status in ('open', 'pending')"
+        )
+
+        # ─────────────── Daily volume ───────────────
+        daily = await conn.fetch(
+            f"""
+            select date_trunc('day', created_at)::date as day,
+                   count(*)::int as cnt
             from public.conversations
-            where created_at > now() - interval '{int(days)} days'
+            where created_at > now() - interval '{d} days'
             group by 1 order by 1
-        """)
-        # Por canal
-        by_channel = await conn.fetch(f"""
+            """
+        )
+
+        # ─────────────── Heatmap 7×24 (hora AR) ───────────────
+        # dow: 0=domingo, 6=sábado. hour: 0-23 en tz America/Argentina/Buenos_Aires.
+        heatmap = await conn.fetch(
+            f"""
+            select
+                extract(dow from (created_at at time zone 'America/Argentina/Buenos_Aires'))::int as dow,
+                extract(hour from (created_at at time zone 'America/Argentina/Buenos_Aires'))::int as hr,
+                count(*)::int as cnt
+            from public.conversations
+            where created_at > now() - interval '{d} days'
+            group by 1, 2
+            """
+        )
+
+        # ─────────────── Agent leaderboard ───────────────
+        # Para cada agente con actividad en el período:
+        #   - convs activas (assigned ahora)
+        #   - convs totales atendidas (al menos un msg humano)
+        #   - TMR mediano del agente (minutos)
+        leaderboard = await conn.fetch(
+            f"""
+            with human_msgs as (
+                select
+                    m.conversation_id,
+                    (m.metadata->>'sender_name') as sender_name,
+                    cm.assigned_agent_id,
+                    min(m.created_at) as first_human_at
+                from public.messages m
+                join public.conversations c on c.id = m.conversation_id
+                left join public.conversation_meta cm on cm.conversation_id = m.conversation_id
+                where m.role = 'assistant' and m.metadata->>'agent' = 'humano'
+                  and c.created_at > now() - interval '{d} days'
+                group by 1, 2, 3
+            ),
+            first_user as (
+                select conversation_id, min(created_at) as t
+                from public.messages
+                where role = 'user'
+                group by conversation_id
+            ),
+            per_agent as (
+                select
+                    coalesce(hm.assigned_agent_id, 'unknown') as agent_id,
+                    count(*) as convs_handled,
+                    percentile_cont(0.5) within group (
+                        order by extract(epoch from (hm.first_human_at - fu.t))/60.0
+                    ) as tmr_p50
+                from human_msgs hm
+                left join first_user fu on fu.conversation_id = hm.conversation_id
+                group by 1
+            ),
+            current_load as (
+                select assigned_agent_id, count(*) as active_convs
+                from public.conversation_meta
+                where assigned_agent_id is not null
+                  and status in ('open', 'pending')
+                group by 1
+            )
+            select
+                pa.agent_id,
+                coalesce(p.name, p.email, pa.agent_id) as agent_name,
+                p.email as agent_email,
+                pa.convs_handled::int as convs_handled,
+                round(pa.tmr_p50::numeric, 1) as tmr_p50,
+                coalesce(cl.active_convs, 0)::int as active_convs
+            from per_agent pa
+            left join public.profiles p on p.id::text = pa.agent_id
+            left join current_load cl on cl.assigned_agent_id = pa.agent_id
+            order by pa.convs_handled desc
+            limit 20
+            """
+        )
+
+        # ─────────────── Breakdowns ───────────────
+        by_channel = await conn.fetch(
+            f"""
             select channel, count(*)::int as cnt
             from public.conversations
-            where created_at > now() - interval '{int(days)} days'
+            where created_at > now() - interval '{d} days'
             group by 1
-        """)
-        # Por queue
-        by_queue = await conn.fetch(f"""
+            """
+        )
+        by_queue = await conn.fetch(
+            f"""
             select coalesce(cm.queue, 'sales') as queue, count(*)::int as cnt
             from public.conversations c
             left join public.conversation_meta cm on cm.conversation_id = c.id
-            where c.created_at > now() - interval '{int(days)} days'
+            where c.created_at > now() - interval '{d} days'
             group by 1
-        """)
-        # Por país
-        by_country = await conn.fetch(f"""
+            """
+        )
+        by_country = await conn.fetch(
+            f"""
             select upper(coalesce(user_profile->>'country', 'AR')) as cc, count(*)::int as cnt
             from public.conversations
-            where created_at > now() - interval '{int(days)} days'
+            where created_at > now() - interval '{d} days'
             group by 1 order by 2 desc limit 10
-        """)
-        # Lifecycle
-        by_lifecycle = await conn.fetch(f"""
+            """
+        )
+        by_lifecycle = await conn.fetch(
+            f"""
             select coalesce(cm.lifecycle_override, cm.lifecycle_auto, 'new') as lc, count(*)::int as cnt
             from public.conversations c
             left join public.conversation_meta cm on cm.conversation_id = c.id
-            where c.created_at > now() - interval '{int(days)} days'
+            where c.created_at > now() - interval '{d} days'
             group by 1
-        """)
+            """
+        )
 
     return {
         "totals": {
@@ -260,8 +455,36 @@ async def analytics(days: int = 30):
             "messages": total_msgs or 0,
             "active_today": active_today or 0,
             "resolved": resolved_count or 0,
+            "hot_leads": hot_leads or 0,
+            "open_now": open_convs_now or 0,
+            "needs_human_now": needs_human_now or 0,
+            "stale_now": stale_now or 0,
+        },
+        "sla": {
+            "answered_human": answered_human,
+            "total_with_user": total_with_user,
+            "takeover_rate_pct": takeover_rate,
+            "bot_only_rate_pct": bot_only_rate,
+            "under_15m_pct": sla_15m_pct,
+            "under_60m_pct": sla_60m_pct,
+            "tmr_p50_min": tmr_p50,
+            "tmr_p90_min": tmr_p90,
         },
         "daily": [{"day": str(r["day"]), "count": r["cnt"]} for r in daily],
+        "heatmap": [
+            {"dow": r["dow"], "hour": r["hr"], "count": r["cnt"]} for r in heatmap
+        ],
+        "leaderboard": [
+            {
+                "agent_id": r["agent_id"],
+                "agent_name": r["agent_name"],
+                "agent_email": r["agent_email"],
+                "convs_handled": r["convs_handled"],
+                "tmr_p50_min": float(r["tmr_p50"]) if r["tmr_p50"] is not None else None,
+                "active_convs": r["active_convs"],
+            }
+            for r in leaderboard
+        ],
         "by_channel": {r["channel"]: r["cnt"] for r in by_channel},
         "by_queue": {r["queue"]: r["cnt"] for r in by_queue},
         "by_country": {r["cc"]: r["cnt"] for r in by_country},

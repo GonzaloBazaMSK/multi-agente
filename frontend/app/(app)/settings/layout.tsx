@@ -15,7 +15,7 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, ListTree, Building2, History } from "lucide-react";
+import { Users, ListTree, Building2, History, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRole } from "@/lib/auth";
 
@@ -39,6 +39,12 @@ const SECTIONS: Section[] = [
     label: "Colas de atención",
     description: "Quién atiende qué cola (ventas/cobranzas/post-venta × país)",
     icon: ListTree,
+  },
+  {
+    href: "/settings/notifications",
+    label: "Notificaciones",
+    description: "Qué alertas recibir y sonido",
+    icon: Bell,
   },
   {
     href: "/settings/audit",

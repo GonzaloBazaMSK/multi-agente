@@ -10,12 +10,12 @@ import {
   Plug,
   BarChart3,
   Settings,
-  Bell,
   MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, hasRole, type Role } from "@/lib/auth";
 import { UserMenu } from "./user-menu";
+import { NotificationsDropdown } from "./notifications-dropdown";
 
 type RailLink = {
   href: string;
@@ -94,13 +94,7 @@ export function Rail() {
         >
           <Settings className="w-[18px] h-[18px]" />
         </Link>
-        <button
-          className="rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center text-fg-muted hover:bg-hover hover:text-fg"
-          data-tooltip="Notificaciones"
-        >
-          <Bell className="w-[18px] h-[18px]" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-danger ring-2 ring-panel" />
-        </button>
+        <NotificationsDropdown />
         {/* Avatar con dropdown — estado + config + logout. Reemplaza el
             botón directo de logout que teníamos antes (mala UX: un click
             accidental y cerrabas sesión). */}

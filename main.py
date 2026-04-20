@@ -44,6 +44,7 @@ from api.auth import router as auth_router
 from api.autonomous import router as autonomous_router
 from api.customer_auth import router as customer_auth_router
 from api.inbox_api import router as inbox_api_router
+from api.notifications import router as notifications_router
 from api.redis_admin import router as redis_admin_router
 from api.reports import router as reports_router
 from api.templates import router as templates_router
@@ -300,6 +301,7 @@ def create_app() -> FastAPI:
     app.include_router(autonomous_router)  # /api/admin/autonomous/*
     app.include_router(templates_router)  # /api/templates/*
     app.include_router(voice_router)  # /api/v1/voice/* (call logs Zoho Voice)
+    app.include_router(notifications_router)  # /api/v1/notifications/*
 
     # Públicos — fuera del namespace /api/ (consumidores externos).
     app.include_router(customer_auth_router)  # /customer/* (LMS)

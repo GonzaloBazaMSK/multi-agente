@@ -789,6 +789,24 @@ async def assign(conv_id: str, body: AssignBody):
     from utils.inbox_jobs import log_action
 
     await log_action("system", "assign", conv_id, {"agent_id": body.agent_id})
+
+    # Notificación al agente asignado — fire-and-forget, no falla el assign
+    # si la notif no se puede crear (ver utils/notifications.py:notify).
+    if body.agent_id:
+        from utils.notifications import notify
+
+        try:
+            conv = await cm.get(conv_id)
+            data = {
+                "conversation_id": conv_id,
+                "client_name": (conv or {}).get("name") or "cliente",
+                "queue": (conv or {}).get("queue"),
+                "channel": (conv or {}).get("channel"),
+            }
+            await notify(body.agent_id, "conv_assigned", data)
+        except Exception as e:
+            logger.debug("notify_assign_failed", conv_id=conv_id, error=str(e))
+
     return {"ok": True}
 
 

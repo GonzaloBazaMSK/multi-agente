@@ -218,6 +218,13 @@ async def process_whatsapp_message(payload: dict) -> None:
             )
         except Exception:
             pass
+        # Notif al agente asignado (si hay) — bot pausado = humano responde
+        try:
+            from utils.notifications import on_inbound_user_message
+
+            await on_inbound_user_message(phone, text, name)
+        except Exception:
+            pass
         return
 
     # Detectar país por prefijo del teléfono
@@ -302,6 +309,15 @@ async def process_whatsapp_message(payload: dict) -> None:
                     "channel": "whatsapp",
                 }
             )
+    except Exception:
+        pass
+
+    # Notif al agente asignado (si hay uno humano) — bot conviviendo con
+    # takeover, o caso donde la asignación automática ya corrió.
+    try:
+        from utils.notifications import on_inbound_user_message
+
+        await on_inbound_user_message(phone, text, name)
     except Exception:
         pass
 

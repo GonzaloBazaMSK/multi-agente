@@ -64,6 +64,12 @@ async def process_twilio_message(form_data: dict) -> None:
             )
         except Exception:
             pass
+        try:
+            from utils.notifications import on_inbound_user_message
+
+            await on_inbound_user_message(phone, text, name)
+        except Exception:
+            pass
         return
 
     # Detectar país por prefijo
@@ -143,6 +149,13 @@ async def process_twilio_message(form_data: dict) -> None:
                     "channel": "whatsapp",
                 }
             )
+    except Exception:
+        pass
+
+    try:
+        from utils.notifications import on_inbound_user_message
+
+        await on_inbound_user_message(phone, text, name)
     except Exception:
         pass
 

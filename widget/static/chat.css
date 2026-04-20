@@ -19,7 +19,14 @@
   position: fixed;
   bottom: 24px;
   right: 24px;
-  z-index: 9999;
+  /* z-index máximo posible (32-bit int). Usado por Intercom/Drift/etc.
+     para garantizar que el FAB no lo tape ningún modal/overlay del sitio
+     embebedor, por más que el site use z-index altos de su propia UI. */
+  z-index: 2147483647;
+  /* isolation crea stacking context propio — si el parent del site tiene
+     un stacking context roto (filter, transform), el container del widget
+     mantiene su propia capa arriba. */
+  isolation: isolate;
   font-family: var(--cm-font);
 }
 

@@ -36,6 +36,11 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
+  /* position:relative para que el #cm-badge (absolute, child del button)
+     se posicione relativo AL BUTTON, no al container exterior. Sin esto,
+     el badge queda en la esquina del widget-container y se ve fuera
+     del bot cuando el bot flota/escala. */
+  position: relative;
   /* Transparent — el body del bot lo dibuja el SVG con su propio gradiente.
      Si el user setea un bubbleIcon (imagen custom), el CSS #cm-fab-img
      cubre el botón y tapa esto. */
@@ -138,9 +143,11 @@
    exterior) — así hereda las transformaciones del button (animación float,
    hover scale) y se mueve en perfecta sincronía con el bot. */
 #cm-badge {
+  /* Position:absolute respecto al button (que es position:relative) para
+     que el badge se mueva con el float del bot. */
   position: absolute;
-  top: 0;
-  right: 0;
+  top: -4px;
+  right: -4px;
   background: #ea4335;
   color: #fff;
   font-size: 11px;
@@ -153,17 +160,18 @@
   justify-content: center;
   padding: 0 5px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  z-index: 2;
-  /* El display inicial es 'none'; cuando el JS lo muestra (`style.display
-     = 'flex'`), la animación de rebote llama la atención. */
-  animation: cm-badge-pop 0.4s ease-out;
+  /* Z-index alto para estar arriba del SVG / <img> del bot que pueden
+     crear stacking contexts propios (por filter drop-shadow). */
+  z-index: 10;
+  /* Bounce al aparecer (animation solo corre cuando pasa de display:none
+     a display:flex, que el JS hace cuando llega msg). */
+  animation: cm-badge-pop 0.35s ease-out;
 }
-/* Cuando el FAB usa imagen del bot (rect con silueta irregular), el
-   badge se pone encima del visor oscuro (arriba-centro) para que se
-   lea bien y no quede sobre el gris del fondo/sombra. */
+/* Cuando el FAB usa imagen del bot (84×84, silueta más chica), el badge
+   va un poco más adentro para estar pegado al bot y no flotando suelto. */
 #cm-fab.cm-fab-image #cm-badge {
-  top: 8px;
-  right: 12px;
+  top: 4px;
+  right: 4px;
 }
 
 @keyframes cm-badge-pop {

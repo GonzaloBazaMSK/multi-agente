@@ -189,7 +189,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260420-5";
+    const CSS_VERSION = "20260420-6";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -213,7 +213,7 @@
   function buildHTML() {
     return `
 <div id="cm-widget-container">
-  <div id="cm-panel" role="dialog" aria-label="Chat de soporte">
+  <div id="cm-panel" role="dialog" aria-label="Chat de soporte" style="opacity:0;pointer-events:none;transform:scale(0.9) translateY(10px)">
     <div id="cm-header">
       <div id="cm-avatar">${CONFIG.avatar && (CONFIG.avatar.startsWith('http') || CONFIG.avatar.startsWith('/')) ? '<img src="'+CONFIG.avatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">' : (CONFIG.avatar || '🩺')}</div>
       <div id="cm-header-text">

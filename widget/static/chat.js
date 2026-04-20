@@ -12,6 +12,17 @@
 (function () {
   "use strict";
 
+  // Lock sincrónico contra doble-ejecución del script (Next.js a veces
+  // inyecta widget.js 2x durante hidratación). Sin este flag, dos IIFE
+  // corren en paralelo, ambos entran a mount() antes del primer await, y
+  // terminan adjuntando 2 containers + 2 click listeners. Resultado: 1
+  // click dispara 2 togglePanel() → panel abre y cierra en el mismo tick.
+  if (window.__mskWidgetBooted) {
+    console.log("[msk-widget] skipped duplicate execution");
+    return;
+  }
+  window.__mskWidgetBooted = true;
+
   // ─── Configuración desde atributos del script ───────────────────────────
   const scriptEl =
     document.currentScript ||
@@ -472,7 +483,8 @@
   }
 
   // ─── Toggle panel ─────────────────────────────────────────────────────────
-  function togglePanel() {
+  function togglePanel(e) {
+    console.log("[msk-widget] togglePanel called, isOpen will be:", !isOpen, "event:", e && e.type);
     isOpen = !isOpen;
     if (isOpen) {
       panel.classList.add("open");

@@ -46,9 +46,13 @@
       "",
     title:
       (scriptEl && scriptEl.getAttribute("data-title")) ||
-      "Asesor de Cursos",
+      "Asesor de Cursos MSK",
+    // Default ya es el violeta del brand — evita flicker entre render
+    // inicial (con default) y cuando llega /widget-config/public (con color
+    // remoto). Ver loadRemoteConfig(): solo sobrescribe si el remoto tiene
+    // un valor distinto al default.
     color:
-      (scriptEl && scriptEl.getAttribute("data-color")) || "#1a73e8",
+      (scriptEl && scriptEl.getAttribute("data-color")) || "#a855f7",
     greeting:
       (scriptEl && scriptEl.getAttribute("data-greeting")) ||
       "¡Hola! Soy tu asesor de cursos médicos. ¿En qué especialidad estás buscando capacitarte?",
@@ -97,6 +101,11 @@
     })(),
     quickReplies: (scriptEl && scriptEl.getAttribute("data-quick-replies")) || "Cursos online 💻|Asesoramiento 🤝",
     avatar: (scriptEl && scriptEl.getAttribute("data-avatar")) || "🩺",
+    // URL de imagen custom para el FAB. Si está seteada, reemplaza el SVG
+    // default por un <img> circular. Ideal: logo del brand (MSK).
+    // Ver loadRemoteConfig() y applyRemoteConfigToDOM() — se aplica a la
+    // imagen existente sin re-render.
+    bubbleIcon: (scriptEl && scriptEl.getAttribute("data-bubble-icon")) || "",
     position: (scriptEl && scriptEl.getAttribute("data-position")) || "right",
   };
 
@@ -235,9 +244,9 @@
   </div>
   <div id="cm-badge"></div>
   <button id="cm-fab" aria-label="Abrir chat de soporte">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-    </svg>
+    ${CONFIG.bubbleIcon
+      ? '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />'
+      : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'}
   </button>
 </div>`;
   }
@@ -499,18 +508,59 @@
   }
 
   // ─── Load remote widget config from admin panel ────────────────────────────
+  // IMPORTANTE: este fetch NO debe bloquear el render inicial del FAB.
+  // mount() lo llama en background con .then(applyRemoteConfigToDOM).
   async function loadRemoteConfig() {
     try {
       const res = await fetch(`${CONFIG.apiUrl}/api/v1/admin/widget-config/public`);
       if (!res.ok) return;
       const cfg = await res.json();
       if (cfg.title) CONFIG.title = cfg.title;
-      if (cfg.color && cfg.color !== '#1a73e8') CONFIG.color = cfg.color;
+      // Aceptamos cualquier color no-vacío del remoto (el filtro viejo
+      // rechazaba #1a73e8 para no pisar el default; ahora el default ya es
+      // el violeta del brand, así que cualquier valor remoto vale).
+      if (cfg.color) CONFIG.color = cfg.color;
       if (cfg.greeting) CONFIG.greeting = cfg.greeting;
       if (cfg.avatar) CONFIG.avatar = cfg.avatar;
+      if (cfg.bubble_icon) CONFIG.bubbleIcon = cfg.bubble_icon;
       if (cfg.quick_replies) CONFIG.quickReplies = cfg.quick_replies;
       if (cfg.position) CONFIG.position = cfg.position;
     } catch(e) { /* silent */ }
+  }
+
+  // Aplica los valores de CONFIG al DOM YA MONTADO. Se llama después del
+  // mount sincrónico, cuando loadRemoteConfig() resolvió. En el 99% de
+  // casos es no-op porque los defaults ya matchean la config remota.
+  function applyRemoteConfigToDOM() {
+    // Color primario: es una CSS var en :root del chat.css — afecta FAB,
+    // header, inputs border, send button, etc. Un solo update reflejado en
+    // todo.
+    if (CONFIG.color) {
+      document.documentElement.style.setProperty("--cm-primary", CONFIG.color);
+    }
+    // Título del panel
+    var titleEl = document.querySelector("#cm-header .cm-title, #cm-header h3, #cm-header .cm-agent-name");
+    if (titleEl && CONFIG.title) titleEl.textContent = CONFIG.title;
+    // Bubble icon: si el remoto definió uno, reemplaza el contenido del FAB.
+    // Si ya es una <img>, solo actualiza src (evita flicker).
+    if (CONFIG.bubbleIcon) {
+      var fabEl = document.getElementById("cm-fab");
+      if (fabEl) {
+        var imgEl = fabEl.querySelector("img#cm-fab-img");
+        if (imgEl) {
+          imgEl.src = CONFIG.bubbleIcon;
+        } else {
+          fabEl.innerHTML = '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />';
+        }
+      }
+    }
+    // Posición (left/right) — re-aplica por si cambió desde el default
+    if (CONFIG.position === "left") {
+      var el = document.getElementById("cm-widget-container");
+      if (el) { el.style.right = "auto"; el.style.left = "24px"; }
+    }
+    // NOTA: greeting y quick_replies se aplican en el primer mensaje del
+    // bot, que corre después de mount — no hace falta re-inyectarlos acá.
   }
 
   // ─── Mount ────────────────────────────────────────────────────────────────
@@ -524,12 +574,22 @@
     if (document.getElementById("cm-widget-container")) {
       return;
     }
-    await loadRemoteConfig();
+
+    // RENDER SYNC: pintamos el FAB con defaults al toque — así el user ve
+    // el chat aparecer en <100ms tras que cargue el script, sin esperar el
+    // fetch del /widget-config/public. Los defaults (violeta + título MSK)
+    // ya matchean lo que el backend devuelve, entonces el apply posterior
+    // del remoto en el 99% de los casos es no-op (evita flicker).
     injectCSS();
 
     const container = document.createElement("div");
     container.innerHTML = buildHTML();
     document.body.appendChild(container.firstElementChild);
+
+    // Config remoto en background — cuando resuelve, aplica cambios
+    // visibles (cambio de título/color/greeting si el backend los tiene
+    // distintos). No bloqueamos el render del FAB esperando esto.
+    loadRemoteConfig().then(applyRemoteConfigToDOM).catch(function () {});
 
     // Apply position
     if (CONFIG.position === 'left') {

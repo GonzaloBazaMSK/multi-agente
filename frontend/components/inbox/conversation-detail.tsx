@@ -248,8 +248,14 @@ export function ConversationDetail({
             )}
           </Dropdown>
 
-          {/* Clasificar lifecycle (new/hot/customer/cold — escalón del funnel) */}
-          <Dropdown
+          {/* Lifecycle dropdown: removido en favor de "Etiqueta IA" (arriba).
+              Los dos representaban lo mismo (temperatura/estado del lead) pero
+              con granularidad distinta; el clasificador IA cubre todo lo que
+              lifecycle hacía + más (distingue "convertido" de "esperando pago").
+              El campo queda en la DB por compat con el filtro del inbox, pero
+              deja de ser user-facing hasta que migremos ese filtro también. */}
+          {false && (
+            <Dropdown
             trigger={
               <Button variant="secondary" size="sm">
                 <Tag className="w-3.5 h-3.5" /> Lifecycle
@@ -266,7 +272,7 @@ export function ConversationDetail({
                   >
                     <span className={`w-2 h-2 rounded-full ${opt.color}`} />
                     <span>{opt.label}</span>
-                    {conversation.lifecycle === opt.value && (
+                    {conversation?.lifecycle === opt.value && (
                       <Check className="w-3 h-3 ml-auto text-accent" />
                     )}
                   </DropdownItem>
@@ -278,6 +284,7 @@ export function ConversationDetail({
               </>
             )}
           </Dropdown>
+          )}
 
           {/* Asignar */}
           <Dropdown

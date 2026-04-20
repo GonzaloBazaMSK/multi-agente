@@ -1189,20 +1189,58 @@ async def label_set(conv_id: str, body: LabelBody):
 
 
 @router.get("/pipeline")
-async def pipeline_list(limit: int = 300):
+async def pipeline_list(
+    limit: int = 300,
+    days: int = 30,
+    channel: str | None = None,
+    agent_id: str | None = None,
+    unassigned: bool = False,
+    include_resolved: bool = False,
+):
     """Devuelve convs agrupadas por label del clasificador IA (Redis).
 
     Shape: { label → [convs...], counts: { label → n } }
 
-    Cada conv incluye los campos que la UI kanban usa: id, session_id,
-    channel, name, email, country, last_message, last_timestamp, assigned
-    y label efectivo (del Redis). Si no tiene label asignado, cae a
-    "sin_clasificar".
+    Filtros disponibles:
+      - days (int): ventana de últimos N días por updated_at. Default 30.
+      - channel (str): "whatsapp" | "widget" | ... para filtrar por canal.
+      - agent_id (str): uuid del agente asignado. Pasa "me" en el frontend
+        para resolver al user logueado ANTES de llamar — el backend acepta
+        solo uuid literal acá.
+      - unassigned (bool): si true, solo convs sin assigned_agent_id. Se
+        combina con agent_id (ambos false = todas).
+      - include_resolved (bool): si true, incluye status=resolved.
 
     Optimización: `mget` en batch para los labels (una sola round-trip a
     Redis independiente de N convs).
     """
     from memory.conversation_store import get_conversation_store
+
+    d = max(1, min(int(days), 365))
+    status_clause = (
+        "coalesce(cm.status, 'open') in ('open', 'pending', 'resolved')"
+        if include_resolved
+        else "coalesce(cm.status, 'open') in ('open', 'pending')"
+    )
+
+    where_parts = [
+        status_clause,
+        f"c.updated_at > now() - interval '{d} days'",
+    ]
+    params: list = []
+    idx = 1
+    if channel:
+        where_parts.append(f"c.channel = ${idx}")
+        params.append(channel)
+        idx += 1
+    if unassigned:
+        where_parts.append("cm.assigned_agent_id is null")
+    elif agent_id:
+        where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+        params.append(agent_id)
+        idx += 1
+
+    where_sql = " and ".join(where_parts)
 
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
@@ -1214,17 +1252,18 @@ async def pipeline_list(limit: int = 300):
                 c.channel,
                 c.user_profile,
                 c.updated_at,
-                cm.assigned_agent_id,
+                cm.assigned_agent_id::text as assigned_agent_id,
                 cm.status,
                 cm.queue,
                 cm.needs_human,
                 cm.bot_paused
             from public.conversations c
             left join public.conversation_meta cm on cm.conversation_id = c.id
-            where coalesce(cm.status, 'open') in ('open', 'pending')
+            where {where_sql}
             order by c.updated_at desc
             limit {int(limit)}
-            """
+            """,
+            *params,
         )
 
     if not rows:

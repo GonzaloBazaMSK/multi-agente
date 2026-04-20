@@ -54,6 +54,8 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useAgents } from "@/lib/api/inbox";
+import { useAuth } from "@/lib/auth";
 import { Flag } from "@/components/ui/flag";
 import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/lib/auth";
@@ -244,12 +246,39 @@ export default function PipelinePage() {
 
 function Inner() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const { data: agents = [] } = useAgents();
+
+  // Filtros del kanban
+  const [daysFilter, setDaysFilter] = useState<number>(30);
   const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [agentFilter, setAgentFilter] = useState<string>("all"); // "all" | "me" | "unassigned" | <uuid>
   const [activeConv, setActiveConv] = useState<PipelineConv | null>(null);
 
+  // Mapa id → nombre para mostrar en las cards
+  const agentById = useMemo(() => {
+    const m = new Map<string, { name: string }>();
+    for (const a of agents) m.set(a.id, { name: a.name });
+    return m;
+  }, [agents]);
+
   const pipeQ = useQuery<PipelineResponse>({
-    queryKey: ["pipeline", "leads"],
-    queryFn: () => api.get("/inbox/pipeline?limit=300"),
+    queryKey: ["pipeline", "leads", daysFilter, channelFilter, agentFilter, user?.id],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        limit: "300",
+        days: String(daysFilter),
+      });
+      if (channelFilter !== "all") params.set("channel", channelFilter);
+      if (agentFilter === "me" && user?.id) {
+        params.set("agent_id", user.id);
+      } else if (agentFilter === "unassigned") {
+        params.set("unassigned", "true");
+      } else if (agentFilter !== "all") {
+        params.set("agent_id", agentFilter);
+      }
+      return api.get(`/inbox/pipeline?${params.toString()}`);
+    },
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
@@ -304,16 +333,10 @@ function Inner() {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  // Filtro por canal sobre las convs ya agrupadas
-  const filteredGrouped = useMemo(() => {
-    const grouped = pipeQ.data?.grouped ?? {};
-    if (channelFilter === "all") return grouped;
-    const out: Record<string, PipelineConv[]> = {};
-    for (const [col, convs] of Object.entries(grouped)) {
-      out[col] = convs.filter((c) => c.channel === channelFilter);
-    }
-    return out;
-  }, [pipeQ.data, channelFilter]);
+  // Los filtros (days/channel/agent) van al server — filteredGrouped
+  // es simplemente pipeQ.data.grouped ya filtrado por el backend. Si hay
+  // filtros client-side adicionales en el futuro, van acá.
+  const filteredGrouped = pipeQ.data?.grouped ?? {};
 
   const handleDragStart = (e: DragStartEvent) => {
     const all = Object.values(pipeQ.data?.grouped ?? {}).flat();
@@ -350,7 +373,22 @@ function Inner() {
             columnas para reclasificar manualmente.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Ventana de tiempo */}
+          <select
+            value={daysFilter}
+            onChange={(e) => setDaysFilter(Number(e.target.value))}
+            className="bg-bg border border-border rounded-md px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+            title="Últimos N días (filtra por última actividad)"
+          >
+            <option value={1}>Hoy</option>
+            <option value={7}>Últimos 7 días</option>
+            <option value={30}>Últimos 30 días</option>
+            <option value={90}>Últimos 90 días</option>
+            <option value={365}>Último año</option>
+          </select>
+
+          {/* Canal */}
           <select
             value={channelFilter}
             onChange={(e) => setChannelFilter(e.target.value)}
@@ -360,6 +398,25 @@ function Inner() {
             <option value="widget">Widget</option>
             <option value="whatsapp">WhatsApp</option>
           </select>
+
+          {/* Agente asignado */}
+          <select
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
+            className="bg-bg border border-border rounded-md px-3 py-1.5 text-xs focus:outline-none focus:border-accent"
+          >
+            <option value="all">Todos los agentes</option>
+            <option value="me">Mías</option>
+            <option value="unassigned">Sin asignar</option>
+            <optgroup label="Agentes">
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </optgroup>
+          </select>
+
           <Button
             size="sm"
             variant="outline"
@@ -407,6 +464,7 @@ function Inner() {
                   convs={filteredGrouped[col.key] ?? []}
                   onMove={(convId, label) => moveLabel.mutate({ convId, label })}
                   moving={moveLabel.isPending}
+                  agentById={agentById}
                 />
               ))}
             </div>
@@ -429,11 +487,13 @@ function Column({
   convs,
   onMove,
   moving,
+  agentById,
 }: {
   colDef: (typeof COLUMNS)[number];
   convs: PipelineConv[];
   onMove: (convId: string, label: ConvLabel) => void;
   moving: boolean;
+  agentById: Map<string, { name: string }>;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: colDef.key,
@@ -482,7 +542,15 @@ function Column({
           </div>
         )}
         {convs.map((c) => (
-          <Card key={c.id} conv={c} onMove={onMove} moving={moving} />
+          <Card
+            key={c.id}
+            conv={c}
+            onMove={onMove}
+            moving={moving}
+            agentName={
+              c.assigned_agent_id ? agentById.get(c.assigned_agent_id)?.name ?? null : null
+            }
+          />
         ))}
       </div>
     </div>
@@ -493,10 +561,12 @@ function Card({
   conv,
   onMove,
   moving,
+  agentName,
 }: {
   conv: PipelineConv;
   onMove: (convId: string, label: ConvLabel) => void;
   moving: boolean;
+  agentName: string | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -570,7 +640,16 @@ function Card({
       </div>
 
       {conv.email && (
-        <div className="text-[10px] text-fg-dim truncate pl-6 mb-1">{conv.email}</div>
+        <div className="text-[10px] text-fg-dim truncate pl-6 mb-0.5">{conv.email}</div>
+      )}
+
+      {/* Agente asignado — si lo hay */}
+      {agentName && (
+        <div className="text-[10px] pl-6 mb-1 flex items-center gap-1">
+          <UserCog className="w-2.5 h-2.5 text-accent" />
+          <span className="text-fg-dim">Asignada a</span>{" "}
+          <span className="text-fg truncate">{agentName}</span>
+        </div>
       )}
 
       <Link

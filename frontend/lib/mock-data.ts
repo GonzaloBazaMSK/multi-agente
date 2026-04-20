@@ -144,6 +144,12 @@ export type CobranzasInfo = {
   // Próximo vencimiento (humano-legible)
   nextDue?: string;
   paymentLink?: string;
+
+  // ID del registro en el módulo Area_de_cobranzas (CustomModule20) del
+  // CRM. Se usa para armar el link directo "Ver en Zoho" al detalle del
+  // registro en crm.zoho.com. Opcional — si el backend todavía no lo
+  // trae, el link cae a la lista del módulo.
+  cobranzaZohoId?: string;
 };
 
 export type ContactDetail = {

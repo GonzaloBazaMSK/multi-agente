@@ -37,13 +37,26 @@ export function ContactPanel({ contact }: Props) {
 
   if (!contact) return null;
 
+  // URLs del CRM: el workspace es "msklatam" (no default). Módulos:
+  //   Contacts         → detalle del contacto
+  //   CustomModule20   → Área de cobranzas (custom module de MSK)
+  // Si tenemos `cobranzaZohoId` del detalle de cobranza, linkeamos al registro
+  // específico. Si no, caemos a la lista del módulo filtrada por ningún
+  // criterio (mejor que nada — el agente puede buscar el nombre ahí).
   const openZohoContact = () => {
     if (!contact.zohoId) return;
-    window.open(`https://crm.zoho.com/crm/tab/Contacts/${contact.zohoId}`, "_blank", "noopener,noreferrer");
+    window.open(
+      `https://crm.zoho.com/crm/msklatam/tab/Contacts/${contact.zohoId}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
   };
   const openZohoCobranzas = () => {
-    if (!contact.zohoId) return;
-    window.open(`https://crm.zoho.com/crm/tab/Contacts/${contact.zohoId}/SalesOrders`, "_blank", "noopener,noreferrer");
+    const cobranzaId = contact.cobranzas?.cobranzaZohoId;
+    const url = cobranzaId
+      ? `https://crm.zoho.com/crm/msklatam/tab/CustomModule20/${cobranzaId}`
+      : `https://crm.zoho.com/crm/msklatam/tab/CustomModule20`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -62,29 +75,19 @@ export function ContactPanel({ contact }: Props) {
               {contact.name}
             </div>
             <div className="text-[11px] text-fg-dim truncate">{contact.email}</div>
-            {/* Teléfono: número + botón 📞 propio con el theme del panel.
-                El <a href="tel:…"> sigue siendo el clickeable real — cuando
-                ZDialer está instalado, Chrome lo pasa a la extensión. El
-                widget feo que ZDialer inyecta al lado está oculto vía
-                `.hide-zdialer-inject` (ver app/globals.css). */}
+            {/* Teléfono como tel: link — si el agente tiene ZDialer (Chrome
+                extension de Zoho Voice), la extensión inyecta su propio
+                botón 📞 al lado. Si no, el click dispara el handler nativo
+                (softphone / mobile dialer). No ponemos botón propio para no
+                duplicar el ícono cuando ZDialer lo agrega. */}
             {contact.phone && (
-              <div className="hide-zdialer-inject flex items-center gap-1.5 mt-0.5">
-                <a
-                  href={`tel:${contact.phone}`}
-                  className="text-[11px] text-fg-dim hover:text-accent truncate"
-                  title="Llamar (ZDialer / softphone)"
-                >
-                  {contact.phone}
-                </a>
-                <a
-                  href={`tel:${contact.phone}`}
-                  className="shrink-0 w-5 h-5 rounded-full bg-accent/15 hover:bg-accent/25 text-accent flex items-center justify-center transition-colors"
-                  title="Iniciar llamada"
-                  aria-label="Llamar"
-                >
-                  <PhoneIcon className="w-2.5 h-2.5" />
-                </a>
-              </div>
+              <a
+                href={`tel:${contact.phone}`}
+                className="text-[11px] text-fg-dim hover:text-accent truncate block mt-0.5"
+                title="Llamar (ZDialer / softphone)"
+              >
+                {contact.phone}
+              </a>
             )}
           </div>
         </div>

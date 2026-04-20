@@ -95,6 +95,20 @@ async def start_scheduler() -> None:
         coalesce=True,
     )
 
+    # Detectar convs sin respuesta humana >2h y notificar al agente asignado.
+    # Cada 15 min; dedup por conv en Redis 4h (ver utils/stale_conversations.py).
+    from utils.stale_conversations import run_stale_conversations_check
+
+    s.add_job(
+        run_stale_conversations_check,
+        trigger=IntervalTrigger(minutes=15),
+        id="stale_conversations_check",
+        name="Notificar convs sin respuesta humana >2h",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     s.start()
     logger.info("scheduler_started", jobs=[j.id for j in s.get_jobs()])
 

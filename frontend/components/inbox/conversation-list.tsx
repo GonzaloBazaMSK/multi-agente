@@ -244,7 +244,10 @@ export function ConversationList({
                             {QUEUE_LABEL[q]}
                           </span>
                         }
-                        defaultOpen={true}
+                        // Por default cerrada — si se abre queda el país en pantalla
+                        // con 7 sub-filas y se vuelve invasivo visualmente.
+                        // El user la abre cuando quiere filtrar por país.
+                        defaultOpen={false}
                         rightAccessory={
                           <span className="text-[10px] text-fg-dim">
                             {totalForQueue}

@@ -749,6 +749,21 @@ async def get_contact(email: str):
 
     colegio = (profile.get("Colegio_Sociedad_o_Federaci_n") or [None])[0]
 
+    # Query paralela al módulo Area_de_cobranzas (CustomModule20) — su `id`
+    # es el que usamos para armar el link "Ver en Zoho" de la card Cobranzas.
+    # Si el contacto no tiene registro en ese módulo devuelve {} y el
+    # frontend cae al link de lista del módulo.
+    cobranza_zoho_id: str | None = None
+    try:
+        from integrations.zoho.area_cobranzas import ZohoAreaCobranzas
+
+        zc = ZohoAreaCobranzas()
+        cobranza = await zc.search_by_email(email)
+        if cobranza:
+            cobranza_zoho_id = cobranza.get("cobranzaId") or None
+    except Exception as e:
+        logger.debug("cobranza_zoho_lookup_failed", email=email, error=str(e))
+
     return {
         "zoho_id": profile.get("id"),
         "name": profile.get("Full_Name"),
@@ -772,7 +787,7 @@ async def get_contact(email: str):
             "sales": int(profile.get("Scoring_venta") or 0),
         },
         # Cobranzas: por ahora derivado del Zoho (más adelante: integration real)
-        "cobranzas": _derive_cobranzas(profile),
+        "cobranzas": _derive_cobranzas(profile, cobranza_zoho_id),
     }
 
 
@@ -1358,11 +1373,15 @@ def _colegio_code(colegio: str | None) -> str | None:
     return _COLEGIO_MAP.get(colegio)
 
 
-def _derive_cobranzas(profile: dict) -> dict | None:
+def _derive_cobranzas(profile: dict, cobranza_zoho_id: str | None = None) -> dict | None:
     """
     Deriva info de cobranzas desde el Zoho contact.
     Por ahora simplificado: solo si tiene cursadas con Estado_de_OV.
     Más adelante: query a Sales Orders / payments real de Zoho.
+
+    `cobranza_zoho_id` es el id del registro en Area_de_cobranzas (CustomModule20)
+    — se usa para armar el link directo al detalle en crm.zoho.com. Si no hay,
+    el frontend cae a la lista del módulo.
     """
     cursadas = profile.get("Formulario_de_cursada") or []
     if not cursadas:
@@ -1389,6 +1408,7 @@ def _derive_cobranzas(profile: dict) -> dict | None:
         "paymentMethod": "Configurar en Zoho",
         "nextDue": None,
         "paymentLink": None,
+        "cobranzaZohoId": cobranza_zoho_id,
         # Nota: completar cuando integremos sales_orders Zoho
         "_pending_integration": True,
     }

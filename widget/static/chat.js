@@ -243,7 +243,7 @@
     </div>
   </div>
   <div id="cm-badge"></div>
-  <button id="cm-fab" aria-label="Abrir chat de soporte">
+  <button id="cm-fab" class="${CONFIG.bubbleIcon ? 'cm-fab-image' : ''}" aria-label="Abrir chat de soporte">
     ${CONFIG.bubbleIcon
       ? '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />'
       : `
@@ -587,11 +587,13 @@
         }
       }
     }
-    // Bubble icon: si el remoto definió uno, reemplaza el contenido del FAB.
-    // Si ya es una <img>, solo actualiza src (evita flicker).
+    // Bubble icon: si el remoto definió uno, reemplaza el contenido del FAB
+    // y agrega la clase .cm-fab-image (CSS quita el círculo/shadow del
+    // button; ver chat.css). Si ya es una <img>, solo actualiza src.
     if (CONFIG.bubbleIcon) {
       var fabEl = document.getElementById("cm-fab");
       if (fabEl) {
+        fabEl.classList.add("cm-fab-image");
         var imgEl = fabEl.querySelector("img#cm-fab-img");
         if (imgEl) {
           imgEl.src = CONFIG.bubbleIcon;

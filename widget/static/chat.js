@@ -189,7 +189,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260420-4";
+    const CSS_VERSION = "20260420-5";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -591,9 +591,13 @@
         }
       }
     }
-    // Bubble icon: si el remoto definió uno, reemplaza el contenido del FAB
+    // Bubble icon: si el remoto definió uno, reemplaza el SVG/img del FAB
     // y agrega la clase .cm-fab-image (CSS quita el círculo/shadow del
     // button; ver chat.css). Si ya es una <img>, solo actualiza src.
+    // IMPORTANTE: preservar el <div id="cm-badge"> que vive dentro del
+    // button. Si lo borramos con innerHTML='<img>', el badge deja de
+    // existir y los msgs nuevos del bot no pueden incrementarlo (la
+    // variable `badge` queda detached del DOM).
     if (CONFIG.bubbleIcon) {
       var fabEl = document.getElementById("cm-fab");
       if (fabEl) {
@@ -602,7 +606,22 @@
         if (imgEl) {
           imgEl.src = CONFIG.bubbleIcon;
         } else {
-          fabEl.innerHTML = '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />';
+          // Remover SVG / contenido anterior pero PRESERVAR #cm-badge.
+          // Sacamos todo excepto el badge y agregamos la img.
+          var existingBadge = fabEl.querySelector("#cm-badge");
+          // Limpiar todos los hijos que NO sean el badge
+          Array.from(fabEl.childNodes).forEach(function (node) {
+            if (node !== existingBadge) fabEl.removeChild(node);
+          });
+          var newImg = document.createElement("img");
+          newImg.id = "cm-fab-img";
+          newImg.src = CONFIG.bubbleIcon;
+          newImg.alt = "Chat";
+          fabEl.appendChild(newImg);
+          // Re-ligar la variable global `badge` al node preservado (por
+          // si acaso). Como existingBadge es el mismo DOM node, sigue
+          // funcionando pero por claridad:
+          if (existingBadge) badge = existingBadge;
         }
       }
     }

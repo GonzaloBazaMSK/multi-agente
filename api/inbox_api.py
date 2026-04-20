@@ -1092,6 +1092,196 @@ async def queue_set(conv_id: str, body: QueueBody):
     return {"ok": True}
 
 
+# Clasificación del lead por el clasificador IA (agents/classifier.py).
+# Las etiquetas las guarda el classifier en Redis `conv_label:{session_id}`
+# automáticamente después de cada respuesta del bot. Este endpoint permite
+# override MANUAL desde el kanban (/pipeline) arrastrando cards entre
+# columnas. El label manual pisa al automático hasta la próxima clasif IA.
+CONV_LABELS = (
+    "caliente",
+    "tibio",
+    "frio",
+    "convertido",
+    "esperando_pago",
+    "seguimiento",
+    "no_interesa",
+)
+
+
+class LabelBody(BaseModel):
+    label: Literal[
+        "caliente",
+        "tibio",
+        "frio",
+        "convertido",
+        "esperando_pago",
+        "seguimiento",
+        "no_interesa",
+    ]
+
+
+@router.get("/conversations/{conv_id}/label")
+async def label_get(conv_id: str):
+    """Lee la etiqueta IA actual (Redis `conv_label:{session_id}`).
+
+    Devuelve {"label": "caliente" | ... | "sin_clasificar"}.
+    El inbox usa esto para mostrar la etiqueta actual en el detalle.
+    """
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "select external_id from public.conversations where id = $1::uuid",
+            conv_id,
+        )
+    if not row:
+        raise HTTPException(404, "conversación no encontrada")
+
+    from memory.conversation_store import get_conversation_store
+
+    store = await get_conversation_store()
+    raw = await store._redis.get(f"conv_label:{row['external_id']}")
+    if raw is None:
+        return {"label": "sin_clasificar"}
+    label = raw.decode() if isinstance(raw, bytes) else str(raw)
+    if label not in CONV_LABELS:
+        return {"label": "sin_clasificar"}
+    return {"label": label}
+
+
+@router.post("/conversations/{conv_id}/label")
+async def label_set(conv_id: str, body: LabelBody):
+    """Override manual de la clasificación IA del lead.
+
+    Escribe `conv_label:{session_id}` en Redis. Para mapear conv_id → session_id
+    usamos la tabla conversations (external_id es el session_id para
+    widget/whatsapp). Si el classifier corre después, puede volver a pisar.
+    """
+    from memory.conversation_store import get_conversation_store
+
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "select external_id from public.conversations where id = $1::uuid",
+            conv_id,
+        )
+    if not row:
+        raise HTTPException(404, "conversación no encontrada")
+    session_id = row["external_id"]
+
+    store = await get_conversation_store()
+    await store._redis.set(f"conv_label:{session_id}", body.label)
+
+    # Broadcast al inbox para actualización en tiempo real
+    try:
+        from utils.realtime import broadcast_event
+
+        broadcast_event(
+            {"type": "label_updated", "session_id": session_id, "label": body.label}
+        )
+    except Exception:
+        pass
+
+    # Audit log
+    from utils.inbox_jobs import log_action
+
+    await log_action("system", "label", conv_id, {"label": body.label})
+    return {"ok": True}
+
+
+@router.get("/pipeline")
+async def pipeline_list(limit: int = 300):
+    """Devuelve convs agrupadas por label del clasificador IA (Redis).
+
+    Shape: { label → [convs...], counts: { label → n } }
+
+    Cada conv incluye los campos que la UI kanban usa: id, session_id,
+    channel, name, email, country, last_message, last_timestamp, assigned
+    y label efectivo (del Redis). Si no tiene label asignado, cae a
+    "sin_clasificar".
+
+    Optimización: `mget` en batch para los labels (una sola round-trip a
+    Redis independiente de N convs).
+    """
+    from memory.conversation_store import get_conversation_store
+
+    pool = await postgres_store.get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            select
+                c.id::text as id,
+                c.external_id as session_id,
+                c.channel,
+                c.user_profile,
+                c.updated_at,
+                cm.assigned_agent_id,
+                cm.status,
+                cm.queue,
+                cm.needs_human,
+                cm.bot_paused
+            from public.conversations c
+            left join public.conversation_meta cm on cm.conversation_id = c.id
+            where coalesce(cm.status, 'open') in ('open', 'pending')
+            order by c.updated_at desc
+            limit {int(limit)}
+            """
+        )
+
+    if not rows:
+        return {"grouped": {}, "counts": {}, "total": 0}
+
+    # Batch mget de labels desde Redis
+    store = await get_conversation_store()
+    r = store._redis
+    session_ids = [row["session_id"] for row in rows]
+    keys = [f"conv_label:{sid}" for sid in session_ids]
+    labels_raw = await r.mget(keys) if keys else []
+
+    def _decode(v):
+        if v is None:
+            return None
+        if isinstance(v, bytes):
+            return v.decode()
+        return v
+
+    labels = [_decode(v) for v in labels_raw]
+
+    # Armar respuesta
+    grouped: dict[str, list[dict]] = {}
+    counts: dict[str, int] = {}
+
+    for row, label in zip(rows, labels, strict=False):
+        profile = row["user_profile"] or {}
+        if isinstance(profile, str):
+            import json as _json
+
+            try:
+                profile = _json.loads(profile)
+            except Exception:
+                profile = {}
+
+        effective_label = label if label in CONV_LABELS else "sin_clasificar"
+        conv = {
+            "id": row["id"],
+            "session_id": row["session_id"],
+            "channel": row["channel"],
+            "name": profile.get("name") or profile.get("full_name") or row["session_id"],
+            "email": profile.get("email") or "",
+            "country": (profile.get("country") or "AR").upper(),
+            "last_timestamp": row["updated_at"].isoformat() if row["updated_at"] else "",
+            "assigned_agent_id": str(row["assigned_agent_id"]) if row["assigned_agent_id"] else None,
+            "status": row["status"] or "open",
+            "queue": row["queue"] or "sales",
+            "needs_human": bool(row["needs_human"]),
+            "bot_paused": bool(row["bot_paused"]),
+            "label": effective_label,
+        }
+        grouped.setdefault(effective_label, []).append(conv)
+        counts[effective_label] = counts.get(effective_label, 0) + 1
+
+    return {"grouped": grouped, "counts": counts, "total": len(rows)}
+
+
 class BotBody(BaseModel):
     paused: bool
 

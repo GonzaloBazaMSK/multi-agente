@@ -22,7 +22,6 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  KeyboardSensor,
   useSensor,
   useSensors,
   useDraggable,
@@ -180,10 +179,10 @@ function Inner() {
   const totalFiltered =
     grouped.sales.length + grouped.billing.length + grouped["post-sales"].length;
 
-  // Sensors — PointerSensor con delay chico para no confundir click con drag.
+  // Sensors — solo PointerSensor con distance=6 para no confundir click
+  // casual con drag. Drag activa al mover 6px+.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor),
   );
 
   const handleDragStart = (e: DragStartEvent) => {

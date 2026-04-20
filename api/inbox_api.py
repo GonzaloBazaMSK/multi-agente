@@ -359,20 +359,24 @@ async def analytics(days: int = 30):
         #   - convs activas (assigned ahora)
         #   - convs totales atendidas (al menos un msg humano)
         #   - TMR mediano del agente (minutos)
+        # Leaderboard de agentes humanos — quién atendió más convs en el
+        # período + TMR individual + convs activas ahora (load).
+        # Todo casteado a TEXT porque `assigned_agent_id` es uuid en
+        # conversation_meta pero `profiles.id` uuid distinto — trabajamos
+        # con text en los CTEs para evitar cast errors y simplificar joins.
         leaderboard = await conn.fetch(
             f"""
             with human_msgs as (
                 select
                     m.conversation_id,
-                    (m.metadata->>'sender_name') as sender_name,
-                    cm.assigned_agent_id,
+                    cm.assigned_agent_id::text as agent_id,
                     min(m.created_at) as first_human_at
                 from public.messages m
                 join public.conversations c on c.id = m.conversation_id
                 left join public.conversation_meta cm on cm.conversation_id = m.conversation_id
                 where m.role = 'assistant' and m.metadata->>'agent' = 'humano'
                   and c.created_at > now() - interval '{d} days'
-                group by 1, 2, 3
+                group by 1, 2
             ),
             first_user as (
                 select conversation_id, min(created_at) as t
@@ -382,7 +386,7 @@ async def analytics(days: int = 30):
             ),
             per_agent as (
                 select
-                    coalesce(hm.assigned_agent_id, 'unknown') as agent_id,
+                    coalesce(hm.agent_id, 'unknown') as agent_id,
                     count(*) as convs_handled,
                     percentile_cont(0.5) within group (
                         order by extract(epoch from (hm.first_human_at - fu.t))/60.0
@@ -392,7 +396,7 @@ async def analytics(days: int = 30):
                 group by 1
             ),
             current_load as (
-                select assigned_agent_id, count(*) as active_convs
+                select assigned_agent_id::text as agent_id, count(*) as active_convs
                 from public.conversation_meta
                 where assigned_agent_id is not null
                   and status in ('open', 'pending')
@@ -407,7 +411,7 @@ async def analytics(days: int = 30):
                 coalesce(cl.active_convs, 0)::int as active_convs
             from per_agent pa
             left join public.profiles p on p.id::text = pa.agent_id
-            left join current_load cl on cl.assigned_agent_id = pa.agent_id
+            left join current_load cl on cl.agent_id = pa.agent_id
             order by pa.convs_handled desc
             limit 20
             """

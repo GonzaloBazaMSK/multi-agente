@@ -101,11 +101,15 @@
     })(),
     quickReplies: (scriptEl && scriptEl.getAttribute("data-quick-replies")) || "Cursos online 💻|Asesoramiento 🤝",
     avatar: (scriptEl && scriptEl.getAttribute("data-avatar")) || "🩺",
-    // URL de imagen custom para el FAB. Si está seteada, reemplaza el SVG
-    // default por un <img> circular. Ideal: logo del brand (MSK).
-    // Ver loadRemoteConfig() y applyRemoteConfigToDOM() — se aplica a la
-    // imagen existente sin re-render.
-    bubbleIcon: (scriptEl && scriptEl.getAttribute("data-bubble-icon")) || "",
+    // URL de imagen para el FAB. Default = kawaii PNG del propio backend
+    // (misma URL que loadRemoteConfig() devuelve). De esta forma el render
+    // sync inicial ya muestra el kawaii sin flash de SVG → PNG. El data-attr
+    // o la remote config pueden sobrescribir si hace falta.
+    bubbleIcon:
+      (scriptEl && scriptEl.getAttribute("data-bubble-icon")) ||
+      ((scriptEl && scriptEl.src)
+        ? new URL("/static/bot-kawaii.png", scriptEl.src).href
+        : "/static/bot-kawaii.png"),
     position: (scriptEl && scriptEl.getAttribute("data-position")) || "right",
   };
 
@@ -189,7 +193,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260420-6";
+    const CSS_VERSION = "20260420-7";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -246,43 +250,9 @@
       </button>
     </div>
   </div>
-  <button id="cm-fab" class="${CONFIG.bubbleIcon ? 'cm-fab-image' : ''}" aria-label="Abrir chat de soporte">
+  <button id="cm-fab" class="cm-fab-image" aria-label="Abrir chat de soporte">
     <div id="cm-badge"></div>
-    ${CONFIG.bubbleIcon
-      ? '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />'
-      : `
-    <svg id="cm-fab-bot" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <radialGradient id="cm-bot-body" cx="45%" cy="35%" r="70%">
-          <stop offset="0%" stop-color="#ffffff"/>
-          <stop offset="70%" stop-color="#f3e8ff"/>
-          <stop offset="100%" stop-color="#d8b4fe"/>
-        </radialGradient>
-        <radialGradient id="cm-bot-visor" cx="50%" cy="35%" r="70%">
-          <stop offset="0%" stop-color="#3b1261"/>
-          <stop offset="60%" stop-color="#1e0838"/>
-          <stop offset="100%" stop-color="#0a041b"/>
-        </radialGradient>
-        <filter id="cm-bot-glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.2"/>
-        </filter>
-      </defs>
-      <!-- cuerpo blanco con gradient pseudo-3D -->
-      <ellipse cx="50" cy="56" rx="42" ry="36" fill="url(#cm-bot-body)"/>
-      <!-- visor oscuro -->
-      <ellipse cx="50" cy="54" rx="32" ry="27" fill="url(#cm-bot-visor)"/>
-      <!-- reflejo superior del visor (highlight) -->
-      <ellipse cx="43" cy="44" rx="15" ry="6" fill="#fff" opacity="0.18"/>
-      <!-- ojos violetas brillantes -->
-      <g filter="url(#cm-bot-glow)">
-        <ellipse id="cm-bot-eye-l" cx="41" cy="52" rx="4" ry="6" fill="#e879f9"/>
-        <ellipse id="cm-bot-eye-r" cx="59" cy="52" rx="4" ry="6" fill="#e879f9"/>
-      </g>
-      <!-- boca sonriente -->
-      <path d="M 44 64 Q 50 69 56 64" stroke="#e879f9" stroke-width="2.5" fill="none" stroke-linecap="round" filter="url(#cm-bot-glow)"/>
-      <!-- sombra inferior para pseudo-3D -->
-      <ellipse cx="50" cy="92" rx="25" ry="2.5" fill="#000" opacity="0.12"/>
-    </svg>`}
+    <img id="cm-fab-img" src="${CONFIG.bubbleIcon}" alt="Chat" />
   </button>
 </div>`;
   }
@@ -591,38 +561,13 @@
         }
       }
     }
-    // Bubble icon: si el remoto definió uno, reemplaza el SVG/img del FAB
-    // y agrega la clase .cm-fab-image (CSS quita el círculo/shadow del
-    // button; ver chat.css). Si ya es una <img>, solo actualiza src.
-    // IMPORTANTE: preservar el <div id="cm-badge"> que vive dentro del
-    // button. Si lo borramos con innerHTML='<img>', el badge deja de
-    // existir y los msgs nuevos del bot no pueden incrementarlo (la
-    // variable `badge` queda detached del DOM).
+    // Bubble icon: si el remoto devolvió un URL distinto al default, solo
+    // actualizamos el src del <img> ya montado. La clase .cm-fab-image ya
+    // está puesta desde el render inicial.
     if (CONFIG.bubbleIcon) {
-      var fabEl = document.getElementById("cm-fab");
-      if (fabEl) {
-        fabEl.classList.add("cm-fab-image");
-        var imgEl = fabEl.querySelector("img#cm-fab-img");
-        if (imgEl) {
-          imgEl.src = CONFIG.bubbleIcon;
-        } else {
-          // Remover SVG / contenido anterior pero PRESERVAR #cm-badge.
-          // Sacamos todo excepto el badge y agregamos la img.
-          var existingBadge = fabEl.querySelector("#cm-badge");
-          // Limpiar todos los hijos que NO sean el badge
-          Array.from(fabEl.childNodes).forEach(function (node) {
-            if (node !== existingBadge) fabEl.removeChild(node);
-          });
-          var newImg = document.createElement("img");
-          newImg.id = "cm-fab-img";
-          newImg.src = CONFIG.bubbleIcon;
-          newImg.alt = "Chat";
-          fabEl.appendChild(newImg);
-          // Re-ligar la variable global `badge` al node preservado (por
-          // si acaso). Como existingBadge es el mismo DOM node, sigue
-          // funcionando pero por claridad:
-          if (existingBadge) badge = existingBadge;
-        }
+      var imgEl = document.getElementById("cm-fab-img");
+      if (imgEl && imgEl.src !== CONFIG.bubbleIcon) {
+        imgEl.src = CONFIG.bubbleIcon;
       }
     }
     // Posición (left/right) — re-aplica por si cambió desde el default
@@ -632,77 +577,6 @@
     }
     // NOTA: greeting y quick_replies se aplican en el primer mensaje del
     // bot, que corre después de mount — no hace falta re-inyectarlos acá.
-  }
-
-  // ─── Bot kawaii animations (blink + mouse-follow) ────────────────────────
-  // El FAB default es un SVG con 2 elipses como ojos (#cm-bot-eye-l/-r).
-  // Les agregamos:
-  //   1. Blink cada 4.5s — rapida animación ry:6 → ry:0.5 → ry:6 (120ms).
-  //   2. Mouse-follow: los ojos se desvían hacia el cursor con un rango
-  //      limitado (±2.5px en x, ±2px en y) — sutil pero le da "vida".
-  //   3. Al abrir el panel (isOpen=true) las pupilas bajan como "mirando
-  //      al user escribiendo". No crítico — se puede sacar si molesta.
-  //
-  // Todo en vanilla — sin lib externa. El SVG usa CSS transition en cx/cy
-  // para suavizar el movimiento entre frames (ver chat.css).
-  function setupBotAnimations() {
-    var svg = document.getElementById("cm-fab-bot");
-    if (!svg) return; // bubbleIcon custom o SVG no montado — salimos.
-    var eyeL = svg.querySelector("#cm-bot-eye-l");
-    var eyeR = svg.querySelector("#cm-bot-eye-r");
-    if (!eyeL || !eyeR) return;
-
-    // Defaults del SVG (centros de los ojos)
-    var CX_L = 41, CX_R = 59, CY = 52, RY_NORMAL = 6;
-    var RANGE_X = 2.5;
-    var RANGE_Y = 2;
-
-    // 1) Blink — animamos ry cerrando los "párpados"
-    function blink() {
-      eyeL.setAttribute("ry", "0.6");
-      eyeR.setAttribute("ry", "0.6");
-      setTimeout(function () {
-        eyeL.setAttribute("ry", String(RY_NORMAL));
-        eyeR.setAttribute("ry", String(RY_NORMAL));
-      }, 130);
-    }
-    // Primer blink a los 1.5s, después cada 4-6s aleatorio (más natural)
-    setTimeout(blink, 1500);
-    setInterval(function () {
-      blink();
-    }, 4500 + Math.random() * 1500);
-
-    // 2) Mouse-follow — los ojos se desvían hacia la posición del cursor.
-    //    Usamos requestAnimationFrame throttling (no seteamos atributos en
-    //    cada mousemove, que puede ser 60+/s).
-    var lastMouseX = 0, lastMouseY = 0;
-    var rafPending = false;
-    function onMouseMove(e) {
-      lastMouseX = e.clientX;
-      lastMouseY = e.clientY;
-      if (rafPending) return;
-      rafPending = true;
-      requestAnimationFrame(updateEyes);
-    }
-    function updateEyes() {
-      rafPending = false;
-      var rect = svg.getBoundingClientRect();
-      if (!rect.width) return;
-      var faceCx = rect.left + rect.width / 2;
-      var faceCy = rect.top + rect.height / 2;
-      // Normalizamos la distancia a (-1, 1) con un tope (si el mouse está
-      // muy lejos, las pupilas quedan en el extremo máximo).
-      var maxDist = 400; // px
-      var nx = Math.max(-1, Math.min(1, (lastMouseX - faceCx) / maxDist));
-      var ny = Math.max(-1, Math.min(1, (lastMouseY - faceCy) / maxDist));
-      var dx = nx * RANGE_X;
-      var dy = ny * RANGE_Y;
-      eyeL.setAttribute("cx", String(CX_L + dx));
-      eyeR.setAttribute("cx", String(CX_R + dx));
-      eyeL.setAttribute("cy", String(CY + dy));
-      eyeR.setAttribute("cy", String(CY + dy));
-    }
-    document.addEventListener("mousemove", onMouseMove, { passive: true });
   }
 
   // ─── Mount ────────────────────────────────────────────────────────────────
@@ -774,11 +648,6 @@
     });
 
     inputEl.addEventListener("input", autoResize);
-
-    // Animaciones del bot kawaii del FAB: blink periódico + mouse-follow
-    // de las pupilas. Solo corre si NO hay bubbleIcon custom (en ese caso
-    // el FAB es un <img> y no tiene ojos animables).
-    setupBotAnimations();
 
     // Cerrar con Escape
     document.addEventListener("keydown", function (e) {

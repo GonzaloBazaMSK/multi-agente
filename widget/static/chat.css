@@ -69,20 +69,10 @@
     0 12px 24px -6px rgba(0, 0, 0, 0.22);
 }
 #cm-fab svg { pointer-events: none; }
-#cm-fab-bot {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-#cm-fab-bot #cm-bot-eye-l,
-#cm-fab-bot #cm-bot-eye-r {
-  /* Transición suave cuando el JS mueve los ojos (mouse-follow) */
-  transition: cx 0.08s ease-out, cy 0.08s ease-out, ry 0.06s ease-out;
-}
-/* FAB con imagen custom (ej. bot kawaii 3D). La clase .cm-fab-image la
-   agrega JS al #cm-fab cuando hay bubbleIcon — evitamos :has() que falla
-   en Safari viejo / Firefox ESR. Acá el botón deja de ser círculo con
-   fondo: la silueta es la del PNG con alpha + drop-shadow difusa. */
+/* FAB con imagen custom (bot kawaii 3D). La clase .cm-fab-image la
+   agrega JS al #cm-fab — siempre presente desde el render inicial.
+   El botón deja de ser círculo con fondo: la silueta es la del PNG
+   con alpha + drop-shadow difusa. */
 #cm-fab.cm-fab-image {
   background: transparent !important;
   border-radius: 0 !important;

@@ -242,8 +242,8 @@
       </button>
     </div>
   </div>
-  <div id="cm-badge"></div>
   <button id="cm-fab" class="${CONFIG.bubbleIcon ? 'cm-fab-image' : ''}" aria-label="Abrir chat de soporte">
+    <div id="cm-badge"></div>
     ${CONFIG.bubbleIcon
       ? '<img id="cm-fab-img" src="' + CONFIG.bubbleIcon + '" alt="Chat" />'
       : `

@@ -134,14 +134,13 @@
   50%      { transform: translateY(-6px); }
 }
 
+/* Badge de mensajes no leídos. Vive DENTRO del #cm-fab (no en el contenedor
+   exterior) — así hereda las transformaciones del button (animación float,
+   hover scale) y se mueve en perfecta sincronía con el bot. */
 #cm-badge {
   position: absolute;
-  /* Cuando el FAB es circular (default), el badge va en la esquina del
-     círculo. Cuando es imagen del bot kawaii (rect 84x84 con bot centrado
-     abajo-derecha), lo movemos a la "cabeza" del bot para que no flote
-     suelto — ver regla abajo. */
-  top: 6px;
-  right: 6px;
+  top: 0;
+  right: 0;
   background: #ea4335;
   color: #fff;
   font-size: 11px;
@@ -153,18 +152,24 @@
   align-items: center;
   justify-content: center;
   padding: 0 5px;
-  /* Shadow para que no se pierda si el bot tiene fondo claro */
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-  /* Z-index alto para quedar arriba del bot */
   z-index: 2;
+  /* El display inicial es 'none'; cuando el JS lo muestra (`style.display
+     = 'flex'`), la animación de rebote llama la atención. */
+  animation: cm-badge-pop 0.4s ease-out;
 }
-/* Cuando el FAB es imagen (bot kawaii), el badge va pegado al visor del
-   bot. La imagen es 4:3 con el bot centrado-derecha, entonces el badge
-   queda ~encima del ojo derecho. */
-#cm-widget-container:has(#cm-fab.cm-fab-image) #cm-badge,
-#cm-fab.cm-fab-image ~ #cm-badge {
-  top: 14px;
-  right: 14px;
+/* Cuando el FAB usa imagen del bot (rect con silueta irregular), el
+   badge se pone encima del visor oscuro (arriba-centro) para que se
+   lea bien y no quede sobre el gris del fondo/sombra. */
+#cm-fab.cm-fab-image #cm-badge {
+  top: 8px;
+  right: 12px;
+}
+
+@keyframes cm-badge-pop {
+  0%   { transform: scale(0);   }
+  60%  { transform: scale(1.2); }
+  100% { transform: scale(1);   }
 }
 
 /* ─── Chat panel ─────────────────────────────────────────────────────────── */

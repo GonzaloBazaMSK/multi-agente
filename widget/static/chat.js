@@ -539,8 +539,22 @@
       document.documentElement.style.setProperty("--cm-primary", CONFIG.color);
     }
     // Título del panel
-    var titleEl = document.querySelector("#cm-header .cm-title, #cm-header h3, #cm-header .cm-agent-name");
+    var titleEl = document.querySelector("#cm-header .cm-title, #cm-header h3, #cm-header .cm-agent-name, #cm-header-name");
     if (titleEl && CONFIG.title) titleEl.textContent = CONFIG.title;
+    // Avatar del header: si es URL (http/https/slash-relative), render <img>
+    // sobre fondo blanco (ver #cm-avatar en chat.css). Si es emoji/texto,
+    // se renderiza como texto inline.
+    if (CONFIG.avatar) {
+      var avatarEl = document.getElementById("cm-avatar");
+      if (avatarEl) {
+        var isUrl = CONFIG.avatar.startsWith("http") || CONFIG.avatar.startsWith("/");
+        if (isUrl) {
+          avatarEl.innerHTML = '<img src="' + CONFIG.avatar + '" alt="Agente" />';
+        } else {
+          avatarEl.textContent = CONFIG.avatar;
+        }
+      }
+    }
     // Bubble icon: si el remoto definió uno, reemplaza el contenido del FAB.
     // Si ya es una <img>, solo actualiza src (evita flicker).
     if (CONFIG.bubbleIcon) {

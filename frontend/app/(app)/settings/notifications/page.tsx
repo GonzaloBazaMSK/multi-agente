@@ -159,11 +159,30 @@ function Toggle({
   disabled?: boolean;
   comingSoon?: boolean;
 }) {
+  // Toda la fila es clickeable. Antes usábamos <label> + <button> role=switch
+  // pero el <label> estaba tragando el click (no hay <input> asociado — label
+  // semántico solo tiene sentido cuando envuelve o apunta a un input), así
+  // que el onChange jamás se disparaba. Lo cambiamos a <div role=switch>.
+  const handleToggle = () => {
+    if (!disabled) onChange();
+  };
+
   return (
-    <label
+    <div
+      role="switch"
+      aria-checked={checked}
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={handleToggle}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          handleToggle();
+        }
+      }}
       className={cn(
-        "flex items-start gap-3 p-3 rounded-lg border border-border bg-card cursor-pointer transition-colors",
-        disabled ? "opacity-50 cursor-not-allowed" : "hover:border-accent/40",
+        "flex items-start gap-3 p-3 rounded-lg border border-border bg-card transition-colors outline-none",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:border-accent/40 focus:border-accent",
       )}
     >
       <Icon className={cn("w-4 h-4 shrink-0 mt-0.5", iconColor)} />
@@ -178,19 +197,11 @@ function Toggle({
         </div>
         <div className="text-[11px] text-fg-dim leading-snug mt-0.5">{description}</div>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={(e) => {
-          e.preventDefault();
-          if (!disabled) onChange();
-        }}
+      <div
+        aria-hidden="true"
         className={cn(
           "shrink-0 mt-0.5 w-9 h-5 rounded-full relative transition-colors",
           checked ? "bg-accent" : "bg-border",
-          disabled && "cursor-not-allowed",
         )}
       >
         <span
@@ -199,7 +210,7 @@ function Toggle({
             checked ? "translate-x-[18px]" : "translate-x-0.5",
           )}
         />
-      </button>
-    </label>
+      </div>
+    </div>
   );
 }

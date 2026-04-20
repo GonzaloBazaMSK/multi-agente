@@ -74,15 +74,27 @@
   /* Transición suave cuando el JS mueve los ojos (mouse-follow) */
   transition: cx 0.08s ease-out, cy 0.08s ease-out, ry 0.06s ease-out;
 }
-/* Imagen custom (cuando bubbleIcon está seteado — ej. logo brand) */
+/* Imagen custom (cuando bubbleIcon está seteado) — ej. bot kawaii 3D.
+   El container del FAB cambia de shape: pierde el círculo + el background
+   primary, para que la imagen se vea con su propia silueta y transparencia. */
+#cm-fab:has(#cm-fab-img) {
+  background: transparent !important;
+  border-radius: 0;
+  box-shadow: none;
+  /* El drop-shadow va en la imagen misma (respeta silueta alpha),
+     no el box-shadow del button que dibuja un rect. */
+}
 #cm-fab-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
+  object-fit: contain;
+  object-position: center;
   pointer-events: none;
   user-select: none;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.15));
+  /* Shadow difusa violeta detrás del bot — respeta la silueta alpha del PNG */
+  filter:
+    drop-shadow(0 10px 20px rgba(168, 85, 247, 0.35))
+    drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
 }
 
 /* Keyframes del float — sube y baja 6px con un ease suave */

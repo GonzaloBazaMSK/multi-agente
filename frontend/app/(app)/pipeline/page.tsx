@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useConversations } from "@/lib/api/inbox";
 import { Flag } from "@/components/ui/flag";
 import { Button } from "@/components/ui/button";
 import { RoleGate } from "@/lib/auth";
@@ -121,43 +122,22 @@ function Inner() {
   const [statusFilter, setStatusFilter] = useState<"open" | "pending" | "all">("open");
   const [activeConv, setActiveConv] = useState<ConversationListItem | null>(null);
 
-  const convsQ = useQuery<ConversationListItem[]>({
-    queryKey: ["pipeline", "conversations", statusFilter],
-    queryFn: () => {
-      const params = new URLSearchParams({ limit: "200" });
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      return api.get(`/inbox/conversations?${params.toString()}`);
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
+  // Reusamos el mismo hook que usa /inbox — así garantizamos que el shape
+  // de cada conversación es el ConversationListItem normalizado (contact.*,
+  // lifecycle, channel, etc) en vez del shape plano del backend.
+  const convsQ = useConversations({ limit: 200 });
 
+  // Mutation para mover conversación de cola. El optimistic update lo
+  // hacemos invalidando el cache de useConversations (la query key la
+  // define el hook — ["inbox", "conversations", {...}]).
   const moveQueue = useMutation({
     mutationFn: ({ convId, queue }: { convId: string; queue: Queue }) =>
       api.post(`/inbox/conversations/${convId}/queue`, { queue }),
-    // Optimistic update — mueve la card al toque en la UI sin esperar round-trip.
-    onMutate: async ({ convId, queue }) => {
-      await qc.cancelQueries({ queryKey: ["pipeline", "conversations", statusFilter] });
-      const previous = qc.getQueryData<ConversationListItem[]>([
-        "pipeline",
-        "conversations",
-        statusFilter,
-      ]);
-      qc.setQueryData<ConversationListItem[]>(
-        ["pipeline", "conversations", statusFilter],
-        (old) => old?.map((c) => (c.id === convId ? { ...c, queue } : c)) ?? [],
-      );
-      return { previous };
-    },
-    onError: (e: Error, _vars, ctx) => {
-      // Revert si el PATCH falló
-      if (ctx?.previous) {
-        qc.setQueryData(["pipeline", "conversations", statusFilter], ctx.previous);
-      }
+    onError: (e: Error) => {
       alert(`No se pudo mover: ${e.message}`);
     },
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["pipeline", "conversations"] });
+      qc.invalidateQueries({ queryKey: ["inbox", "conversations"] });
     },
   });
 
@@ -168,13 +148,17 @@ function Inner() {
       "post-sales": [],
     };
     for (const c of convsQ.data ?? []) {
+      // Defensivo: si falta contact (bug del backend o shape viejo en caché),
+      // skipea la card en vez de crashear todo el kanban.
+      if (!c || !c.contact) continue;
+      if (statusFilter !== "all" && c.status !== statusFilter) continue;
       if (lifecycleFilter !== "all" && c.lifecycle !== lifecycleFilter) continue;
       const q = c.queue || "sales";
       if (!byQueue[q]) continue;
       byQueue[q].push(c);
     }
     return byQueue;
-  }, [convsQ.data, lifecycleFilter]);
+  }, [convsQ.data, lifecycleFilter, statusFilter]);
 
   const totalFiltered =
     grouped.sales.length + grouped.billing.length + grouped["post-sales"].length;
@@ -372,7 +356,7 @@ function Card({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: conv.id,
   });
-  const lifecycleMeta = LIFECYCLE_META[conv.lifecycle];
+  const lifecycleMeta = LIFECYCLE_META[conv.lifecycle] || LIFECYCLE_META.new;
   const LifecycleIcon = lifecycleMeta.icon;
   const targetQueues = COLUMNS.filter((c) => c.queue !== currentQueue);
 

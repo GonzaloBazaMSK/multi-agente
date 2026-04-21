@@ -565,6 +565,236 @@ async def update_pitch_hook(country: str, slug: str, body: UpdatePitchHookBody):
     return {"ok": True}
 
 
+# ─── Jobs de actualizacion masiva del catalogo ────────────────────────────────
+# Dos operaciones pesadas (sync del WP + regeneracion de pitches con LLM) que
+# no caben en un request HTTP normal. Las disparamos como asyncio.create_task
+# y guardamos el progreso en Redis para que el frontend haga polling.
+#
+# Redis keys:
+#   courses_job:sync_briefs   — estado del sync de briefs desde el WP
+#   courses_job:regen_pitches — estado de la regeneracion de pitches con LLM
+
+_JOB_KEY_SYNC = "courses_job:sync_briefs"
+_JOB_KEY_PITCH = "courses_job:regen_pitches"
+_JOB_TTL_SEC = 60 * 60 * 24 * 7  # 7 dias
+
+
+async def _job_get_redis():
+    from memory.conversation_store import get_conversation_store
+
+    store = await get_conversation_store()
+    return store._redis
+
+
+async def _job_write_state(key: str, state: dict) -> None:
+    import json as _json
+
+    r = await _job_get_redis()
+    await r.setex(key, _JOB_TTL_SEC, _json.dumps(state))
+
+
+async def _job_read_state(key: str) -> dict | None:
+    import json as _json
+
+    r = await _job_get_redis()
+    raw = await r.get(key)
+    if not raw:
+        return None
+    try:
+        return _json.loads(raw)
+    except Exception:
+        return None
+
+
+async def _run_sync_briefs_job(started_by: str) -> None:
+    """Sincroniza todos los paises desde el WP (regenera los brief_md)."""
+    import time as _time
+    from datetime import datetime, timezone
+
+    from api.admin_courses import ENABLED_COUNTRIES
+    from integrations import msk_courses
+
+    t0 = _time.time()
+    state = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+        "started_by": started_by,
+        "total_countries": len(ENABLED_COUNTRIES),
+        "current_index": 0,
+        "current_country": None,
+        "totals": {"upserted": 0, "deleted": 0, "errors": 0},
+        "per_country": [],
+    }
+    await _job_write_state(_JOB_KEY_SYNC, state)
+
+    try:
+        for i, c in enumerate(ENABLED_COUNTRIES, 1):
+            state["current_index"] = i
+            state["current_country"] = c
+            await _job_write_state(_JOB_KEY_SYNC, state)
+
+            ts = _time.time()
+            try:
+                r = await msk_courses.sync_country(c, prune=True)
+                state["totals"]["upserted"] += r.get("upserted", 0)
+                state["totals"]["deleted"] += r.get("deleted", 0)
+                state["totals"]["errors"] += len(r.get("errors", []))
+                state["per_country"].append({
+                    "country": c,
+                    "fetched": r.get("fetched", 0),
+                    "upserted": r.get("upserted", 0),
+                    "deleted": r.get("deleted", 0),
+                    "errors": len(r.get("errors", [])),
+                    "duration_s": round(_time.time() - ts, 1),
+                })
+            except Exception as e:
+                logger.exception("courses_job_sync_country_failed", country=c)
+                state["totals"]["errors"] += 1
+                state["per_country"].append({
+                    "country": c,
+                    "error": str(e),
+                    "duration_s": round(_time.time() - ts, 1),
+                })
+            await _job_write_state(_JOB_KEY_SYNC, state)
+
+        state["status"] = "done"
+        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["duration_s"] = round(_time.time() - t0, 1)
+        await _job_write_state(_JOB_KEY_SYNC, state)
+        logger.info("courses_job_sync_done", **state["totals"])
+    except Exception as e:
+        logger.exception("courses_job_sync_failed")
+        state["status"] = "error"
+        state["error"] = str(e)
+        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        await _job_write_state(_JOB_KEY_SYNC, state)
+
+
+async def _run_regen_pitches_job(started_by: str, force: bool) -> None:
+    """Regenera pitch_hook + pitch_by_profile con LLM para slugs con kb_ai."""
+    import time as _time
+    from datetime import datetime, timezone
+
+    from integrations import msk_courses_pitches
+
+    t0 = _time.time()
+    state = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None,
+        "started_by": started_by,
+        "force": bool(force),
+        "total": 0,
+        "current": 0,
+        "ok": 0,
+        "err": 0,
+        "rows_updated": 0,
+        "current_slug": None,
+        "last_slugs": [],  # ultimos 15 slugs procesados (para el preview en UI)
+    }
+    await _job_write_state(_JOB_KEY_PITCH, state)
+
+    async def _on_progress(p: dict) -> None:
+        phase = p.get("phase")
+        if phase == "start":
+            state["total"] = p["total"]
+        elif phase == "progress":
+            state["current"] = p["current"]
+            state["current_slug"] = p.get("slug")
+            state["ok"] = p.get("ok", state["ok"])
+            state["err"] = p.get("err", state["err"])
+            state["last_slugs"].append({
+                "slug": p.get("slug"),
+                "status": p.get("status"),
+                "hook_chars": p.get("hook_chars"),
+                "profiles": p.get("profiles"),
+                "rows": p.get("rows"),
+                "error": p.get("error"),
+            })
+            # Mantener solo los ultimos 15 para no inflar Redis
+            state["last_slugs"] = state["last_slugs"][-15:]
+        await _job_write_state(_JOB_KEY_PITCH, state)
+
+    try:
+        result = await msk_courses_pitches.generate_pitches(
+            force=force,
+            on_progress=_on_progress,
+        )
+        state["status"] = "done"
+        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["duration_s"] = round(_time.time() - t0, 1)
+        state["rows_updated"] = result.get("rows_updated", 0)
+        # Los contadores finales ya vienen del progress, pero los refuerzo con el
+        # retorno para cubrir casos donde el ultimo callback se perdio.
+        state["ok"] = result.get("ok", state["ok"])
+        state["err"] = result.get("err", state["err"])
+        state["total"] = result.get("total", state["total"])
+        await _job_write_state(_JOB_KEY_PITCH, state)
+        logger.info("courses_job_pitches_done", **result)
+    except Exception as e:
+        logger.exception("courses_job_pitches_failed")
+        state["status"] = "error"
+        state["error"] = str(e)
+        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        await _job_write_state(_JOB_KEY_PITCH, state)
+
+
+@router.post("/courses/jobs/sync-briefs")
+async def start_sync_briefs_job(
+    auth: dict = Depends(require_role_or_admin("admin")),
+):
+    """
+    Dispara la sincronizacion del catalogo desde el WP para los 17 paises.
+    Regenera `brief_md` para cada curso a partir del kb_ai actualizado.
+    Tarda ~5 min. El estado se consulta en GET /courses/jobs.
+    """
+    import asyncio as _asyncio
+
+    current = await _job_read_state(_JOB_KEY_SYNC)
+    if current and current.get("status") == "running":
+        raise HTTPException(status_code=409, detail="sync-briefs ya esta corriendo")
+
+    started_by = str(auth.get("user_id") or auth.get("email") or "admin-key")
+    _asyncio.create_task(_run_sync_briefs_job(started_by))
+    logger.info("courses_job_sync_started", by=started_by)
+    return {"ok": True, "job": "sync_briefs"}
+
+
+@router.post("/courses/jobs/regenerate-pitches")
+async def start_regen_pitches_job(
+    force: bool = Query(False, description="True=regenera pitches existentes, False=solo slugs sin pitch"),
+    auth: dict = Depends(require_role_or_admin("admin")),
+):
+    """
+    Dispara la regeneracion de pitch_hook + pitch_by_profile con LLM.
+    Por default solo procesa slugs que tienen kb_ai pero no tienen pitch.
+    Con `force=true` regenera TODOS los slugs con kb_ai.
+    Tarda ~1-6 min segun cuantos slugs. Estado en GET /courses/jobs.
+    """
+    import asyncio as _asyncio
+
+    current = await _job_read_state(_JOB_KEY_PITCH)
+    if current and current.get("status") == "running":
+        raise HTTPException(status_code=409, detail="regenerate-pitches ya esta corriendo")
+
+    started_by = str(auth.get("user_id") or auth.get("email") or "admin-key")
+    _asyncio.create_task(_run_regen_pitches_job(started_by, force))
+    logger.info("courses_job_pitches_started", by=started_by, force=force)
+    return {"ok": True, "job": "regen_pitches", "force": force}
+
+
+@router.get("/courses/jobs")
+async def get_courses_jobs_state():
+    """Devuelve el estado de ambos jobs (sync briefs + regeneracion pitches)."""
+    sync = await _job_read_state(_JOB_KEY_SYNC)
+    pitch = await _job_read_state(_JOB_KEY_PITCH)
+    return {
+        "sync_briefs": sync or {"status": "idle"},
+        "regen_pitches": pitch or {"status": "idle"},
+    }
+
+
 @router.get("/queue-stats")
 async def queue_stats():
     """

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Edit3, Check, X, Sparkles, Loader2 } from "lucide-react";
+import { Search, Edit3, Check, X, Sparkles, Loader2, RefreshCw, Wand2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,31 @@ type Course = {
   has_kb_ai: boolean;
 };
 
+type JobState = {
+  status: "idle" | "running" | "done" | "error";
+  started_at?: string;
+  finished_at?: string;
+  error?: string;
+  // sync_briefs
+  current_index?: number;
+  current_country?: string;
+  total_countries?: number;
+  totals?: { upserted: number; deleted: number; errors: number };
+  // regen_pitches
+  current?: number;
+  total?: number;
+  ok?: number;
+  err?: number;
+  rows_updated?: number;
+  current_slug?: string;
+  force?: boolean;
+};
+
+type JobsState = {
+  sync_briefs: JobState;
+  regen_pitches: JobState;
+};
+
 const COUNTRIES = ["AR", "MX", "CL", "CO", "PE", "UY", "EC", "ES"];
 
 export default function CoursesPage() {
@@ -34,6 +59,54 @@ export default function CoursesPage() {
     queryFn: () => api.get(`/inbox/courses?country=${country}&limit=300`),
     staleTime: 60_000,
   });
+
+  // Estado de los jobs masivos — polling cada 3s mientras al menos uno este corriendo.
+  const jobsQ = useQuery<JobsState>({
+    queryKey: ["courses-jobs"],
+    queryFn: () => api.get("/inbox/courses/jobs"),
+    refetchInterval: (q) => {
+      const s = q.state.data as JobsState | undefined;
+      if (!s) return 5000;
+      const anyRunning = s.sync_briefs?.status === "running" || s.regen_pitches?.status === "running";
+      return anyRunning ? 3000 : false;
+    },
+    staleTime: 2000,
+  });
+
+  const jobs = jobsQ.data;
+  const syncJob = jobs?.sync_briefs;
+  const pitchJob = jobs?.regen_pitches;
+  const syncRunning = syncJob?.status === "running";
+  const pitchRunning = pitchJob?.status === "running";
+
+  const startSync = useMutation({
+    mutationFn: () => api.post("/inbox/courses/jobs/sync-briefs"),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["courses-jobs"] }),
+  });
+
+  const startPitches = useMutation({
+    mutationFn: ({ force }: { force: boolean }) =>
+      api.post(`/inbox/courses/jobs/regenerate-pitches?force=${force ? "true" : "false"}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["courses-jobs"] }),
+  });
+
+  // Al terminar un job (transicion running → done/error), refrescar el catalogo una sola vez
+  const prevSyncStatus = useRef<JobState["status"] | undefined>(undefined);
+  const prevPitchStatus = useRef<JobState["status"] | undefined>(undefined);
+  useEffect(() => {
+    const s = syncJob?.status;
+    if (prevSyncStatus.current === "running" && (s === "done" || s === "error")) {
+      qc.invalidateQueries({ queryKey: ["courses", country] });
+    }
+    prevSyncStatus.current = s;
+  }, [syncJob?.status, qc, country]);
+  useEffect(() => {
+    const s = pitchJob?.status;
+    if (prevPitchStatus.current === "running" && (s === "done" || s === "error")) {
+      qc.invalidateQueries({ queryKey: ["courses", country] });
+    }
+    prevPitchStatus.current = s;
+  }, [pitchJob?.status, qc, country]);
 
   const updatePitch = useMutation({
     mutationFn: ({ slug, pitch_hook }: { slug: string; pitch_hook: string }) =>
@@ -63,14 +136,44 @@ export default function CoursesPage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-4">
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-semibold">Catálogo de cursos</h1>
           <p className="text-xs text-fg-dim mt-0.5">
             {stats.total} cursos · {stats.withPitch} con pitch · {stats.withKb} con kb_ai
           </p>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center flex-wrap">
+          {/* Botones de jobs masivos */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={syncRunning || startSync.isPending}
+            onClick={() => startSync.mutate()}
+            title="Baja el catalogo del WP y regenera brief_md en los 17 paises (~5 min)"
+          >
+            {syncRunning ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sincronizando briefs…</>
+            ) : (
+              <><RefreshCw className="w-3.5 h-3.5" /> Actualizar briefs</>
+            )}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pitchRunning || startPitches.isPending}
+            onClick={() => startPitches.mutate({ force: false })}
+            title="Genera pitch + pitch_by_profile con IA para los slugs que no tienen (solo los que tienen kb_ai)"
+          >
+            {pitchRunning ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generando pitches…</>
+            ) : (
+              <><Wand2 className="w-3.5 h-3.5" /> Generar pitches faltantes</>
+            )}
+          </Button>
+
+          <div className="w-px h-5 bg-border mx-1" />
+
           <select
             value={country}
             onChange={(e) => setCountry(e.target.value)}
@@ -91,6 +194,48 @@ export default function CoursesPage() {
           </div>
         </div>
       </div>
+
+      {/* Progress bars de los jobs */}
+      {(syncRunning || pitchRunning || syncJob?.status === "done" || pitchJob?.status === "done" || syncJob?.status === "error" || pitchJob?.status === "error") && (
+        <div className="px-6 py-3 border-b border-border bg-bg-subtle flex flex-col gap-2">
+          {syncJob && syncJob.status !== "idle" && (
+            <JobStatusRow
+              label="Sync briefs desde WP"
+              state={syncJob}
+              compute={() => {
+                const done = syncJob.current_index ?? 0;
+                const total = syncJob.total_countries ?? 17;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                const line =
+                  syncJob.status === "running"
+                    ? `País ${done}/${total}: ${syncJob.current_country ?? "—"} · upserted ${syncJob.totals?.upserted ?? 0}`
+                    : syncJob.status === "done"
+                    ? `${total} países procesados · upserted ${syncJob.totals?.upserted ?? 0} · errores ${syncJob.totals?.errors ?? 0}`
+                    : `Error: ${syncJob.error ?? "desconocido"}`;
+                return { pct, line };
+              }}
+            />
+          )}
+          {pitchJob && pitchJob.status !== "idle" && (
+            <JobStatusRow
+              label={`Pitches${pitchJob.force ? " (regen total)" : ""}`}
+              state={pitchJob}
+              compute={() => {
+                const done = pitchJob.current ?? 0;
+                const total = pitchJob.total ?? 0;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                const line =
+                  pitchJob.status === "running"
+                    ? `Slug ${done}/${total}: ${pitchJob.current_slug ?? "—"} · ok ${pitchJob.ok ?? 0} / err ${pitchJob.err ?? 0}`
+                    : pitchJob.status === "done"
+                    ? `${total} slugs procesados · ok ${pitchJob.ok ?? 0} · err ${pitchJob.err ?? 0} · filas actualizadas ${pitchJob.rows_updated ?? 0}`
+                    : `Error: ${pitchJob.error ?? "desconocido"}`;
+                return { pct, line };
+              }}
+            />
+          )}
+        </div>
+      )}
 
       {/* Grid */}
       <div className="flex-1 overflow-y-auto scroll-thin p-6">
@@ -190,6 +335,48 @@ export default function CoursesPage() {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function JobStatusRow({
+  label,
+  state,
+  compute,
+}: {
+  label: string;
+  state: JobState;
+  compute: () => { pct: number; line: string };
+}) {
+  const { pct, line } = compute();
+  const running = state.status === "running";
+  const done = state.status === "done";
+  const error = state.status === "error";
+
+  const barColor = error ? "bg-red-500" : done ? "bg-emerald-500" : "bg-accent";
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          {running ? (
+            <Loader2 className="w-3 h-3 animate-spin text-accent" />
+          ) : done ? (
+            <Check className="w-3 h-3 text-emerald-500" />
+          ) : error ? (
+            <X className="w-3 h-3 text-red-500" />
+          ) : null}
+          <span className="font-medium">{label}</span>
+          <span className="text-fg-dim">{line}</span>
+        </div>
+        <span className="text-fg-dim tabular-nums">{pct}%</span>
+      </div>
+      <div className="h-1 bg-border rounded-full overflow-hidden">
+        <div
+          className={`h-full ${barColor} transition-all`}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
       </div>
     </div>
   );

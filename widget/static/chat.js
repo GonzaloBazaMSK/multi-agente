@@ -193,7 +193,7 @@
     // Cache-bust: versión del bundle → cada deploy del widget.js cambia
     // este string y el browser descarga CSS nuevo. Sin esto, un browser
     // con la CSS vieja cacheada sigue mostrando el círculo/borde previo.
-    const CSS_VERSION = "20260420-7";
+    const CSS_VERSION = "20260423-1";
     link.href = `${CONFIG.apiUrl}/static/chat.css?v=${CSS_VERSION}`;
     document.head.appendChild(link);
 
@@ -684,6 +684,9 @@
     // Detectar cambios de identity (login tardío, logout, cambio de cuenta)
     startIdentityWatcher();
     startSlugWatcher();
+    // Escuchar el evento `msk:pageChange` del site (Next.js con useProfile
+    // async dispatch-ea este evento cuando se re-renderiza con user real).
+    startPageChangeListener();
   }
 
   // ─── Espera a que msk-front setee los datos del usuario ───────────────────
@@ -940,6 +943,59 @@
         }
       }
     }, 1000);
+  }
+
+  // ─── Listener del evento `msk:pageChange` ─────────────────────────────────
+  // El sitio embebedor (msk-front Next.js) puede emitir este evento con los
+  // datos frescos del user cuando cambia la ruta o cuando el hook `useProfile`
+  // termina de cargar tarde (race condition del primer render).
+  //
+  // Firma esperada del detalle: { email, userName, country, pageSlug, userPhone?, userCourses? }
+  //
+  // Ventaja vs. `startIdentityWatcher` (que polltea cada 1s): este listener es
+  // inmediato. Si el site hace `setAttribute('data-user-email', X)` + dispatch,
+  // el widget reacciona ahora y no en el próximo tick.
+  function startPageChangeListener() {
+    window.addEventListener("msk:pageChange", function (ev) {
+      var detail = (ev && ev.detail) || {};
+      var changed = false;
+
+      if (detail.email && detail.email !== CONFIG.email) {
+        CONFIG.email = detail.email;
+        changed = true;
+      }
+      if (detail.userName && detail.userName !== CONFIG.userName) {
+        CONFIG.userName = detail.userName;
+        changed = true;
+      }
+      if (detail.userPhone && detail.userPhone !== CONFIG.userPhone) {
+        CONFIG.userPhone = detail.userPhone;
+      }
+      if (detail.userCourses && detail.userCourses !== CONFIG.userCourses) {
+        CONFIG.userCourses = detail.userCourses;
+      }
+      if (detail.country && detail.country.toUpperCase() !== CONFIG.country) {
+        CONFIG.country = detail.country.toUpperCase();
+      }
+      if (detail.pageSlug !== undefined) {
+        // Sanitizar igual que el init
+        var raw = String(detail.pageSlug || "").replace(/^\/+|\/+$/g, "");
+        var parts = raw.split("/");
+        var clean = parts[parts.length - 1] || "";
+        if (clean !== CONFIG.pageSlug) {
+          CONFIG.pageSlug = clean;
+          _lastSlug = clean;
+        }
+      }
+
+      // Si entra login fresco (antes no había email, ahora sí) y la conv
+      // no se materializó, refrescar saludo para que personalice al toque.
+      // Si ya hay conv activa, los datos se pegarán en el próximo /widget/chat.
+      if (changed && CONFIG.email && !conversationMaterialized) {
+        lastKnownEmail = CONFIG.email;
+        refreshGreetingForNewUser().catch(function () { /* silent */ });
+      }
+    });
   }
 
   // ─── Watcher: detecta cambios de page_slug (SPA navigation) ───────────────

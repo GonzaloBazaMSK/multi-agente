@@ -169,7 +169,7 @@ def build_brief_md(item: dict, country: str) -> str:
     Pensado para inyectar en el system-prompt del agente de ventas.
 
     Estructura (orden = prioridad de lectura del LLM):
-      1. Header: título, cedente, precio en cuotas, slug
+      1. Header: título, cedente, precio en pagos mensuales, slug
       2. Datos técnicos (kb_ai.datos_tecnicos): modalidad, evaluación, acceso
       3. Perfiles objetivo con dolor/beneficio (kb_ai.perfiles_dirigidos)
       4. Descripción y problemática (kb_ai.descripcion_y_problematica)
@@ -210,10 +210,10 @@ def build_brief_md(item: dict, country: str) -> str:
     inst_val = _to_float(prices.get("price_installments"))
     if max_inst and inst_val:
         lines.append(
-            f"**Precio (comunicar SIEMPRE en cuotas):** {max_inst} cuotas de {currency} {inst_val:,.2f}"
+            f"**Precio (comunicar SIEMPRE en pagos mensuales, alineado con la web):** {max_inst} pagos de {currency} {inst_val:,.2f}"
         )
     elif total:
-        lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no hay cuotas disponibles)")
+        lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no se puede dividir en pagos mensuales)")
 
     # Línea compacta: duración + módulos + categoría
     duration = item.get("duration")

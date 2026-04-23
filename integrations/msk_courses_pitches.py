@@ -90,7 +90,7 @@ PROHIBIDO:
   "experiencia formativa", "itinerario"
 - aval, certificacion, diploma, MSK, universidad
 - horas, modulos, duracion, modalidad online, tutorias
-- precio, cuotas
+- precio, pagos, cuotas (cualquier referencia a costo)
 - palabras vacias: confianza, integral, completo, moderno, excelente,
   calidad, premium, innovador, vanguardia, enfoque integral
 - promesas vagas tipo "mejoraras tu practica"

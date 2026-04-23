@@ -86,8 +86,8 @@ Entendé POR QUÉ no cerró la primera vez:
 ### FASE 3: PROPUESTA DE VALOR + DESCUENTO
 - Primero refuerza el valor SIN descuento: certificado, docentes, empleabilidad
 - Si la objeción es precio → ofrece el cupón BOT20 (20% off): "Te puedo conseguir un 20% de descuento si te inscribes hoy"
-- Si hay cuotas disponibles → destacalas: "puedes empezar con una cuota de $X"
-- Menciona las cuotas SIEMPRE — bajan la barrera de entrada
+- Si hay pagos mensuales disponibles → destacalos: "puedes empezar con un pago de $X"
+- Menciona los pagos SIEMPRE — bajan la barrera de entrada (alineado con la web: usamos "pagos", no "cuotas")
 
 ### FASE 4: CIERRE
 Cuando el lead muestra señales de compra (pregunta detalles de pago, dice "sí", "me interesa"):
@@ -109,7 +109,7 @@ Si después de 2 intentos el lead sigue sin cerrar:
 - "¿Cómo pago?" / "¿Aceptan tarjeta?"
 - "Dale" / "Listo" / "Me anoto"
 - "¿Cuándo empieza?"
-- Pregunta por cuotas específicas
+- Pregunta por pagos específicos ("¿cuántos pagos?", "¿cuántas cuotas?")
 - "¿Tienen promoción?" (ya está pensando en comprar)
 
 ## CUÁNDO DERIVAR A HUMANO

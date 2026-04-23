@@ -180,7 +180,7 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
         f"Cedente: {course.get('cedente')}\n"
         f"Duración: {course.get('duration_hours')}h — {course.get('modules_count')} módulos\n"
         f"Precio: {course.get('currency')} {course.get('total_price')} "
-        f"({course.get('max_installments')} cuotas de {course.get('price_installments')})\n"
+        f"({course.get('max_installments')} pagos de {course.get('price_installments')})\n"
         f"URL: {course.get('url')}\n"
     )
 
@@ -196,11 +196,11 @@ async def create_payment_link(
 ) -> str:
     """
     Genera un link de pago (Rebill) para la inscripción al curso.
-    El link se genera con cuotas habilitadas según el país del usuario.
+    El link se genera con los pagos mensuales habilitados según el país del usuario.
 
     Args:
         course_name: Nombre del curso (ej: "Curso Superior de Cardiología AMIR")
-        price: Precio TOTAL del curso (no el de la cuota — el total)
+        price: Precio TOTAL del curso (no el del pago mensual — el total)
         currency: Moneda (ARS, MXN, COP, CLP, PEN, UYU)
         country: País del usuario (AR, MX, CO, CL, PE, UY)
         customer_email: Email del cliente

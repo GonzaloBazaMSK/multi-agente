@@ -442,7 +442,15 @@ async def _build_user_context(
                 "cursadas": cursadas_list,
                 "profile": dict(zoho_profile_for_sync),  # snapshot
             }
-            await store._redis.setex(cursadas_key, 86400, _json.dumps(cache_payload))
+            # TTL adaptativo: si el profile viene VACÍO (Zoho no encontró el
+            # contacto, o falló la request, o el user es muy nuevo), cacheamos
+            # solo 5 min para dar chance a un retry pronto. Si hay datos reales
+            # cacheamos 24h. Antes cacheábamos TODO a 24h y un "profile vacío"
+            # se quedaba pegado por un día entero aunque después aparecieran
+            # los datos en Zoho.
+            is_empty = not zoho_profile_for_sync and not cursadas_list
+            ttl = 300 if is_empty else 86400
+            await store._redis.setex(cursadas_key, ttl, _json.dumps(cache_payload))
         else:
             try:
                 cached_obj = _json.loads(cached_cursadas)
@@ -663,6 +671,9 @@ async def generate_greeting_stateless(
     user_name: str = "",
     user_email: str = "",
     user_courses: str = "",
+    user_profession: str = "",
+    user_specialty: str = "",
+    user_cargo: str = "",
     page_slug: str = "",
     country: str = "AR",
 ) -> dict:
@@ -693,6 +704,17 @@ async def generate_greeting_stateless(
     # Si el frontend mandó user_name pero el CRM no devolvió nombre, usarlo como fallback
     if user_name and not _signals.get("profile_name"):
         ctx_lines.insert(0, f"Nombre del cliente: {user_name}")
+
+    # Fallbacks del frontend para profesión/especialidad/cargo. El widget del
+    # msk-front (Next.js) ya tiene esos datos en el hook useProfile() — si
+    # llegan por el body pero el CRM no los resolvió, los inyectamos al
+    # contexto. Prioridad: CRM > frontend > vacío.
+    if user_profession and "Profesión" not in "\n".join(ctx_lines):
+        ctx_lines.append(f"Profesión: {user_profession}")
+    if user_specialty and "Especialidad" not in "\n".join(ctx_lines):
+        ctx_lines.append(f"Especialidad: {user_specialty}")
+    if user_cargo and "Cargo" not in "\n".join(ctx_lines):
+        ctx_lines.append(f"Cargo: {user_cargo}")
 
     ctx = "\n".join(ctx_lines) if ctx_lines else ""
 

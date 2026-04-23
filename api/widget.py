@@ -30,6 +30,13 @@ class ChatRequest(BaseModel):
     user_name: str = ""
     user_email: str = ""
     user_courses: str = ""
+    # Datos extra del frontend (msk-front Next.js) — complementan al profile
+    # que el backend pueda resolver en Supabase/Zoho. Si llegan, tienen
+    # prioridad sobre lo que saque el backend por email. Permite personalizar
+    # aunque Supabase no tenga el profile (ej. users recién creados).
+    user_profession: str = ""  # ej. "Personal médico", "Residente", "Enfermería"
+    user_specialty: str = ""  # ej. "Cardiología", "Alergia e inmunología"
+    user_cargo: str = ""  # ej. "Jefe de servicio", "Coordinación"
     page_slug: str = ""  # slug del curso que está mirando el usuario (si aplica)
     initial_greeting: str = ""  # saludo stateless a persistir si la conv se crea recién
 
@@ -38,6 +45,9 @@ class GreetingRequest(BaseModel):
     user_name: str = ""
     user_email: str = ""
     user_courses: str = ""
+    user_profession: str = ""
+    user_specialty: str = ""
+    user_cargo: str = ""
     page_slug: str = ""
     country: str = "AR"
 
@@ -93,6 +103,9 @@ async def greeting(request: Request, req: GreetingRequest):
         user_name=req.user_name,
         user_email=req.user_email,
         user_courses=req.user_courses,
+        user_profession=req.user_profession,
+        user_specialty=req.user_specialty,
+        user_cargo=req.user_cargo,
         page_slug=req.page_slug,
         country=req.country,
     )

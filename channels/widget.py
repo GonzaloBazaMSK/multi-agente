@@ -704,6 +704,15 @@ async def generate_greeting_stateless(
         from config.settings import get_settings
 
         system_txt = _load_greeting_prompt()
+        # Inyectar guia de tono segun pais (tuteo LATAM neutro, rioplatense
+        # para AR/UY sin voseo, neutro formal para ES/resto). Ver
+        # `agents/routing/greeting_prompt.tone_block_for_country`.
+        try:
+            from agents.routing.greeting_prompt import tone_block_for_country
+
+            system_txt += f"\n\n{tone_block_for_country(country)}"
+        except Exception:
+            pass
         if ctx:
             system_txt += f"\n\nDatos del cliente:\n{ctx}"
         if page_slug:

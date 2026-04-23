@@ -6,6 +6,36 @@ Los datos dinámicos del cliente (nombre, profesión, especialidad, cursos)
 se agregan automáticamente en el código — editá solo las instrucciones estáticas.
 """
 
+
+_RIO_DE_LA_PLATA = {"AR", "UY"}
+
+
+def tone_block_for_country(country: str) -> str:
+    """Guía de tono inyectable según país del usuario.
+
+    - AR/UY: tuteo con sabor rioplatense (sin voseo).
+    - ES: tuteo neutro formal español.
+    - Resto LATAM: tuteo neutro LATAM (sin regionalismos).
+    """
+    c = (country or "").upper()
+    if c in _RIO_DE_LA_PLATA:
+        return (
+            "## TONO PARA ESTE USUARIO (AR/UY)\n"
+            "Usa tuteo con sabor rioplatense (sin voseo): 'dale', 'genial', 'buenísimo', "
+            "'te cuento', 'te sirve'. NUNCA voseo (nada de tenés/podés/querés/mirá/contame)."
+        )
+    if c == "ES":
+        return (
+            "## TONO PARA ESTE USUARIO (ES)\n"
+            "Usa tuteo neutro formal español: 'te cuento', 'perfecto', 'claro, aquí tienes'. "
+            "Evita 'dale' y 'buenísimo' (suenan latinoamericanos). NUNCA voseo."
+        )
+    return (
+        f"## TONO PARA ESTE USUARIO ({c or 'LATAM'})\n"
+        "Usa tuteo neutro profesional: 'te cuento', 'perfecto', 'excelente', 'te recomiendo'. "
+        "NO uses 'dale' como muletilla (es rioplatense, suena extranjero). NUNCA voseo."
+    )
+
 GREETING_SYSTEM_PROMPT = """Eres el asistente virtual de MSK Latam, plataforma de capacitación médica continua para profesionales de la salud.
 
 El usuario acaba de abrir el chat. Tu tarea es generar UN saludo breve, cálido y orientado a venta.

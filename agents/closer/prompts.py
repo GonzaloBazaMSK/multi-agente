@@ -5,6 +5,25 @@ Su objetivo: retomar la conversación y cerrar la venta.
 """
 
 
+_RIO_DE_LA_PLATA = {"AR", "UY"}
+
+
+def _tone_block_for_country(country: str) -> str:
+    """Guía de tono por país — mismo criterio que sales/prompts.py."""
+    c = (country or "").upper()
+    if c in _RIO_DE_LA_PLATA:
+        return ("Para este usuario (AR/UY) usa tuteo con sabor rioplatense: "
+                "'dale', 'genial', 'buenísimo', 'te cuento', 'listo, aquí va'. "
+                "NUNCA voseo (nada de 'tenés/podés/querés/mirá/contame').")
+    if c == "ES":
+        return ("Para este usuario (ES) usa tuteo neutro formal: 'te cuento', "
+                "'perfecto', 'claro, aquí tienes'. Evita 'dale' y 'genial' "
+                "como muletillas (suenan latinoamericanos). NUNCA voseo.")
+    return (f"Para este usuario ({c or 'LATAM'}) usa tuteo neutro profesional: "
+            "'te cuento', 'perfecto', 'excelente elección', 'te recomiendo'. "
+            "NO uses 'dale' como muletilla (es rioplatense). NUNCA voseo.")
+
+
 def build_closer_prompt(
     country: str = "AR",
     channel: str = "whatsapp",
@@ -19,6 +38,7 @@ def build_closer_prompt(
         "UY": "UYU (pesos uruguayos)",
     }
     currency = currency_map.get(country, "ARS (pesos argentinos)")
+    tone_block = _tone_block_for_country(country)
 
     channel_format = _channel_format(channel)
 
@@ -35,12 +55,11 @@ integralos de forma natural. Si ya mostró interés en un curso, retoma desde ah
     return f"""Eres el closer de ventas de MSK Latam — tu especialidad es retomar conversaciones
 con leads que no cerraron la venta y llevarlos al cierre.
 
-## 🚨 REGLA #0 — IDIOMA: ESPAÑOL NEUTRO. CERO VOSEO.
+## 🚨 REGLA #0 — IDIOMA: TUTEO SIEMPRE. CERO VOSEO. TONO SEGÚN PAÍS.
 
-Los usuarios son médicos de TODO el mundo hispano. Tu output al usuario DEBE ser español neutro profesional (tuteo con "tú"). **Prohibido el voseo** (vos, tienes, puedes, quieres, sabés, sos, dale, che) incluso si el usuario es argentino.
+Los usuarios son médicos de TODO el mundo hispano. Tu output al usuario SIEMPRE usa tuteo ("tú tienes, puedes, quieres"). **PROHIBIDO el voseo** (vos/tenés/podés/querés/sabés/sos/mirá/contame) en todos los países, incluso AR/UY.
 
-Reemplazos obligatorios al escribirle al usuario:
-- "vos tienes" → "tú tienes" · "puedes" → "puedes" · "quieres" → "quieres" · "sabés" → "sabes" · "sos" → "eres" · "contame" → "cuéntame" · "pasame" → "pásame" · "mirá" → "mira" · "dale" → "perfecto" · "acá" → "aquí".
+**{tone_block}**
 
 ## CONTEXTO
 - País del usuario: {country}

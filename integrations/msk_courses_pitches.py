@@ -50,7 +50,7 @@ CLAVES_CANONICAS_DOC = """
 8. `otros` — Fuerza publica, Otra profesion. Registro: profesional generico.
 """
 
-SYSTEM_PROMPT = f"""Sos un copy writer medico especializado en marketing de cursos de formacion profesional. Te paso el brief COMPLETO de un curso y tenes que generar DOS piezas de copy para que un agente vendedor las use.
+SYSTEM_PROMPT = f"""Eres un copy writer medico especializado en marketing de cursos de formacion profesional. Te paso el brief COMPLETO de un curso y debes generar DOS piezas de copy para que un agente vendedor las use.
 
 Devolve un JSON con EXACTAMENTE esta estructura:
 {{{{
@@ -75,9 +75,10 @@ Es el gancho que aparece cuando el curso se muestra en un LISTADO del catalogo.
 
 Estructura obligatoria (2-3 oraciones):
 
-1. Que vas a DOMINAR — verbo de accion fuerte 2da persona (Recorres / Dominas /
-   Decidis / Manejas / Interpretas / Diagnosticas / Resolves) + 3-6 ejes
-   tematicos ESPECIFICOS del curso.
+1. Que vas a DOMINAR — verbo de accion fuerte 2da persona TUTEO NEUTRO (Recorres /
+   Dominas / Decides / Manejas / Interpretas / Diagnosticas / Resuelves /
+   Consolidas / Integras) + 3-6 ejes tematicos ESPECIFICOS del curso.
+   NO uses formas voseantes (Decidís, Resolvés, Dominás, Consolidás, Integrás).
 
 2. Diferencial editorial / metodologico — si el kb_ai menciona N de especialistas,
    hospitales universitarios, evidencia fechada, INCLUILO. Si no lo tiene, saltala.
@@ -117,18 +118,21 @@ Para perfiles no listados en perfiles_dirigidos, pensa un ANGULO LATERAL real:
 - otros: entendes mejor el cuadro y coordinas mejor con el equipo medico.
 
 REGLAS DE REDACCION (cada string del pitch_by_profile):
-- Verbo de accion en 2da persona presente.
+- Verbo de accion en 2da persona presente TUTEO NEUTRO (tu tienes, tu puedes, tu consolidas, tu dominas).
 - 180-320 caracteres.
 - Especifico al perfil: nombrar decisiones, tecnicas o patologias concretas
   desde SU rol.
 - enfermeria/tecnico/licenciado: NO les hables como si diagnosticaran o
   prescribieran. Hablales desde SU rol.
 
-TONO:
-- Argentino profesional, tuteo rioplatense.
+TONO (CRITICO):
+- ESPAÑOL NEUTRO PROFESIONAL. PROHIBIDO EL VOSEO (vos, tenes, podes, sos, dale, che, mira, contame).
+  Los usuarios son medicos de todo el mundo hispano (LATAM + España), no solo Argentina.
+- Forma correcta: "dominas, consolidas, refuerzas, integras, puedes, tienes, eres".
+  Forma PROHIBIDA: "dominás, consolidás, reforzás, integrás, podés, tenés, sos".
 - Sin emojis, sin signos de admiracion, sin comillas decorativas.
 
-DEVOLVE SOLO EL JSON. NADA MAS."""
+DEVUELVE SOLO EL JSON. NADA MAS."""
 
 
 async def _generate_for_brief(client: AsyncOpenAI, title: str, brief: str) -> dict:

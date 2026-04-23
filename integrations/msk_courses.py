@@ -335,8 +335,15 @@ def build_brief_md(item: dict, country: str) -> str:
         for i, m in enumerate(modules, 1):
             mtitle = (m.get("title") or "").strip()
             lines.append(f"**Módulo {i} — {mtitle}**")
-        # URL del temario PDF si existe
-        spf = study_plan.get("study_plan_file") or ""
+        # URL del temario PDF si existe.
+        # El WP devuelve `study_plan_file` en el TOP-LEVEL del JSON del producto,
+        # NO dentro de `sections.study_plan`. Probamos ambos paths por
+        # compatibilidad con versiones del plugin.
+        spf = (
+            item.get("study_plan_file")
+            or study_plan.get("study_plan_file")
+            or ""
+        )
         if spf:
             lines.append(f"\n📄 [Descargar temario completo (PDF)]({spf})")
         lines.append("")

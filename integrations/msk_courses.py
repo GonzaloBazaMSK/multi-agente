@@ -249,8 +249,14 @@ def build_brief_md(item: dict, country: str) -> str:
                 key = html_to_text(key_html).strip()
                 val = html_to_text(val_html).strip()
                 if key and val:
-                    # Omitir duración (ya está en el header)
-                    if key.lower().startswith("duraci"):
+                    # Omitir SOLO la "Duración: NNN horas" porque eso ya
+                    # está en el header (`duration_hours`). En cambio,
+                    # "Duración del acceso: 12 meses" o "Duración de
+                    # licencia: 1 año" son DATOS DISTINTOS (plazo de
+                    # cursada) y deben pasar al brief — sin esto el agente
+                    # responde vagamente "varios meses" cuando el user
+                    # pregunta cuánto tiempo tiene para cursar.
+                    if key.lower().startswith("duraci") and "hora" in val.lower():
                         continue
                     lines.append(f"- **{key}:** {val}")
         else:

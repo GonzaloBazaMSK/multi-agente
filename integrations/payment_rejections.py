@@ -45,7 +45,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
             "Lo más rápido es probar con una tarjeta distinta volviendo al "
             "checkout. Si querés usar esta misma, ampliá el cupo de compras "
             "online desde la app del banco y reintentá. Si no podés "
-            "resolverlo, te derivo con un asesor humano que te ayuda."
+            "resolverlo, te derivo con un asesor académico que te ayuda."
         ),
     },
     "card_declined": {
@@ -84,7 +84,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         "accion": (
             "Si tenés el plástico nuevo, activalo desde la app del banco y "
             "reintentá desde el checkout. Si no, usá otra tarjeta vigente. "
-            "Si necesitás ayuda extra, te derivo con un asesor humano."
+            "Si necesitás ayuda extra, te derivo con un asesor académico."
         ),
     },
     "invalid_card": {
@@ -119,7 +119,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         "accion": (
             "Lo más probable es que andá en 5-10 minutos sin tocar nada. Si "
             "querés, esperá un cafecito y reintentá. Si después de 30 min "
-            "sigue, te derivo con un asesor humano para revisar."
+            "sigue, te derivo con un asesor académico para revisar."
         ),
     },
     "fraud_high_risk": {
@@ -156,7 +156,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         "accion": (
             "Refrescá la página del checkout (F5) y la sesión se regenera "
             "automáticamente. Si después de refrescar sigue sin andar, te "
-            "derivo con un asesor humano para que te asista."
+            "derivo con un asesor académico para que te asista."
         ),
     },
     "rejected": {
@@ -176,7 +176,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
             "Lo más eficiente: probá con otra tarjeta de entrada — si esa "
             "anda, era problema del banco emisor de la primera. Si querés "
             "diagnosticar la original, llamá al banco al número del dorso. "
-            "Si preferís que te ayude un humano, te derivo."
+            "Si preferís que te ayude un asesor académico, te derivo."
         ),
     },
 }
@@ -235,7 +235,7 @@ def explain_rejection(
         "accion": (
             "Probá con otra tarjeta como primer paso — si esa anda, era "
             "problema del banco de la primera. Si preferís, te derivo con "
-            "un asesor humano."
+            "un asesor académico."
         ),
         "code": code_norm or "unknown",
     }
@@ -295,8 +295,8 @@ def build_context_block(rejection: dict) -> str:
         "parecido. El reintento del pago se hace desde el checkout original — "
         "el usuario refresca o vuelve a la página y reintenta.\n"
         "5. **Si el usuario insiste en reintentar el pago, no puede resolverlo "
-        "solo, o pide hablar con alguien → derivá SIEMPRE a humano con "
-        "HANDOFF_REQUIRED.** Un asesor humano puede asistirlo personalmente "
+        "solo, o pide hablar con alguien → derivá SIEMPRE con "
+        "HANDOFF_REQUIRED.** Un asesor académico puede asistirlo personalmente "
         "(verificar datos, generar manualmente un link distinto, ofrecer "
         "alternativas caso a caso).\n"
         "6. **NO inventes** otros métodos que MSK no acepta (solo tarjeta "

@@ -1194,6 +1194,27 @@ async def process_widget_message(
             AgentType.POST_SALES: "post_venta",
         }
         forced_agent = _agent_label_map.get(conversation.current_agent)
+
+    # ── Rechazo de pago en checkout → forzar agente "sales" ─────────────────
+    # Sin esto el LLM clasifica "rechazo de pago" como `cobranzas` y el agente
+    # de cobranzas NO tiene la tool `create_payment_link`. El user está en
+    # contexto de COMPRA (no de cobranza de un curso ya vendido), entonces va
+    # a sales que sí puede regenerar el link. El bloque de payment_rejection
+    # ya inyecta toda la info al system prompt.
+    if payment_rejection and not forced_agent:
+        forced_agent = "ventas"
+        await log_event(
+            session_id,
+            "intent",
+            {
+                "action": "agente_forzado_por_rechazo_pago",
+                "detail": (
+                    "Rechazo de pago en checkout — forzado a ventas para que "
+                    "tenga create_payment_link disponible"
+                ),
+                "agent": "ventas",
+            },
+        )
     if collected_email:
         user_email = collected_email
         conversation.user_profile.email = collected_email

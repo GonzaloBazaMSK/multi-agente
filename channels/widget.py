@@ -54,6 +54,27 @@ async def _resolve_course_title(page_slug: str, country: str) -> str:
     return ""
 
 
+def _has_profile_signal(ctx_lines: list[str]) -> bool:
+    """
+    True si las líneas de contexto contienen señales reales del perfil del
+    usuario (profesión/especialidad/cargo). Si False = usuario anónimo o
+    identificado pero sin perfil — en ese caso NO debemos inyectar la lista
+    de "perfiles dirigidos del curso" al system prompt, porque el LLM la
+    usaba para alucinar ("Como residente de…", "Como médico jefe…") aunque
+    no tuviéramos esos datos.
+    """
+    if not ctx_lines:
+        return False
+    for line in ctx_lines:
+        if (
+            line.startswith("Profesión:")
+            or line.startswith("Especialidad:")
+            or line.startswith("Cargo:")
+        ):
+            return True
+    return False
+
+
 async def _resolve_course_mini_brief(page_slug: str, country: str) -> dict:
     """
     Devuelve un mini-brief del curso para inyectar en el saludo personalizado:
@@ -758,11 +779,25 @@ async def generate_greeting_stateless(
                 )
                 if brief.get("short_desc"):
                     block += f"\n\nDescripción corta del curso:\n{brief['short_desc']}"
-                if brief.get("perfiles"):
+                # Solo inyectar la lista de perfiles dirigidos cuando TENEMOS
+                # señal real del perfil del usuario (profesión/especialidad).
+                # Sin esto, el LLM alucinaba ("Como residente de…") sobre un
+                # usuario anónimo eligiendo un perfil al azar de la lista.
+                if brief.get("perfiles") and _has_profile_signal(ctx_lines):
                     block += (
                         "\n\nPerfiles dirigidos del curso (usá el que matchee con la "
                         "profesión/especialidad del usuario para conectar el saludo):\n- "
                         + "\n- ".join(brief["perfiles"])
+                    )
+                elif brief.get("perfiles"):
+                    # Anónimo o sin perfil — NO listamos perfiles. Refuerzo
+                    # explícito para que el LLM no invente que el usuario es
+                    # de un perfil específico.
+                    block += (
+                        "\n\nNO conocemos la profesión/especialidad del usuario. "
+                        "PROHIBIDO asumir que es residente, médico, enfermería, "
+                        "estudiante o cualquier perfil específico. Hacé un saludo "
+                        "neutro mencionando solo el curso por su nombre."
                     )
                 system_txt += block
             # Si no tenemos el título real, NO mencionamos "ese curso"
@@ -1014,11 +1049,22 @@ async def process_widget_message(
                     )
                     if brief.get("short_desc"):
                         block += f"\n\nDescripción corta del curso:\n{brief['short_desc']}"
-                    if brief.get("perfiles"):
+                    # Solo listar perfiles cuando hay perfil real del usuario.
+                    # Ver `_has_profile_signal()` y comentario en
+                    # `generate_greeting_stateless` — sin este gate el LLM
+                    # alucinaba "Como residente de…" sobre usuarios anónimos.
+                    if brief.get("perfiles") and _has_profile_signal(ctx_lines):
                         block += (
                             "\n\nPerfiles dirigidos del curso (usá el que matchee con la "
                             "profesión/especialidad del usuario para conectar el saludo):\n- "
                             + "\n- ".join(brief["perfiles"])
+                        )
+                    elif brief.get("perfiles"):
+                        block += (
+                            "\n\nNO conocemos la profesión/especialidad del usuario. "
+                            "PROHIBIDO asumir que es residente, médico, enfermería, "
+                            "estudiante o cualquier perfil específico. Hacé un saludo "
+                            "neutro mencionando solo el curso por su nombre."
                         )
                     system_txt += block
                 # Si no tenemos el título real, NO mencionamos "ese curso"

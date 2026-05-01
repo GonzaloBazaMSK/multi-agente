@@ -263,6 +263,78 @@ def build_brief_md(item: dict, country: str) -> str:
             lines.append(html_to_text(datos_tec_html))
         lines.append("")
 
+    # ── Restricción de acceso por perfil profesional
+    # Capa 1: profession CPT (estructurado, disponible cuando el equipo lo cargue en WP)
+    # Capa 2: fallback a formacion_dirigida (texto libre, cubre mientras tanto)
+    _profession_list = item.get("profession") or []
+    _dirigida_access = (item.get("sections") or {}).get("formacion_dirigida") or []
+
+    _has_enfermeria = False
+    _has_otro = False
+    _access_source = None
+
+    if _profession_list and isinstance(_profession_list, list):
+        # Capa 1: profession CPT — fuente de verdad cuando está disponible
+        _prof_slugs = [str(p.get("slug", "")).lower() for p in _profession_list if isinstance(p, dict)]
+        _NON_MEDICO = {"enfermeria", "enfermero", "tecnico-salud", "tecnico_salud",
+                       "kinesiologo", "licenciado-salud", "licenciado_salud",
+                       "nutricionista", "fonoaudiologo", "otro-profesional"}
+        _has_enfermeria = any("enferm" in s for s in _prof_slugs)
+        _has_otro = any(s in _NON_MEDICO for s in _prof_slugs)
+        _access_source = "profession"
+    elif _dirigida_access:
+        # Capa 2: formacion_dirigida (texto libre) + slug como último fallback
+        _fd_texts = [
+            html_to_text(_d.get("step", "")) if isinstance(_d, dict) else html_to_text(str(_d))
+            for _d in _dirigida_access
+        ]
+        _fd_full = " ".join(_fd_texts).lower()
+        _NON_MEDICO_KW = ["enferm", "otro profesional", "personal sanitario",
+                          "tecnico", "kinesio", "licenciad", "nutricion", "fonoaud"]
+        _has_enfermeria = "enferm" in _fd_full or "enferm" in slug.lower()
+        _has_otro = any(kw in _fd_full for kw in _NON_MEDICO_KW)
+        _access_source = "formacion_dirigida"
+
+    if _access_source:
+        _medico_only = not _has_enfermeria and not _has_otro
+        _enfermeria_only = _has_enfermeria and not _has_otro
+
+        _targets_label = ""
+        if _profession_list and isinstance(_profession_list, list):
+            _targets_label = ", ".join(
+                p.get("name", p.get("slug", "")) for p in _profession_list if isinstance(p, dict)
+            )
+        elif _dirigida_access:
+            _raw_labels = [
+                html_to_text(_d.get("step", "")) if isinstance(_d, dict) else html_to_text(str(_d))
+                for _d in _dirigida_access
+            ]
+            _targets_label = " / ".join(t.strip() for t in _raw_labels if t.strip())[:300]
+
+        lines.append("## Restricción de acceso — perfiles habilitados")
+        if _targets_label:
+            lines.append(f"**Targets:** {_targets_label}")
+        if _medico_only:
+            lines.append(
+                "**🚨 ACCESO EXCLUSIVO MÉDICOS**: Este curso está diseñado ÚNICAMENTE para médicos "
+                "(médicos generales, especialistas, residentes, eminencias). "
+                "**Si el usuario dice ser enfermero/a, técnico en salud u otro profesional NO médico → "
+                "NO puede inscribirse en este curso.** "
+                "Respondé claro: el curso es exclusivo para médicos y ofrecé buscar alternativas para su perfil."
+            )
+        elif _enfermeria_only:
+            lines.append(
+                "**🚨 ACCESO EXCLUSIVO ENFERMERÍA**: Este curso está diseñado ÚNICAMENTE para "
+                "enfermeros/as. Si el usuario es médico u otro perfil → no es el curso indicado, "
+                "ofrecé alternativas."
+            )
+        else:
+            lines.append(
+                "**✅ ACCESO AMPLIO**: Este curso está habilitado para múltiples perfiles. "
+                "Médicos, enfermeros/as y/u otros profesionales de la salud pueden inscribirse."
+            )
+        lines.append("")
+
     # ── Perfiles objetivo (pain + gain) — GOLD para ventas
     perfiles = kb_ai.get("perfiles_dirigidos") or []
     if perfiles:

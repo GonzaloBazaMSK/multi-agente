@@ -122,10 +122,7 @@ async def run_stale_conversations_check() -> int:
                 user_profile = {}
 
         client_name = (
-            user_profile.get("name")
-            or user_profile.get("full_name")
-            or r["external_id"]
-            or "cliente"
+            user_profile.get("name") or user_profile.get("full_name") or r["external_id"] or "cliente"
         )
         mins = int((now - last_msg_at).total_seconds() / 60)
 

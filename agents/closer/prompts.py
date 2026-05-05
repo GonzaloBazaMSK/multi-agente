@@ -4,7 +4,6 @@ Se activa cuando un lead que ya fue contactado responde a un follow-up HSM.
 Su objetivo: retomar la conversación y cerrar la venta.
 """
 
-
 _RIO_DE_LA_PLATA = {"AR", "UY"}
 
 
@@ -12,20 +11,26 @@ def _tone_block_for_country(country: str) -> str:
     """Guía de tono por país — mismo criterio que sales/prompts.py."""
     c = (country or "").upper()
     if c in _RIO_DE_LA_PLATA:
-        return ("Para este usuario (AR/UY) usa tuteo con registro PROFESIONAL "
-                "cálido — estás hablando con profesionales de la salud. "
-                "Usá: 'excelente', 'perfecto', 'te cuento', 'comprendo', "
-                "'por supuesto', 'avanzamos con'. EVITÁ muletillas coloquiales: "
-                "'dale', 'genial', 'buenísimo', 'listo, aquí va' (suenan a "
-                "vendedor amateur, no a asesor académico). NUNCA voseo "
-                "('tenés/podés/querés/mirá/contame' están prohibidos).")
+        return (
+            "Para este usuario (AR/UY) usa tuteo con registro PROFESIONAL "
+            "cálido — estás hablando con profesionales de la salud. "
+            "Usá: 'excelente', 'perfecto', 'te cuento', 'comprendo', "
+            "'por supuesto', 'avanzamos con'. EVITÁ muletillas coloquiales: "
+            "'dale', 'genial', 'buenísimo', 'listo, aquí va' (suenan a "
+            "vendedor amateur, no a asesor académico). NUNCA voseo "
+            "('tenés/podés/querés/mirá/contame' están prohibidos)."
+        )
     if c == "ES":
-        return ("Para este usuario (ES) usa tuteo neutro formal: 'te cuento', "
-                "'perfecto', 'claro, aquí tienes'. Evita 'dale' y 'genial' "
-                "como muletillas (suenan latinoamericanos). NUNCA voseo.")
-    return (f"Para este usuario ({c or 'LATAM'}) usa tuteo neutro profesional: "
-            "'te cuento', 'perfecto', 'excelente elección', 'te recomiendo'. "
-            "NO uses 'dale' como muletilla (es rioplatense). NUNCA voseo.")
+        return (
+            "Para este usuario (ES) usa tuteo neutro formal: 'te cuento', "
+            "'perfecto', 'claro, aquí tienes'. Evita 'dale' y 'genial' "
+            "como muletillas (suenan latinoamericanos). NUNCA voseo."
+        )
+    return (
+        f"Para este usuario ({c or 'LATAM'}) usa tuteo neutro profesional: "
+        "'te cuento', 'perfecto', 'excelente elección', 'te recomiendo'. "
+        "NO uses 'dale' como muletilla (es rioplatense). NUNCA voseo."
+    )
 
 
 def build_closer_prompt(

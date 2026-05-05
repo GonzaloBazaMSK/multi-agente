@@ -47,6 +47,7 @@ VALID_TYPES = {
     "template_approved",
 }
 
+
 # Canal Redis pubsub — namespaced por user_id. Usamos un canal por user para
 # que el SSE de un user NO reciba todas las notificaciones de todos los
 # users (escalabilidad + privacidad).
@@ -274,8 +275,7 @@ async def update_preferences(
                 params.append(v)
             set_clauses.append("updated_at = now()")
             await conn.execute(
-                f"update public.notification_preferences "
-                f"set {', '.join(set_clauses)} where user_id = $1",
+                f"update public.notification_preferences " f"set {', '.join(set_clauses)} where user_id = $1",
                 *params,
             )
     return await get_preferences(user_id)

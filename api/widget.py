@@ -95,9 +95,7 @@ async def chat(request: Request, req: ChatRequest):
         user_courses=req.user_courses,
         page_slug=req.page_slug,
         initial_greeting=req.initial_greeting,
-        payment_rejection=(
-            req.payment_rejection.model_dump() if req.payment_rejection else None
-        ),
+        payment_rejection=(req.payment_rejection.model_dump() if req.payment_rejection else None),
     )
 
     return ChatResponse(

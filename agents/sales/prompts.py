@@ -3,7 +3,6 @@ Prompts del agente de ventas MSK Latam.
 Adaptado del bot de ventas n8n/Botmaker con los 16 intents originales.
 """
 
-
 # Países del Río de la Plata — tuteo con sabor rioplatense (sin voseo).
 # El resto de LATAM + España usa tuteo neutro formal.
 _RIO_DE_LA_PLATA = {"AR", "UY"}

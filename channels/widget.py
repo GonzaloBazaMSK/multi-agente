@@ -66,11 +66,7 @@ def _has_profile_signal(ctx_lines: list[str]) -> bool:
     if not ctx_lines:
         return False
     for line in ctx_lines:
-        if (
-            line.startswith("Profesión:")
-            or line.startswith("Especialidad:")
-            or line.startswith("Cargo:")
-        ):
+        if line.startswith("Profesión:") or line.startswith("Especialidad:") or line.startswith("Cargo:"):
             return True
     return False
 
@@ -1295,9 +1291,7 @@ async def process_widget_message(
 
             pr_block = _build_pr_block(payment_rejection)
             if pr_block:
-                history_without_last = [
-                    {"role": "system", "content": pr_block}
-                ] + history_without_last
+                history_without_last = [{"role": "system", "content": pr_block}] + history_without_last
                 await log_event(
                     session_id,
                     "action",

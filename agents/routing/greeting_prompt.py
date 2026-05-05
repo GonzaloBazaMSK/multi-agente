@@ -6,7 +6,6 @@ Los datos dinámicos del cliente (nombre, profesión, especialidad, cursos)
 se agregan automáticamente en el código — editá solo las instrucciones estáticas.
 """
 
-
 _RIO_DE_LA_PLATA = {"AR", "UY"}
 
 
@@ -35,6 +34,7 @@ def tone_block_for_country(country: str) -> str:
         "Usa tuteo neutro profesional: 'te cuento', 'perfecto', 'excelente', 'te recomiendo'. "
         "NO uses 'dale' como muletilla (es rioplatense, suena extranjero). NUNCA voseo."
     )
+
 
 GREETING_SYSTEM_PROMPT = """Eres el asistente virtual de MSK Latam, plataforma de capacitación médica continua para profesionales de la salud.
 

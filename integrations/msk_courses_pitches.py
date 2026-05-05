@@ -201,13 +201,15 @@ async def generate_pitches(
         total_rows_updated = 0
 
         if on_progress:
-            await on_progress({
-                "phase": "start",
-                "total": total,
-                "current": 0,
-                "ok": 0,
-                "err": 0,
-            })
+            await on_progress(
+                {
+                    "phase": "start",
+                    "total": total,
+                    "current": 0,
+                    "ok": 0,
+                    "err": 0,
+                }
+            )
 
         for i, r in enumerate(rows, 1):
             slug = r["slug"]
@@ -218,15 +220,17 @@ async def generate_pitches(
                 err += 1
                 logger.warning("pitch_skip_no_brief", slug=slug)
                 if on_progress:
-                    await on_progress({
-                        "phase": "progress",
-                        "total": total,
-                        "current": i,
-                        "slug": slug,
-                        "status": "skip",
-                        "ok": ok,
-                        "err": err,
-                    })
+                    await on_progress(
+                        {
+                            "phase": "progress",
+                            "total": total,
+                            "current": i,
+                            "slug": slug,
+                            "status": "skip",
+                            "ok": ok,
+                            "err": err,
+                        }
+                    )
                 continue
 
             try:
@@ -236,7 +240,9 @@ async def generate_pitches(
 
                 result = await conn.execute(
                     "update public.courses set pitch_hook=$1, pitch_by_profile=$2 where slug=$3",
-                    hook, json.dumps(by_prof, ensure_ascii=False), slug,
+                    hook,
+                    json.dumps(by_prof, ensure_ascii=False),
+                    slug,
                 )
                 try:
                     n_updated = int(result.split()[-1])
@@ -246,36 +252,42 @@ async def generate_pitches(
                 ok += 1
                 logger.info(
                     "pitch_generated",
-                    slug=slug, rows=n_updated, hook_chars=len(hook),
+                    slug=slug,
+                    rows=n_updated,
+                    hook_chars=len(hook),
                     profiles=len(by_prof),
                 )
                 if on_progress:
-                    await on_progress({
-                        "phase": "progress",
-                        "total": total,
-                        "current": i,
-                        "slug": slug,
-                        "status": "ok",
-                        "hook_chars": len(hook),
-                        "profiles": len(by_prof),
-                        "rows": n_updated,
-                        "ok": ok,
-                        "err": err,
-                    })
+                    await on_progress(
+                        {
+                            "phase": "progress",
+                            "total": total,
+                            "current": i,
+                            "slug": slug,
+                            "status": "ok",
+                            "hook_chars": len(hook),
+                            "profiles": len(by_prof),
+                            "rows": n_updated,
+                            "ok": ok,
+                            "err": err,
+                        }
+                    )
             except Exception as e:
                 err += 1
                 logger.exception("pitch_failed", slug=slug)
                 if on_progress:
-                    await on_progress({
-                        "phase": "progress",
-                        "total": total,
-                        "current": i,
-                        "slug": slug,
-                        "status": "err",
-                        "error": str(e),
-                        "ok": ok,
-                        "err": err,
-                    })
+                    await on_progress(
+                        {
+                            "phase": "progress",
+                            "total": total,
+                            "current": i,
+                            "slug": slug,
+                            "status": "err",
+                            "error": str(e),
+                            "ok": ok,
+                            "err": err,
+                        }
+                    )
 
         # Invalidar cache Redis de TODOS los paises — los hooks pueden afectar 17 paises.
         try:

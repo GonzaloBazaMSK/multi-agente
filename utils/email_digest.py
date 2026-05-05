@@ -198,13 +198,8 @@ async def _send_email(
 
 
 async def _send_via_resend(settings, to: str, subject: str, html: str, text: str):
-    api_key = getattr(settings, "resend_api_key", "") or getattr(
-        settings, "RESEND_API_KEY", ""
-    )
-    from_addr = (
-        getattr(settings, "email_from", "")
-        or "MSK Console <notifs@agentes.msklatam.com>"
-    )
+    api_key = getattr(settings, "resend_api_key", "") or getattr(settings, "RESEND_API_KEY", "")
+    from_addr = getattr(settings, "email_from", "") or "MSK Console <notifs@agentes.msklatam.com>"
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             "https://api.resend.com/emails",

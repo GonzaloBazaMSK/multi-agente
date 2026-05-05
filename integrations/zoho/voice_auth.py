@@ -51,8 +51,7 @@ class ZohoVoiceAuth:
         settings = get_settings()
         if not settings.zoho_voice_refresh_token:
             raise RuntimeError(
-                "ZOHO_VOICE_REFRESH_TOKEN no configurado. "
-                "Agregalo al .env (ver config/settings.py)."
+                "ZOHO_VOICE_REFRESH_TOKEN no configurado. " "Agregalo al .env (ver config/settings.py)."
             )
         url = f"{settings.zoho_accounts_url}/oauth/v2/token"
         params = {

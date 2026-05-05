@@ -230,9 +230,9 @@ def create_app() -> FastAPI:
     # cross-origin solo en esos paths — el resto del backend mantiene
     # same-site (postura más segura).
     _PUBLIC_CROSS_ORIGIN_PREFIXES = (
-        "/widget",        # /widget.js, /widget/chat, /widget/history/...
-        "/static",        # assets del widget (chat.css)
-        "/media",         # uploads que el widget muestra
+        "/widget",  # /widget.js, /widget/chat, /widget/history/...
+        "/static",  # assets del widget (chat.css)
+        "/media",  # uploads que el widget muestra
     )
 
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):

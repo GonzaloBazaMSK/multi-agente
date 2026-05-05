@@ -475,9 +475,7 @@ async def analytics(days: int = 30):
             "tmr_p90_min": tmr_p90,
         },
         "daily": [{"day": str(r["day"]), "count": r["cnt"]} for r in daily],
-        "heatmap": [
-            {"dow": r["dow"], "hour": r["hr"], "count": r["cnt"]} for r in heatmap
-        ],
+        "heatmap": [{"dow": r["dow"], "hour": r["hr"], "count": r["cnt"]} for r in heatmap],
         "leaderboard": [
             {
                 "agent_id": r["agent_id"],
@@ -640,22 +638,26 @@ async def _run_sync_briefs_job(started_by: str) -> None:
                 state["totals"]["upserted"] += r.get("upserted", 0)
                 state["totals"]["deleted"] += r.get("deleted", 0)
                 state["totals"]["errors"] += len(r.get("errors", []))
-                state["per_country"].append({
-                    "country": c,
-                    "fetched": r.get("fetched", 0),
-                    "upserted": r.get("upserted", 0),
-                    "deleted": r.get("deleted", 0),
-                    "errors": len(r.get("errors", [])),
-                    "duration_s": round(_time.time() - ts, 1),
-                })
+                state["per_country"].append(
+                    {
+                        "country": c,
+                        "fetched": r.get("fetched", 0),
+                        "upserted": r.get("upserted", 0),
+                        "deleted": r.get("deleted", 0),
+                        "errors": len(r.get("errors", [])),
+                        "duration_s": round(_time.time() - ts, 1),
+                    }
+                )
             except Exception as e:
                 logger.exception("courses_job_sync_country_failed", country=c)
                 state["totals"]["errors"] += 1
-                state["per_country"].append({
-                    "country": c,
-                    "error": str(e),
-                    "duration_s": round(_time.time() - ts, 1),
-                })
+                state["per_country"].append(
+                    {
+                        "country": c,
+                        "error": str(e),
+                        "duration_s": round(_time.time() - ts, 1),
+                    }
+                )
             await _job_write_state(_JOB_KEY_SYNC, state)
 
         state["status"] = "done"
@@ -704,14 +706,16 @@ async def _run_regen_pitches_job(started_by: str, force: bool) -> None:
             state["current_slug"] = p.get("slug")
             state["ok"] = p.get("ok", state["ok"])
             state["err"] = p.get("err", state["err"])
-            state["last_slugs"].append({
-                "slug": p.get("slug"),
-                "status": p.get("status"),
-                "hook_chars": p.get("hook_chars"),
-                "profiles": p.get("profiles"),
-                "rows": p.get("rows"),
-                "error": p.get("error"),
-            })
+            state["last_slugs"].append(
+                {
+                    "slug": p.get("slug"),
+                    "status": p.get("status"),
+                    "hook_chars": p.get("hook_chars"),
+                    "profiles": p.get("profiles"),
+                    "rows": p.get("rows"),
+                    "error": p.get("error"),
+                }
+            )
             # Mantener solo los ultimos 15 para no inflar Redis
             state["last_slugs"] = state["last_slugs"][-15:]
         await _job_write_state(_JOB_KEY_PITCH, state)
@@ -1405,9 +1409,7 @@ async def label_set(conv_id: str, body: LabelBody):
     try:
         from utils.realtime import broadcast_event
 
-        broadcast_event(
-            {"type": "label_updated", "session_id": session_id, "label": body.label}
-        )
+        broadcast_event({"type": "label_updated", "session_id": session_id, "label": body.label})
     except Exception:
         pass
 

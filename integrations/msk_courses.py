@@ -213,7 +213,9 @@ def build_brief_md(item: dict, country: str) -> str:
             f"**Precio (comunicar SIEMPRE en pagos mensuales, alineado con la web):** {max_inst} pagos de {currency} {inst_val:,.2f}"
         )
     elif total:
-        lines.append(f"**Precio:** {currency} {total:,.0f} (pago único — no se puede dividir en pagos mensuales)")
+        lines.append(
+            f"**Precio:** {currency} {total:,.0f} (pago único — no se puede dividir en pagos mensuales)"
+        )
 
     # Línea compacta: duración + módulos + categoría
     duration = item.get("duration")
@@ -293,9 +295,18 @@ def build_brief_md(item: dict, country: str) -> str:
     if _profession_list and isinstance(_profession_list, list):
         # Capa 1: profession CPT — fuente de verdad cuando está disponible
         _prof_slugs = [str(p.get("slug", "")).lower() for p in _profession_list if isinstance(p, dict)]
-        _NON_MEDICO = {"enfermeria", "enfermero", "tecnico-salud", "tecnico_salud",
-                       "kinesiologo", "licenciado-salud", "licenciado_salud",
-                       "nutricionista", "fonoaudiologo", "otro-profesional"}
+        _NON_MEDICO = {
+            "enfermeria",
+            "enfermero",
+            "tecnico-salud",
+            "tecnico_salud",
+            "kinesiologo",
+            "licenciado-salud",
+            "licenciado_salud",
+            "nutricionista",
+            "fonoaudiologo",
+            "otro-profesional",
+        }
         _has_enfermeria = any("enferm" in s for s in _prof_slugs)
         _has_otro = any(s in _NON_MEDICO for s in _prof_slugs)
         _access_source = "profession"
@@ -306,8 +317,16 @@ def build_brief_md(item: dict, country: str) -> str:
             for _d in _dirigida_access
         ]
         _fd_full = " ".join(_fd_texts).lower()
-        _NON_MEDICO_KW = ["enferm", "otro profesional", "personal sanitario",
-                          "tecnico", "kinesio", "licenciad", "nutricion", "fonoaud"]
+        _NON_MEDICO_KW = [
+            "enferm",
+            "otro profesional",
+            "personal sanitario",
+            "tecnico",
+            "kinesio",
+            "licenciad",
+            "nutricion",
+            "fonoaud",
+        ]
         _has_enfermeria = "enferm" in _fd_full or "enferm" in slug.lower()
         _has_otro = any(kw in _fd_full for kw in _NON_MEDICO_KW)
         _access_source = "formacion_dirigida"
@@ -434,11 +453,7 @@ def build_brief_md(item: dict, country: str) -> str:
         # El WP devuelve `study_plan_file` en el TOP-LEVEL del JSON del producto,
         # NO dentro de `sections.study_plan`. Probamos ambos paths por
         # compatibilidad con versiones del plugin.
-        spf = (
-            item.get("study_plan_file")
-            or study_plan.get("study_plan_file")
-            or ""
-        )
+        spf = item.get("study_plan_file") or study_plan.get("study_plan_file") or ""
         if spf:
             lines.append(f"\n📄 [Descargar temario completo (PDF)]({spf})")
         lines.append("")
@@ -622,10 +637,10 @@ def build_brief_md(item: dict, country: str) -> str:
                 lines.append(line)
             lines.append("")
             lines.append(
-                "**Cómo comunicarlo (texto sugerido)**: *\"Certificaciones en "
+                '**Cómo comunicarlo (texto sugerido)**: *"Certificaciones en '
                 "Argentina: el curso cuenta con la certificación del Colegio "
                 "Médico de la Provincia de Buenos Aires, Distrito III (COLMED III) "
-                "— válida a nivel nacional para médicos matriculados en Argentina.\"*"
+                '— válida a nivel nacional para médicos matriculados en Argentina."*'
             )
             lines.append("")
 
@@ -651,9 +666,9 @@ def build_brief_md(item: dict, country: str) -> str:
                 "Si el usuario pregunta por avales locales AR o menciona "
                 "matrícula provincial, aclarale que puede sumar la certificación "
                 "de su colegio/consejo **sin costo, si está matriculado ahí**. "
-                "Una línea genérica si no tenés matrícula registrada: *\"Y además, "
+                'Una línea genérica si no tenés matrícula registrada: *"Y además, '
                 "certificaciones jurisdiccionales si estás matriculado en alguno "
-                "de los colegios provinciales como [lista].\"*"
+                'de los colegios provinciales como [lista]."*'
             )
             lines.append("")
         elif is_ar:

@@ -118,7 +118,7 @@ bloque pisa el flujo normal de reconexión.** En tu primer turno:
 - `create_sales_order(...)` — registra orden de venta en Zoho (uso interno)
 - `check_lead_history(phone)` — consulta historial de interacciones del lead
 
-⚠️ **El cierre NO usa tools de pago**. El cierre se hace enviando el link directo al checkout: `https://msklatam.com/checkout/{slug}`. El usuario completa sus datos y abona ahí.
+⚠️ **El cierre NO usa tools de pago**. El cierre se hace enviando el link directo al checkout: `https://msklatam.com/checkout/{{slug}}`. El usuario completa sus datos y abona ahí.
 
 ## ESTRATEGIA DE CIERRE — 5 FASES
 
@@ -161,13 +161,13 @@ Cuando el lead muestra señales de compra (*"¿cómo pago?"*, *"sí"*, *"me anot
    - **Sin cupón** (señal limpia de compra, no hubo objeción previa):
      > *"Te paso el link:*
      >
-     > *https://msklatam.com/checkout/{slug}*
+     > *https://msklatam.com/checkout/{{slug}}*
      >
      > *En el checkout completás tus datos y abonás con tarjeta."*
    - **Con cupón** (ya hubo objeción previa y le ofreciste BOT15 o BOT20):
      > *"Te paso el link:*
      >
-     > *https://msklatam.com/checkout/{slug}*
+     > *https://msklatam.com/checkout/{{slug}}*
      >
      > *Recordá ingresar el código **BOT15** (o BOT20 si escalaste) en el checkout, en el campo "¿Tenés un código de descuento?" del resumen de inscripción."*
 3. Cierre cálido y profesional: *"Cualquier consulta durante el proceso, escribime."*

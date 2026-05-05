@@ -139,3 +139,39 @@ class PaymentStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     IN_ARREARS = "in_arrears"
+
+
+# ── Másters: NO se venden por checkout, derivar a asesor humano ──────────────
+# Identificación: product_id en el rango [8000000, 8999999] (los 6 másters
+# actuales son 8000000–8000005). El criterio coincide 1:1 con `title LIKE
+# 'Máster%'`. Slug NO sirve (los slugs son tipo "cuidados-paliativos" sin
+# prefijo).
+#
+# Política: el bot NUNCA debe pitchear, listar ni dar link de checkout para
+# estos cursos. Si el user los menciona, derivar a asesor académico humano
+# (handoff).
+MASTER_PRODUCT_ID_MIN = 8000000
+MASTER_PRODUCT_ID_MAX = 8999999
+
+MASTER_SLUGS = frozenset(
+    {
+        "clinica-infanto-juvenil",
+        "cuidados-paliativos",
+        "imagen-clinica-y-ecografia",
+        "nutricion-antiaging-microbiota-y-glp",
+        "rehabilitacion-y-fisioterapia-del-deporte",
+        "urgencias-y-emergencias",
+    }
+)
+
+
+def is_master_slug(slug: str) -> bool:
+    """True si el slug corresponde a un Máster (NO vendible por checkout)."""
+    return (slug or "").strip().lower() in MASTER_SLUGS
+
+
+def is_master_product_id(product_id: int | None) -> bool:
+    """True si el product_id está en el rango de Másters."""
+    if product_id is None:
+        return False
+    return MASTER_PRODUCT_ID_MIN <= int(product_id) <= MASTER_PRODUCT_ID_MAX

@@ -533,7 +533,14 @@ async def get_catalog_compact(country: str) -> str:
     """
     Devuelve el catálogo compacto de un país para inyectar en el system prompt.
     ~40 tokens por curso × 100 cursos ≈ 4,000 tokens.
+
+    Excluye los Másters (product_id 8000000-8999999) — esos no se venden por
+    checkout y el bot NO debe ofrecerlos. Si aparecen en el catálogo del
+    prompt, el LLM los va a recomendar igual aunque haya una regla en texto
+    que diga lo contrario. Más seguro filtrarlos en la fuente.
     """
+    from config.constants import MASTER_PRODUCT_ID_MAX, MASTER_PRODUCT_ID_MIN
+
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -542,9 +549,12 @@ async def get_catalog_compact(country: str) -> str:
                    price_installments, pitch_hook
             from public.courses
             where country = $1
+              and (product_id is null or product_id < $2 or product_id > $3)
             order by categoria asc, title asc
             """,
             country.lower(),
+            MASTER_PRODUCT_ID_MIN,
+            MASTER_PRODUCT_ID_MAX,
         )
     if not rows:
         return ""

@@ -20,6 +20,23 @@ from integrations.zoho.sales_orders import ZohoSalesOrders
 logger = structlog.get_logger(__name__)
 
 
+# Respuesta dura cuando el LLM intenta consultar un Máster por brief o deep.
+# Los Másters NO se venden por checkout — flujo separado vía asesor humano.
+# El bot debe leer este texto, NO inventar pitch del Máster, y derivar.
+_MASTER_DERIVATION_RESPONSE = (
+    "⛔ STOP — '{slug}' es un MÁSTER PREMIUM. NO se inscribe por el sitio "
+    "ni tiene link de checkout. Flujo de inscripción: asesor académico humano.\n\n"
+    "Acciones a hacer EN ESTE TURNO:\n"
+    "1. NO pitchees el máster, NO listes módulos, NO des precio.\n"
+    "2. Decile al user: «Ese es un Máster premium con un proceso de inscripción "
+    "distinto. Te derivo a un asesor académico humano para que te lo coordine personalmente.»\n"
+    "3. Si tenés alternativa NO-Máster del mismo área (ej: 'Diplomado en X' o "
+    "'Curso superior de X'), ofrecela como puente.\n"
+    "4. Marcá handoff_requested=true (pedile al user que confirme con su email "
+    "para que el asesor lo contacte)."
+)
+
+
 @tool
 async def get_course_brief(slug: str, country: str = "AR") -> str:
     """
@@ -31,7 +48,11 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
         slug: Slug del curso (lo ves en el catálogo del system prompt)
         country: Código de país del usuario (AR, MX, CO, PE, CL, UY, etc.)
     """
+    from config.constants import is_master_slug
     from integrations import courses_cache
+
+    if is_master_slug(slug):
+        return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     course = await courses_cache.get_course(country.lower(), slug)
     if not course:
@@ -75,7 +96,11 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
             - 'prices' → precio y cuotas
             - 'summary' → resumen corto (default)
     """
+    from config.constants import is_master_slug
     from integrations import courses_cache
+
+    if is_master_slug(slug):
+        return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     course = await courses_cache.get_course_deep(country, slug)
     if not course:

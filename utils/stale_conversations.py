@@ -19,7 +19,7 @@ Heurística de "sin respuesta":
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import structlog
 
@@ -48,7 +48,7 @@ async def run_stale_conversations_check() -> int:
         #   - último msg es del user
         #   - ventana [2h .. 24h] desde que se mandó el último msg
         rows = await conn.fetch(
-            """
+            f"""
             with last_msg as (
                 select distinct on (conversation_id)
                     conversation_id, role, created_at
@@ -67,9 +67,9 @@ async def run_stale_conversations_check() -> int:
             where cm.assigned_agent_id is not null
               and cm.status in ('open', 'pending')
               and lm.role = 'user'
-              and lm.created_at < now() - interval '{stale_hours} hours'
-              and lm.created_at > now() - interval '{ignore_hours} hours'
-            """.format(stale_hours=STALE_THRESHOLD_HOURS, ignore_hours=IGNORE_OLDER_THAN_HOURS)
+              and lm.created_at < now() - interval '{STALE_THRESHOLD_HOURS} hours'
+              and lm.created_at > now() - interval '{IGNORE_OLDER_THAN_HOURS} hours'
+            """
         )
 
     if not rows:
@@ -89,7 +89,7 @@ async def run_stale_conversations_check() -> int:
 
     from utils.notifications import notify
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     notified = 0
 
     for r in rows:
@@ -97,7 +97,7 @@ async def run_stale_conversations_check() -> int:
         agent_id = r["agent_id"]
         last_msg_at = r["last_msg_at"]
         if last_msg_at.tzinfo is None:
-            last_msg_at = last_msg_at.replace(tzinfo=timezone.utc)
+            last_msg_at = last_msg_at.replace(tzinfo=UTC)
 
         # SET NX EX — gana solo si la key no existe. Evita que dos workers
         # ejecuten el mismo job y disparen dos notifs a la vez.

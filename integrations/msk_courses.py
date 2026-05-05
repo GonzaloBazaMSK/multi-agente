@@ -258,7 +258,24 @@ def build_brief_md(item: dict, country: str) -> str:
                     # pregunta cuánto tiempo tiene para cursar.
                     if key.lower().startswith("duraci") and "hora" in val.lower():
                         continue
-                    lines.append(f"- **{key}:** {val}")
+                    line = f"- **{key}:** {val}"
+                    # Aclaración para "Acceso: Activación flexible de X meses
+                    # de licencia" — el LLM lo interpretaba como "ventana para
+                    # activar" en vez de "duración total de la licencia desde
+                    # la activación". Agregamos una nota explícita para evitar
+                    # esa confusión.
+                    if (
+                        key.lower().startswith("acceso")
+                        and "activaci" in val.lower()
+                        and ("mes" in val.lower() or "año" in val.lower() or "ano" in val.lower())
+                    ):
+                        line += (
+                            " _(el período de licencia corre **desde el momento "
+                            "de la activación** del curso, no desde la inscripción; "
+                            "el alumno puede activarlo hasta 90 días después de "
+                            "inscribirse)._"
+                        )
+                    lines.append(line)
         else:
             lines.append(html_to_text(datos_tec_html))
         lines.append("")
@@ -573,9 +590,11 @@ def build_brief_md(item: dict, country: str) -> str:
             lines.append(
                 "> **IMPORTANTE:** Estas certificaciones son **opcionales** y tienen "
                 "**costo adicional aparte del precio del curso**. "
-                "**NO las menciones en el primer pitch ni al listar cursos.** "
-                "Solo comunicalas si el usuario pregunta puntualmente por "
-                "certificación universitaria, UDIMA, o validez académica extendida. "
+                "**NO las menciones en el primer pitch ni al listar cursos** — son un "
+                "complemento, no el ancla del pitch. "
+                "Pero **SÍ mencionalas** cuando el usuario pregunta por **certificaciones, "
+                "avales, validez académica o '¿qué certifica el curso?'** — listalas con su "
+                "nombre real (UDIMA, EUNEIZ, UCAM, otra) y el precio. "
                 "Al comunicarlas, aclará siempre: *'es opcional y se paga aparte'*."
             )
             for m in aval_opcionales_pagos:

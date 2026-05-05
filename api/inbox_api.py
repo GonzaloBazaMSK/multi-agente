@@ -607,7 +607,7 @@ async def _job_read_state(key: str) -> dict | None:
 async def _run_sync_briefs_job(started_by: str) -> None:
     """Sincroniza todos los paises desde el WP (regenera los brief_md)."""
     import time as _time
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from api.admin_courses import ENABLED_COUNTRIES
     from integrations import msk_courses
@@ -615,7 +615,7 @@ async def _run_sync_briefs_job(started_by: str) -> None:
     t0 = _time.time()
     state = {
         "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
         "started_by": started_by,
         "total_countries": len(ENABLED_COUNTRIES),
@@ -661,7 +661,7 @@ async def _run_sync_briefs_job(started_by: str) -> None:
             await _job_write_state(_JOB_KEY_SYNC, state)
 
         state["status"] = "done"
-        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["finished_at"] = datetime.now(UTC).isoformat()
         state["duration_s"] = round(_time.time() - t0, 1)
         await _job_write_state(_JOB_KEY_SYNC, state)
         logger.info("courses_job_sync_done", **state["totals"])
@@ -669,21 +669,21 @@ async def _run_sync_briefs_job(started_by: str) -> None:
         logger.exception("courses_job_sync_failed")
         state["status"] = "error"
         state["error"] = str(e)
-        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["finished_at"] = datetime.now(UTC).isoformat()
         await _job_write_state(_JOB_KEY_SYNC, state)
 
 
 async def _run_regen_pitches_job(started_by: str, force: bool) -> None:
     """Regenera pitch_hook + pitch_by_profile con LLM para slugs con kb_ai."""
     import time as _time
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from integrations import msk_courses_pitches
 
     t0 = _time.time()
     state = {
         "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
         "started_by": started_by,
         "force": bool(force),
@@ -726,7 +726,7 @@ async def _run_regen_pitches_job(started_by: str, force: bool) -> None:
             on_progress=_on_progress,
         )
         state["status"] = "done"
-        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["finished_at"] = datetime.now(UTC).isoformat()
         state["duration_s"] = round(_time.time() - t0, 1)
         state["rows_updated"] = result.get("rows_updated", 0)
         # Los contadores finales ya vienen del progress, pero los refuerzo con el
@@ -740,7 +740,7 @@ async def _run_regen_pitches_job(started_by: str, force: bool) -> None:
         logger.exception("courses_job_pitches_failed")
         state["status"] = "error"
         state["error"] = str(e)
-        state["finished_at"] = datetime.now(timezone.utc).isoformat()
+        state["finished_at"] = datetime.now(UTC).isoformat()
         await _job_write_state(_JOB_KEY_PITCH, state)
 
 

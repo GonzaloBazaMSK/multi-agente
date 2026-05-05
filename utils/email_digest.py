@@ -28,7 +28,7 @@ Diseño del mail (texto plano + HTML simple, sin deps de templating):
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
@@ -88,7 +88,7 @@ async def run_email_digest() -> dict:
     profiles = await list_profiles()
     profile_by_id = {p["id"]: p for p in profiles}
 
-    yesterday = datetime.now(timezone.utc) - timedelta(hours=26)
+    yesterday = datetime.now(UTC) - timedelta(hours=26)
     sent = 0
     errors = 0
 

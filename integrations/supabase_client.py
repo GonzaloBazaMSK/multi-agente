@@ -7,8 +7,12 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SECRET_KEY = os.environ["SUPABASE_SECRET_KEY"]
+# Lecturas perezosas — el smoke test del CI importa el módulo sin las env vars
+# seteadas. Si las leemos a nivel módulo con `os.environ[...]`, el import
+# explota con KeyError. En cambio con `os.environ.get(..., "")` el import
+# pasa y los runtime errors solo aparecen cuando se usa una función real.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 
 
 def _headers() -> dict:

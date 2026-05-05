@@ -128,22 +128,31 @@ async def lifespan(app: FastAPI):
     pubsub_task = asyncio.create_task(start_pubsub_listener())
     logger.info("pubsub_listener_started")
 
-    # Scheduler autónomo: retargeting cycle cada 1h + auto-retry diario 10am.
-    # Solo 1 worker debe correr el scheduler — usamos lock en Redis.
-    try:
-        from memory.conversation_store import get_conversation_store
+    # Scheduler autónomo: retargeting cycle cada 1h + auto-retry diario 10am
+    # + courses_sync 3:30am + stale convs cada 15m + email digest 9am.
+    # Solo 1 worker corre el scheduler. Patrón: leadership lock con heartbeat
+    # + reaquire loop. Si el holder muere, otro worker lo levanta en ≤150s.
+    # Ver utils/scheduler.py para detalles del lock.
+    from utils.scheduler import start_scheduler, try_acquire_scheduler_lock
 
-        store = await get_conversation_store()
-        got_lock = await store._redis.set("scheduler:lock", "1", ex=3600, nx=True)
-        if got_lock:
-            from utils.scheduler import start_scheduler
+    async def _scheduler_acquirer_loop() -> None:
+        """Background task: cada 30s intenta agarrar el lock. Si lo agarra y
+        no tenemos scheduler corriendo, lo arranca. Idempotente — start_scheduler
+        es no-op si ya está corriendo."""
+        from utils.scheduler import get_scheduler
 
-            await start_scheduler()
-            logger.info("autonomous_scheduler_active")
-        else:
-            logger.info("autonomous_scheduler_skipped_already_running")
-    except Exception as e:
-        logger.warning("scheduler_start_failed", error=str(e))
+        while True:
+            try:
+                if await try_acquire_scheduler_lock():
+                    if not get_scheduler().running:
+                        await start_scheduler()
+                        logger.info("autonomous_scheduler_active")
+            except Exception as e:
+                logger.warning("scheduler_acquirer_loop_error", error=str(e))
+            await asyncio.sleep(30)
+
+    scheduler_task = asyncio.create_task(_scheduler_acquirer_loop())
+    logger.info("scheduler_acquirer_loop_started")
 
     yield
 
@@ -155,6 +164,13 @@ async def lifespan(app: FastAPI):
     pubsub_task.cancel()
     try:
         await asyncio.wait_for(pubsub_task, timeout=2.0)
+    except (TimeoutError, asyncio.CancelledError):
+        pass
+
+    # 1b. Cancelar el acquirer loop del scheduler.
+    scheduler_task.cancel()
+    try:
+        await asyncio.wait_for(scheduler_task, timeout=2.0)
     except (TimeoutError, asyncio.CancelledError):
         pass
 

@@ -67,10 +67,9 @@ async def run_stale_conversations_check() -> int:
             where cm.assigned_agent_id is not null
               and cm.status in ('open', 'pending')
               and lm.role = 'user'
-              and lm.created_at < now() - interval '%s hours'
-              and lm.created_at > now() - interval '%s hours'
-            """
-            % (STALE_THRESHOLD_HOURS, IGNORE_OLDER_THAN_HOURS)
+              and lm.created_at < now() - interval '{stale_hours} hours'
+              and lm.created_at > now() - interval '{ignore_hours} hours'
+            """.format(stale_hours=STALE_THRESHOLD_HOURS, ignore_hours=IGNORE_OLDER_THAN_HOURS)
         )
 
     if not rows:

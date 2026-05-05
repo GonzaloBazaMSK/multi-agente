@@ -8,7 +8,6 @@ from langchain_core.tools import tool
 
 from agents.sales.tools import (
     create_or_update_lead,
-    create_payment_link,
     create_sales_order,
     get_course_brief,
     get_course_deep,
@@ -102,11 +101,12 @@ async def check_lead_history(phone: str) -> str:
     return "\n".join(lines)
 
 
-# All tools available to the closer
+# All tools available to the closer.
+# `create_payment_link` quedó deprecated del flow del bot (el cierre ahora se
+# hace enviando el link directo al checkout: msklatam.com/checkout/{slug}).
 CLOSER_TOOLS = [
     get_course_brief,
     get_course_deep,
-    create_payment_link,
     create_or_update_lead,
     create_sales_order,
     check_lead_history,

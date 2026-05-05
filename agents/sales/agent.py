@@ -11,7 +11,6 @@ from langgraph.prebuilt import create_react_agent
 from agents.sales.prompts import build_sales_prompt
 from agents.sales.tools import (
     create_or_update_lead,
-    create_payment_link,
     create_sales_order,
     get_course_brief,
     get_course_deep,
@@ -20,10 +19,13 @@ from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
+# `create_payment_link` quedó deprecated del flow del bot (el cierre ahora
+# se hace enviando el link directo al checkout: msklatam.com/checkout/{slug}).
+# La función sigue existiendo en agents/sales/tools.py por si en el futuro se
+# vuelve a usar, pero NO se incluye como tool del agente de ventas.
 SALES_TOOLS = [
     get_course_brief,
     get_course_deep,
-    create_payment_link,
     create_or_update_lead,
     create_sales_order,
 ]

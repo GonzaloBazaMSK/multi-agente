@@ -12,9 +12,12 @@ import {
   Settings,
   MessageSquare,
   Kanban,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth, hasRole, type Role } from "@/lib/auth";
+import { useTheme } from "@/lib/use-theme";
 import { UserMenu } from "./user-menu";
 import { NotificationsDropdown } from "./notifications-dropdown";
 
@@ -42,6 +45,7 @@ const NAV: RailLink[] = [
 export function Rail() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const visibleNav = NAV.filter((item) => !item.min || hasRole(user, item.min));
 
   return (
@@ -82,8 +86,21 @@ export function Rail() {
         })}
       </nav>
 
-      {/* Bottom: configuración + notificaciones + avatar con menú */}
+      {/* Bottom: tema + configuración + notificaciones + avatar con menú */}
       <div className="flex flex-col items-center gap-1 mt-auto">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="rail-tooltip-wrap relative w-9 h-9 rounded-md flex items-center justify-center text-fg-muted hover:bg-hover hover:text-fg transition-colors"
+          data-tooltip={theme === "dark" ? "Cambiar a tema claro" : "Cambiar a tema oscuro"}
+          aria-label="Toggle theme"
+        >
+          {theme === "dark" ? (
+            <Sun className="w-[18px] h-[18px]" />
+          ) : (
+            <Moon className="w-[18px] h-[18px]" />
+          )}
+        </button>
         <Link
           href="/settings"
           className={cn(
@@ -110,8 +127,8 @@ export function Rail() {
           left: calc(100% + 10px);
           top: 50%;
           transform: translateY(-50%);
-          background: #1f1f1f;
-          color: #fafafa;
+          background: rgb(var(--c-hover));
+          color: rgb(var(--c-fg));
           padding: 4px 8px;
           border-radius: 6px;
           font-size: 11px;
@@ -120,7 +137,7 @@ export function Rail() {
           pointer-events: none;
           transition: opacity 0.15s;
           z-index: 50;
-          border: 1px solid #3a3a3a;
+          border: 1px solid rgb(var(--c-border-2));
         }
         .rail-tooltip-wrap:hover::after {
           opacity: 1;

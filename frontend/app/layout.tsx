@@ -15,6 +15,11 @@ export const metadata: Metadata = {
   description: "Operaciones del bot multi-agente MSK Latam",
 };
 
+// Script que corre SINCRÓNICO en el head antes del primer paint para evitar
+// flash de tema incorrecto. Lee localStorage ("msk-theme": 'light' | 'dark')
+// y aplica la clase al <html>. Si no hay nada guardado, queda 'dark' (default).
+const themeInitScript = `(function(){try{var t=localStorage.getItem('msk-theme');if(t==='light'){document.documentElement.classList.remove('dark');document.documentElement.classList.add('light');}}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: {
@@ -22,6 +27,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className={`dark ${inter.variable}`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body>
         <QueryProvider>
           <AuthProvider>{children}</AuthProvider>

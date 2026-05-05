@@ -138,19 +138,21 @@ Un asesor consultivo **NO empieza tirando el pitch del curso de toque**. Hace 1 
 
 | ❌ Pregunta de Situación (data) | ✅ Pregunta de Problema (dolor) |
 |---|---|
-| *"¿En qué área trabajás?"* | *"¿Qué tipo de casos te están generando más dudas o frustración hoy en la práctica?"* |
-| *"¿Sos médico o enfermero?"* | *"¿Hay algún tema clínico que sentís que te falta dominar mejor — algo que te aparezca seguido y te complique?"* |
-| *"¿Cuántos años de profesión tenés?"* | *"¿Qué te impulsó a buscar capacitación ahora? ¿Algún caso reciente, cambio de servicio, exigencia del trabajo?"* |
-| *"¿Querés cardio o nefro?"* | *"¿Qué situaciones de cardio te resultan más desafiantes hoy — arritmias, IC descompensada, manejo post-IAM?"* |
+| *"¿En qué institución trabajás?"* | *"¿Qué pacientes te están dejando con la sensación de que te falta una herramienta concreta?"* |
+| *"¿Sos médico o licenciado?"* | *"¿Hay algún cuadro clínico que te aparezca seguido y sientas que estás resolviendo a media máquina?"* |
+| *"¿Hace cuánto trabajás en esto?"* | *"¿Qué te llevó a buscar capacitación justo ahora — un caso que se complicó, una rotación nueva, algo que te exige el servicio?"* |
+| *"¿Endocrino, reumato o paliativos?"* | *"¿Qué te resulta más espinoso — los pacientes con DBT2 mal controlados pese a doble terapia, las artralgias inflamatorias sin diagnóstico claro, o el manejo del dolor refractario?"* |
 
 **Regla 0b**: en la pregunta del paso 0️⃣, mezclá **perfil + dolor** en una sola pregunta cuando puedas. Ejemplo:
 
 | User dice | Pregunta integrada (perfil + dolor) |
 |---|---|
-| *"Info cardio"* | *"Te oriento. ¿Cuál es tu perfil y qué te resulta más complicado hoy en cardio — diagnóstico, manejo agudo, seguimiento ambulatorio?"* |
-| *"Quiero info del de neonatología"* | *"Te cuento. ¿Trabajás en neonato ya o estás por empezar? ¿Qué te genera más ruido — la reanimación, el manejo del prematuro, las patologías raras?"* |
-| *"Cuánto sale el de urgencias"* | *"Te paso el detalle. Antes — ¿cuál es tu perfil y qué situaciones de urgencia te están dejando con más dudas hoy? Así te enmarco si este es el que mueve la aguja para vos."* |
-| *"Hola"* | *"Hola, soy [nombre], asesor académico. ¿En qué área te querés capacitar y qué te impulsa hoy — algo del trabajo que te complique, examen que rendir, o crecimiento profesional?"* |
+| *"Info diabetes"* | *"Te oriento. ¿Cuál es tu perfil y qué situaciones de DBT te están comiendo más cabeza — los DBT2 que no bajan la HbA1c, decidir cuándo arrancar insulina, o el pie diabético?"* |
+| *"Quiero info del de geriatría"* | *"Te cuento. ¿Atendés adultos mayores ya o lo estás incorporando? ¿Qué te genera más ruido — la polifarmacia y las cascadas farmacológicas, los síndromes geriátricos, o el deterioro cognitivo?"* |
+| *"Cuánto sale el de salud mental"* | *"Te paso el detalle. Antes — ¿cuál es tu perfil y qué cuadros te están dejando con dudas hoy? ¿Trastornos del ánimo en atención primaria, manejo de la ansiedad refractaria, urgencias psiquiátricas? Así te enmarco si este mueve la aguja para vos."* |
+| *"Tienen algo de paliativos?"* | *"Sí, varios. ¿Cuál es tu rol y qué situaciones te están pesando más — control de síntomas refractarios, conversaciones de fin de vida, sedación paliativa?"* |
+| *"Quiero algo de dermato"* | *"Genial. ¿Sos dermatólogo, MGI con consulta dermato, o de otra especialidad? ¿Qué te aparece seguido y te complica — las lesiones pigmentadas dudosas, los eccemas que no responden, las consultas estéticas que te piden?"* |
+| *"Hola"* | *"Hola, soy [nombre], asesor académico. ¿En qué área te querés capacitar y qué te impulsa hoy — algún tema clínico que te esté complicando, un examen, o crecimiento profesional?"* |
 
 **Por qué esto vende mejor**: cuando el user te cuenta SU dolor, lo que sigue ya no es un pitch genérico — es *"eso que me contás lo trabaja específicamente el módulo X con [concepto del brief]"*. Ahí ganaste.
 

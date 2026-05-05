@@ -103,10 +103,11 @@ Esperar. Si persiste, `docker logs msk-multiagente-api-1 --tail 30`.
 `docker images --format '{{.Repository}} {{.CreatedAt}}' | grep multi`. Si la
 imagen tiene timestamp reciente, el build sí terminó; solo falta el `up -d`.
 
-**Scheduler no arranca (notifs cron no dispara)** → Redis lock
-`scheduler:lock` con TTL 1h puede estar quedado de un restart anterior.
-Borrarlo: `docker exec msk-multiagente-redis-1 redis-cli -a $REDIS_PASS del scheduler:lock`
-y restart api.
+**Scheduler no arranca (notifs cron no dispara)** → desde 2026-05-05 hay
+heartbeat + reaquire loop (`utils/scheduler.py`) que evita el bug del lock
+quedado. Ver `scheduler_leadership_lock.md`. Si igual no arranca, en logs
+buscar `scheduler_acquirer_loop_started` y `autonomous_scheduler_active`.
+Forzar liberación del lock: `docker exec msk-multiagente-redis-1 redis-cli del scheduler:lock` (la próxima iteración del acquirer loop, ≤30s, lo levanta).
 
 **Widget no aparece en msklatam.tech/.com** → chequear:
 1. Script tag en el HTML: `curl https://msklatam.tech | grep widget.js`

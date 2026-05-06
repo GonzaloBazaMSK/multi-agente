@@ -550,6 +550,8 @@ def build_collections_prompt(ficha: dict | None = None) -> str:
         "moneda": "ARS",
         "alumno": "Alumno",
         "email": "No proporcionado",
+        "cobranzaId": "No registrado",
+        "phone": "No registrado",
         "estadoGestion": "Desconocido",
         "estadoMora": "Al día",
         "metodoPago": "No registrado",

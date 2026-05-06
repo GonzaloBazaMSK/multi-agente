@@ -66,20 +66,33 @@ def _alpha(text: str) -> str:
 def _match(user_text: str, buttons: list[str]) -> str | None:
     """
     Compara el texto del usuario con la lista de botones.
-    Devuelve el botón que coincide o None.
+    Devuelve el botón que MEJOR coincide (mayor overlap de palabras), no el
+    primero por orden de lista.
+
+    El bug original: "Soporte Cobros 🤝" matcheaba contra "Soporte Alumnos
+    🛠️" porque ambos comparten "soporte" y devolvíamos el primer match por
+    orden. Resultado: el alumno iba a post_venta cuando el botón decía
+    cobranzas. Ahora elegimos el de mayor overlap → "Soporte Cobros" gana
+    porque comparte 2 palabras ("soporte" + "cobros") vs 1 de "Alumnos".
     """
     u = _alpha(user_text)
+    # Pase 1 — match completo (subcadena exacta).
     for btn in buttons:
         b = _alpha(btn)
-        # Contenido completo
         if b in u or u in b:
             return btn
-        # Al menos una palabra significativa en común (> 2 letras)
+    # Pase 2 — elegir el botón con MÁS palabras significativas en común.
+    best_btn: str | None = None
+    best_overlap = 0
+    for btn in buttons:
+        b = _alpha(btn)
         b_words = {w for w in b.split() if len(w) > 2}
         u_words = {w for w in u.split() if len(w) > 2}
-        if b_words & u_words:
-            return btn
-    return None
+        overlap = len(b_words & u_words)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_btn = btn
+    return best_btn
 
 
 def fmt_buttons(text: str, buttons: list[str]) -> str:

@@ -7,6 +7,8 @@
 - [Scheduler leadership lock](scheduler_leadership_lock.md) — Lock con WORKER_ID + heartbeat 60s/TTL 120s + reaquire loop 30s. Fix bug "scheduler muerto al restart" (saltó 2 noches courses_sync). Watchdog de last_run.
 - [Pending: Supabase rotation](pending_supabase_rotation.md) — Rotar SUPABASE_SECRET_KEY que estuvo hardcodeada.
 - [Pending: sales prompt enhancements](pending_sales_prompt_enhancements.md) — Mejoras pendientes script de Gino: banco objeciones + cierre cálido (sondeo parcialmente cubierto por regla 0b).
+- [Feedback: cobranzas tools independientes](feedback_collections_tools.md) — Las 2 tools de Rebill (suscripcion + insta_link) NO tienen fallback cruzado. Si suscripcion falla → derivar, NO probar insta_link.
+- [Feedback: no reescribir lo que está armado](feedback_dont_rewrite.md) — Si hay bug, fixear quirúrgico. No rediseñar decision trees existentes.
 - [Workflow preferences](workflow_preferences.md) — Trabajar en `main` directo, nunca worktrees. Verificación real (HTTP 200, screenshot) antes de decir "listo".
 - [Language](language.md) — Español rioplatense informal.
 

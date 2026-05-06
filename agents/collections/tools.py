@@ -69,54 +69,50 @@ async def buscar_alumno_mail_adc(email: str) -> str:
 @tool
 async def buscar_suscripcion_rebill(cobranza_id: str, phone: str, pais: str = "Argentina") -> str:
     """
-    Busca la suscripción Rebill activa del alumno y genera el link para pagar EXACTAMENTE 1 cuota.
-    Usar SOLO cuando metodoPago == 'Rebill' y el alumno debe exactamente 1 cuota.
+    Reintenta el cobro de la suscripción Rebill ACTIVA del alumno.
+    Devuelve el retry-payment-link de la suscripción (mantiene el ciclo recurrente
+    intacto — el cobro de este link cuenta como el cobro mensual del débito automático).
+
+    Usar SOLO cuando metodoPago == 'Rebill' y el alumno debe EXACTAMENTE 1 cuota
+    (saldoPendiente == valorCuota).
+
+    Si esta tool falla o no hay suscripción activa: NO llamés otra tool de link.
+    Derivá al alumno con un asesor de cobranzas.
 
     Args:
         cobranza_id: ID del registro en Area_de_cobranzas de Zoho.
         phone: Teléfono del alumno (para monitoreo posterior).
-        pais: País del alumno para mapear el canal de WhatsApp.
+        pais: País del alumno (para tags/logs).
     """
-    # Obtenemos la ficha fresca para tener el rebill plan id
     zoho = ZohoAreaCobranzas()
     ficha = await zoho.get_by_id(cobranza_id)
-
     if not ficha:
-        return "No pude obtener los datos de la suscripción. Por favor intentá nuevamente."
+        return "No pude obtener los datos del alumno. Derivá con HANDOFF_REQUIRED: error_tool."
+
+    customer_id = ficha.get("ID_Cliente", "")
+    if not customer_id:
+        return (
+            "El alumno no tiene ID_Cliente registrado para Rebill. "
+            "Derivá con HANDOFF_REQUIRED: error_tool."
+        )
 
     rebill = RebillClient()
-    # Primero buscar suscripción Rebill activa por ID de cliente Zoho — si existe,
-    # devuelve el retry-payment-link de la suscripción (el que reintenta el cobro
-    # automático y mantiene el ciclo recurrente).
     try:
-        result = await rebill.get_active_subscription_link(ficha.get("ID_Cliente", ""))
-        url = result.get("checkout_url", result.get("url", ""))
-        if url:
-            return (
-                f"[REBILL_DATA:{json.dumps({'cobranzaId': cobranza_id, 'phone': phone, 'pais': pais})}]\n"
-                f"Aquí tiene el enlace para abonar su cuota:\n{url}\n[LINK_REBILL_ENVIADO]"
-            )
+        result = await rebill.get_active_subscription_link(customer_id)
     except Exception as e:
-        logger.warning("rebill_subscription_lookup_failed", error=str(e))
+        logger.warning("rebill_subscription_lookup_failed", error=str(e), cobranza_id=cobranza_id)
+        return (
+            "Hubo un error consultando la suscripción Rebill. "
+            "Derivá con HANDOFF_REQUIRED: error_tool."
+        )
 
-    # Fallback: si no hay suscripción activa o falló la búsqueda, generamos un
-    # payment-link instant por el monto de 1 cuota. Esto NO reintenta el cobro
-    # recurrente — es un cobro one-shot.
-    valor_cuota = float(ficha.get("valorCuota", 0) or 0)
-    moneda = ficha.get("moneda", "ARS")
-    iso_country = _to_iso_country(pais)
-    result = await rebill.create_payment_link(
-        title=f"Cuota - {ficha.get('alumno', '')}",
-        amount=valor_cuota,
-        currency=moneda,
-        country=iso_country,
-        customer_email=ficha.get("email", ""),
-        customer_name=ficha.get("alumno", ""),
-        is_single_use=True,
-    )
-    url = result.get("checkout_url", "")
+    url = result.get("checkout_url", result.get("url", ""))
     if not url:
-        return "No pude generar el link de pago en este momento. Por favor intentá en unos minutos."
+        return (
+            "No encontré una suscripción Rebill activa para este alumno. "
+            "Derivá con HANDOFF_REQUIRED: error_tool."
+        )
+
     return (
         f"[REBILL_DATA:{json.dumps({'cobranzaId': cobranza_id, 'phone': phone, 'pais': pais})}]\n"
         f"Aquí tiene el enlace para abonar su cuota:\n{url}\n[LINK_REBILL_ENVIADO]"

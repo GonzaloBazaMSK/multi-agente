@@ -146,6 +146,22 @@ async def start_scheduler() -> None:
         coalesce=True,
     )
 
+    # Backup diario de Redis → R2 (4:00 AR). Captura todo el estado de Redis
+    # (sesiones, locks, prompts cache, conv labels, scheduler jobs) en un
+    # .pkl.gz y lo sube a R2. Si R2 no está configurado, el job logea warning
+    # y retorna skip — no falla. Ver utils/redis_backup.py para detalles.
+    from utils.redis_backup import run_redis_backup
+
+    s.add_job(
+        run_redis_backup,
+        trigger=CronTrigger(hour=4, minute=0),
+        id="redis_backup",
+        name="Backup diario de Redis a R2",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # Heartbeat del leadership lock — renueva el TTL cada 60s. Si este worker
     # muere, el lock expira en <=120s y otro worker lo agarra. Sin este job,
     # el lock duraba 1h fijo y un restart dentro de la ventana mataba el

@@ -173,7 +173,8 @@ async def run_redis_backup() -> dict:
         "failed": failed,
         "size_bytes": len(payload_gz),
         "elapsed_s": round(elapsed, 1),
-        "url": url,
+        "bucket": settings.r2_backups_bucket,
+        "object_key": object_key,
     }
 
 

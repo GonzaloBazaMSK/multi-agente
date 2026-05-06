@@ -89,33 +89,45 @@ async def buscar_suscripcion_rebill(cobranza_id: str, phone: str, pais: str = "A
     if not ficha:
         return "No pude obtener los datos del alumno. Derivá con HANDOFF_REQUIRED: error_tool."
 
-    customer_id = ficha.get("ID_Cliente", "")
-    if not customer_id:
+    email = ficha.get("email", "")
+    if not email:
         return (
-            "El alumno no tiene ID_Cliente registrado para Rebill. "
+            "El alumno no tiene email registrado en la ficha. "
             "Derivá con HANDOFF_REQUIRED: error_tool."
         )
 
     rebill = RebillClient()
-    try:
-        result = await rebill.get_active_subscription_link(customer_id)
-    except Exception as e:
-        logger.warning("rebill_subscription_lookup_failed", error=str(e), cobranza_id=cobranza_id)
+    result = await rebill.get_subscription_update_card_link_by_email(email)
+    status = result.get("status", "error")
+
+    if status == "ok":
+        url = result.get("url", "")
+        if not url:
+            return (
+                "Rebill devolvió la suscripción pero sin URL del link. "
+                "Derivá con HANDOFF_REQUIRED: error_tool."
+            )
         return (
-            "Hubo un error consultando la suscripción Rebill. "
+            f"[REBILL_DATA:{json.dumps({'cobranzaId': cobranza_id, 'phone': phone, 'pais': pais, 'subscriptionId': result.get('subscription_id', '')})}]\n"
+            f"Aquí tiene el enlace para abonar su cuota:\n{url}\n[LINK_REBILL_ENVIADO]"
+        )
+
+    if status == "not_found":
+        return (
+            "No se encontraron registros de Rebill para este email. "
             "Derivá con HANDOFF_REQUIRED: error_tool."
         )
 
-    url = result.get("checkout_url", result.get("url", ""))
-    if not url:
+    if status == "cancelled":
         return (
-            "No encontré una suscripción Rebill activa para este alumno. "
+            "La suscripción del alumno figura como cancelada. "
             "Derivá con HANDOFF_REQUIRED: error_tool."
         )
 
+    # status == "error"
     return (
-        f"[REBILL_DATA:{json.dumps({'cobranzaId': cobranza_id, 'phone': phone, 'pais': pais})}]\n"
-        f"Aquí tiene el enlace para abonar su cuota:\n{url}\n[LINK_REBILL_ENVIADO]"
+        f"Error al consultar Rebill: {result.get('error', 'desconocido')}. "
+        "Derivá con HANDOFF_REQUIRED: error_tool."
     )
 
 

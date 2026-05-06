@@ -154,7 +154,9 @@ class RebillClient:
         return resp.json()
 
     async def get_active_subscription_link(self, customer_id: str) -> dict:
-        """Obtiene el link de pago de la suscripción activa de un cliente."""
+        """[Legacy] Obtiene el link de pago de la suscripción activa de un cliente
+        por customer_id. Mantenida por compatibilidad — el flujo nuevo de cobranzas
+        usa `get_subscription_update_card_link_by_email` que replica el n8n productivo."""
         async with httpx.AsyncClient() as client:
             resp = await client.get(
                 f"{REBILL_API_V3}/subscriptions",
@@ -176,6 +178,86 @@ class RebillClient:
             return {}
 
         return await self.get_payment_link_for_overdue(sub_id)
+
+    async def get_subscription_update_card_link_by_email(self, email: str) -> dict:
+        """
+        Replica el flujo del bot n8n productivo `Herramienta_Link_Rebill`:
+          1. POST /v3/subscriptions/search con filter customer.email
+          2. Itera records, busca el primero con status ∈ {active, paused, retrying}
+          3. POST /v3/subscriptions/{id}/card/update-link
+
+        Devuelve:
+          - {"status": "ok", "url": "...", "subscription_id": "..."} si encuentra
+          - {"status": "not_found"} si records vacío
+          - {"status": "cancelled"} si la única suscripción está cancelada
+          - {"status": "error", "error": "..."} si falló alguna llamada
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                search_resp = await client.post(
+                    f"{REBILL_API_V3}/subscriptions/search",
+                    headers=self._headers,
+                    json={
+                        "pagination": {"limit": 10, "offset": 0},
+                        "filters": {"customer": {"email": email}},
+                    },
+                    timeout=15,
+                )
+                if search_resp.status_code >= 400:
+                    logger.warning(
+                        "rebill_subscription_search_failed",
+                        status=search_resp.status_code,
+                        body=search_resp.text[:200],
+                        email=email,
+                    )
+                    return {"status": "error", "error": f"search returned {search_resp.status_code}"}
+            except Exception as e:
+                logger.warning("rebill_subscription_search_exception", error=str(e), email=email)
+                return {"status": "error", "error": str(e)}
+
+            data = search_resp.json()
+            records = data.get("records", []) if isinstance(data, dict) else []
+            if not records:
+                return {"status": "not_found"}
+
+            # Buscar la primera suscripción accionable. n8n acepta active/paused/retrying.
+            actionable = next(
+                (r for r in records if r.get("status") in ("active", "paused", "retrying")),
+                None,
+            )
+            if not actionable:
+                return {"status": "cancelled"}
+
+            sub_id = actionable.get("id", "")
+            if not sub_id:
+                return {"status": "error", "error": "subscription has no id"}
+
+            try:
+                link_resp = await client.post(
+                    f"{REBILL_API_V3}/subscriptions/{sub_id}/card/update-link",
+                    headers=self._headers,
+                    timeout=15,
+                )
+                if link_resp.status_code >= 400:
+                    logger.warning(
+                        "rebill_card_update_link_failed",
+                        status=link_resp.status_code,
+                        body=link_resp.text[:200],
+                        subscription_id=sub_id,
+                    )
+                    return {"status": "error", "error": f"card-update-link returned {link_resp.status_code}"}
+            except Exception as e:
+                logger.warning("rebill_card_update_link_exception", error=str(e), subscription_id=sub_id)
+                return {"status": "error", "error": str(e)}
+
+            link_data = link_resp.json() if link_resp.content else {}
+            url = link_data.get("url", "") or link_data.get("link", "")
+            return {
+                "status": "ok",
+                "url": url,
+                "subscription_id": sub_id,
+                "raw": link_data,
+            }
 
     async def get_payment_link_for_overdue(self, subscription_id: str) -> dict:
         """Genera un link de pago para regularizar una suscripción con mora."""

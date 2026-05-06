@@ -22,6 +22,31 @@ CHANNEL_MAP = {
     "Uruguay": "medicalscientificknowledge-whatsapp-5491152170771",
 }
 
+# Mapeo nombre de país (como viene de Zoho) → código ISO usado por Rebill
+# para decidir las cuotas habilitadas (`INSTALLMENTS_BY_COUNTRY`).
+COUNTRY_ISO_MAP = {
+    "Argentina": "AR",
+    "Colombia": "CO",
+    "Mexico": "MX",
+    "México": "MX",
+    "Ecuador": "EC",
+    "Chile": "CL",
+    "Uruguay": "UY",
+    "Peru": "PE",
+    "Perú": "PE",
+    "Bolivia": "BO",
+    "Paraguay": "PY",
+}
+
+
+def _to_iso_country(pais: str) -> str:
+    """Devuelve el código ISO-2 del país. Si ya viene corto, lo deja."""
+    if not pais:
+        return "AR"
+    if len(pais) == 2:
+        return pais.upper()
+    return COUNTRY_ISO_MAP.get(pais, "AR")
+
 
 @tool
 async def buscar_alumno_mail_adc(email: str) -> str:
@@ -60,7 +85,9 @@ async def buscar_suscripcion_rebill(cobranza_id: str, phone: str, pais: str = "A
         return "No pude obtener los datos de la suscripción. Por favor intentá nuevamente."
 
     rebill = RebillClient()
-    # Buscar suscripción activa por ID de cliente Zoho
+    # Primero buscar suscripción Rebill activa por ID de cliente Zoho — si existe,
+    # devuelve el retry-payment-link de la suscripción (el que reintenta el cobro
+    # automático y mantiene el ciclo recurrente).
     try:
         result = await rebill.get_active_subscription_link(ficha.get("ID_Cliente", ""))
         url = result.get("checkout_url", result.get("url", ""))
@@ -72,16 +99,24 @@ async def buscar_suscripcion_rebill(cobranza_id: str, phone: str, pais: str = "A
     except Exception as e:
         logger.warning("rebill_subscription_lookup_failed", error=str(e))
 
-    # Fallback: generar link por monto de 1 cuota
-    valor_cuota = ficha.get("valorCuota", 0)
+    # Fallback: si no hay suscripción activa o falló la búsqueda, generamos un
+    # payment-link instant por el monto de 1 cuota. Esto NO reintenta el cobro
+    # recurrente — es un cobro one-shot.
+    valor_cuota = float(ficha.get("valorCuota", 0) or 0)
     moneda = ficha.get("moneda", "ARS")
-    result = await rebill.create_instant_link(
+    iso_country = _to_iso_country(pais)
+    result = await rebill.create_payment_link(
+        title=f"Cuota - {ficha.get('alumno', '')}",
         amount=valor_cuota,
         currency=moneda,
-        description=f"Cuota - {ficha.get('alumno', '')}",
-        external_reference=f"cuota_{cobranza_id}",
+        country=iso_country,
+        customer_email=ficha.get("email", ""),
+        customer_name=ficha.get("alumno", ""),
+        is_single_use=True,
     )
     url = result.get("checkout_url", "")
+    if not url:
+        return "No pude generar el link de pago en este momento. Por favor intentá en unos minutos."
     return (
         f"[REBILL_DATA:{json.dumps({'cobranzaId': cobranza_id, 'phone': phone, 'pais': pais})}]\n"
         f"Aquí tiene el enlace para abonar su cuota:\n{url}\n[LINK_REBILL_ENVIADO]"
@@ -110,11 +145,28 @@ async def generar_insta_link_rebill(
         pais: País del alumno.
     """
     rebill = RebillClient()
-    result = await rebill.create_instant_link(
+    iso_country = _to_iso_country(pais)
+    # Para enriquecer email/nombre del cliente buscamos la ficha por cobranza_id.
+    # Si falla, igual creamos el link sin prefilled fields.
+    customer_email = ""
+    customer_name = ""
+    try:
+        zoho = ZohoAreaCobranzas()
+        ficha = await zoho.get_by_id(cobranza_id)
+        if ficha:
+            customer_email = ficha.get("email", "") or ""
+            customer_name = ficha.get("alumno", "") or ""
+    except Exception as e:
+        logger.warning("zoho_lookup_for_insta_link_failed", error=str(e), cobranza_id=cobranza_id)
+
+    result = await rebill.create_payment_link(
+        title=descripcion,
         amount=monto,
         currency=moneda,
-        description=descripcion,
-        external_reference=f"insta_{cobranza_id}_{monto}",
+        country=iso_country,
+        customer_email=customer_email,
+        customer_name=customer_name,
+        is_single_use=True,
     )
     url = result.get("checkout_url", "")
     if not url:

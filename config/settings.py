@@ -96,8 +96,12 @@ class Settings(BaseSettings):
     r2_endpoint: str = ""  # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
-    r2_bucket: str = ""  # msk-multiagente-media
+    r2_bucket: str = ""  # msk-multiagente-media — bucket PUBLICO para servir media
     r2_public_url: str = ""  # https://pub-XXXX.r2.dev
+    # Bucket PRIVADO separado para backups (Redis dumps, etc.). Si está vacío
+    # el job de backup logea warning y skipea — no se pueden subir backups
+    # al bucket público porque la URL queda expuesta y contiene state sensible.
+    r2_backups_bucket: str = ""  # msk-multiagente-backups (sin public access)
 
     # Supabase Auth (login de la consola)
     supabase_url: str = ""

@@ -1,13 +1,22 @@
 """
-Backup diario de Redis a Cloudflare R2.
+Backup diario de Redis a Cloudflare R2 (bucket PRIVADO).
 
 Estrategia: dump por key via protocolo Redis (no requiere acceso al
 filesystem del container Redis). Iteramos con SCAN, llamamos DUMP por key
 para obtener el formato binario nativo (compatible con RESTORE), guardamos
-TTL, serializamos con pickle, comprimimos con gzip y subimos a R2.
+TTL, serializamos con pickle, comprimimos con gzip y subimos al bucket
+privado de R2 (`R2_BACKUPS_BUCKET`).
+
+⚠️ IMPORTANTE — usar bucket PRIVADO, no el público de media:
+El backup contiene state sensible (sesiones, prompts del bot, conv labels,
+scheduler jobs). El bucket de media es público y su subdominio es
+descubrible mirando cualquier asset del widget — si el backup va ahí,
+cualquiera con el subdominio puede bajarlo. Por eso el bucket de backups
+es separado y SIN public access.
 
 Restauración:
     para cada key del backup → redis.restore(key, ttl_ms, value)
+    Lectura del .pkl.gz vía boto3 client (no via URL pública — no hay).
 
 Pros:
 - Sin docker exec ni mount de volúmenes (más limpio en operación).
@@ -27,13 +36,14 @@ configurar lifecycle rules en el bucket R2 (ej: delete after 30 days).
 
 from __future__ import annotations
 
+import asyncio
 import gzip
 import pickle
 from datetime import UTC, datetime
 
 import structlog
 
-from integrations import storage
+from config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -41,15 +51,43 @@ BACKUP_KEY_PREFIX = "redis-backups"
 SCAN_BATCH = 500
 
 
+def _get_backups_client():
+    """Cliente boto3 apuntado a R2 — usado solo para el bucket privado de
+    backups. NO compartimos con `integrations.storage._client` porque ese
+    se usa para uploads al bucket público y queremos las dependencias
+    explícitas para que no se mezclen accidentalmente."""
+    import boto3
+    from botocore.config import Config
+
+    s = get_settings()
+    return boto3.client(
+        "s3",
+        endpoint_url=s.r2_endpoint,
+        aws_access_key_id=s.r2_access_key_id,
+        aws_secret_access_key=s.r2_secret_access_key,
+        config=Config(signature_version="s3v4", region_name="auto"),
+    )
+
+
+def _is_backups_configured() -> bool:
+    s = get_settings()
+    return bool(
+        s.r2_endpoint and s.r2_access_key_id and s.r2_secret_access_key and s.r2_backups_bucket
+    )
+
+
 async def run_redis_backup() -> dict:
     """
-    Dump full de Redis → pickle.gz → R2. Retorna stats.
+    Dump full de Redis → pickle.gz → R2 (bucket privado). Retorna stats.
 
     Llamado desde APScheduler diariamente (4:00 AR).
     """
-    if not storage.is_enabled():
-        logger.warning("redis_backup_skipped_no_r2")
-        return {"skipped": True, "reason": "r2_not_configured"}
+    if not _is_backups_configured():
+        logger.warning(
+            "redis_backup_skipped_no_private_bucket",
+            hint="Setear R2_BACKUPS_BUCKET en .env (bucket privado, no el de media)",
+        )
+        return {"skipped": True, "reason": "r2_backups_bucket_not_configured"}
 
     from memory.conversation_store import get_conversation_store
 
@@ -94,10 +132,19 @@ async def run_redis_backup() -> dict:
     today = started.strftime("%Y-%m-%d")
     object_key = f"{BACKUP_KEY_PREFIX}/{today}.pkl.gz"
 
+    settings = get_settings()
     try:
-        url = await storage.upload_bytes(
-            object_key, payload_gz, "application/octet-stream"
-        )
+        client = _get_backups_client()
+
+        def _put():
+            client.put_object(
+                Bucket=settings.r2_backups_bucket,
+                Key=object_key,
+                Body=payload_gz,
+                ContentType="application/octet-stream",
+            )
+
+        await asyncio.to_thread(_put)
     except Exception as e:
         logger.error("redis_backup_upload_failed", error=str(e))
         return {"error": str(e), "keys": len(snapshot)}
@@ -110,7 +157,8 @@ async def run_redis_backup() -> dict:
         size_bytes=len(payload_gz),
         size_mb=round(len(payload_gz) / 1024 / 1024, 2),
         elapsed_s=round(elapsed, 1),
-        url=url,
+        bucket=settings.r2_backups_bucket,
+        object_key=object_key,
     )
 
     # Marca timestamp en Redis para que un watchdog futuro pueda alertar
@@ -129,25 +177,46 @@ async def run_redis_backup() -> dict:
     }
 
 
-async def restore_redis_from_backup(backup_url: str) -> dict:
+async def restore_redis_from_backup(date_str: str) -> dict:
     """
-    Helper de restauración — descarga el .pkl.gz, lo deserializa y aplica
-    cada key con RESTORE. NO se llama automático — solo manualmente vía CLI
-    desde la consola de admin si pasa algo crítico con Redis.
+    Helper de restauración — descarga el .pkl.gz del bucket privado vía boto3
+    (con credenciales R2), lo deserializa y aplica cada key con RESTORE.
 
-    NO se llama desde el scheduler. NO se expone en endpoints público.
+    NO se llama automático. NO se expone en endpoints público. Uso manual:
+
+        docker exec msk-multiagente-api-1 python -c "
+        import asyncio
+        from utils.redis_backup import restore_redis_from_backup
+        print(asyncio.run(restore_redis_from_backup('2026-05-06')))
+        "
+
+    Args:
+        date_str: Fecha del backup en formato YYYY-MM-DD.
     """
-    import httpx
+    if not _is_backups_configured():
+        return {"error": "r2_backups_bucket_not_configured"}
 
-    from memory.conversation_store import get_conversation_store
+    settings = get_settings()
+    object_key = f"{BACKUP_KEY_PREFIX}/{date_str}.pkl.gz"
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.get(backup_url)
-        resp.raise_for_status()
-        payload_gz = resp.content
+    try:
+        client = _get_backups_client()
+
+        def _get():
+            return client.get_object(
+                Bucket=settings.r2_backups_bucket,
+                Key=object_key,
+            )["Body"].read()
+
+        payload_gz = await asyncio.to_thread(_get)
+    except Exception as e:
+        logger.error("redis_restore_download_failed", key=object_key, error=str(e))
+        return {"error": f"download_failed: {e}"}
 
     payload = gzip.decompress(payload_gz)
     snapshot = pickle.loads(payload)
+
+    from memory.conversation_store import get_conversation_store
 
     store = await get_conversation_store()
     redis = store._redis

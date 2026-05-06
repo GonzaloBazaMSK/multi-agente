@@ -193,16 +193,47 @@ async def forgot_password(request: Request, req: ForgotPasswordRequest):
     Respuesta intencionalmente genérica (no confirma si el email existe) para
     evitar user enumeration. El user recibe un mail con un link que redirige a
     /reset-password con un access_token en el hash fragment de la URL.
+
+    Seguridad — `redirect_to` validado contra whitelist:
+    El `redirect_to` que mandamos a Supabase determina a dónde apunta el link
+    del mail. Si lo dejáramos inferir libremente del header `Origin`/`Referer`,
+    un atacante podría:
+        POST /api/v1/auth/forgot-password
+        Origin: https://attacker.com
+        body: {"email": "victim@msk.com"}
+    → la víctima recibiría un mail "de MSK" con link a https://attacker.com/
+    reset-password#access_token=... y al clickear filtra el token. Open
+    redirect clásico. Por eso validamos `Origin` contra `settings.cors_origins`
+    (whitelist explícita) — si no matchea, fallback al dominio de prod.
     """
+    from urllib.parse import urlparse
+
+    from config.settings import get_settings
     from integrations.supabase_client import send_password_recovery
 
-    # Origin del request → URL de redirect después del mail.
-    # Esto permite que dev (localhost) y prod (agentes.msklatam.com) usen el
-    # mismo backend sin hardcodear el dominio.
-    origin = request.headers.get("origin") or request.headers.get("referer", "").rstrip("/")
-    if not origin:
-        # Fallback al dominio prod
-        origin = "https://agentes.msklatam.com"
+    settings = get_settings()
+    raw_origin = (
+        request.headers.get("origin")
+        or request.headers.get("referer", "").rstrip("/")
+        or ""
+    )
+    # Normalizar — Referer suele venir como URL completa con path, queremos
+    # solo el origen (scheme://host[:port]).
+    if raw_origin:
+        parsed = urlparse(raw_origin)
+        if parsed.scheme and parsed.netloc:
+            raw_origin = f"{parsed.scheme}://{parsed.netloc}"
+
+    allowed = set(settings.cors_origins)
+    origin = raw_origin if raw_origin in allowed else "https://agentes.msklatam.com"
+    if raw_origin and raw_origin != origin:
+        # No matcheó la whitelist — log sin email (PII) para detectar abuso.
+        logger.warning(
+            "forgot_password_origin_rejected",
+            origin_received=raw_origin,
+            fallback=origin,
+        )
+
     redirect_to = f"{origin}/reset-password"
     try:
         await send_password_recovery(req.email, redirect_to)

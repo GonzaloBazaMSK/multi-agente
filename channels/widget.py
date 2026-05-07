@@ -1448,7 +1448,11 @@ async def process_widget_message(
                 queue_val = f"{_prefix}_{(country or 'XX').upper()}"
             from memory.assignment import auto_assign_round_robin
 
-            await auto_assign_round_robin(session_id, queue=queue_val)
+            await auto_assign_round_robin(
+                session_id,
+                queue=queue_val,
+                conversation_id=conversation.id,
+            )
         except Exception:
             pass
 

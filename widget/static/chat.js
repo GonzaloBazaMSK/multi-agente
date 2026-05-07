@@ -464,7 +464,11 @@
       }
 
       if (data.handoff_requested) {
-        appendMessage("bot", "📞 Un asesor humano continuará esta conversación pronto.");
+        // El bot ya manda su propio mensaje de derivación contextual ("Te voy
+        // a conectar con un asesor académico..." o el de cobranzas/post_venta).
+        // Antes acá agregábamos un segundo mensaje "📞 Un asesor humano
+        // continuará..." que se duplicaba con el del bot. Ahora solo
+        // arrancamos el polling para recibir respuestas del agente.
         startPolling();
       }
 

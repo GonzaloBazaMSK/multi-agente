@@ -23,7 +23,11 @@ from utils.realtime import broadcast_event
 logger = structlog.get_logger(__name__)
 
 
-async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | None:
+async def auto_assign_round_robin(
+    session_id: str,
+    queue: str = "",
+    conversation_id: str | None = None,
+) -> dict | None:
     """Asigna la conversación al agente disponible con menos carga.
 
     Matching:
@@ -33,12 +37,15 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
         conv (ej. `cobranzas_AR` no cubre `cobranzas_MX`).
 
     Args:
-        session_id: Hash del widget o teléfono WhatsApp.
+        session_id: Hash del widget o teléfono WhatsApp (Redis fast-path).
         queue: Cola específica (ej. "ventas_AR"). Si vacía, se resuelve
             desde `conv_queue:{session_id}` en Redis.
+        conversation_id: UUID de la conversation (Postgres). Necesario para
+            persistir la asignación en `conversation_meta.assigned_agent_id`.
+            Si no se pasa, el inbox UI no verá la asignación (solo Redis).
 
     Returns:
-        `{id, name, role, has_queue_match}` del agente asignado,
+        `{id, name, role, has_queue_match, is_online}` del agente asignado,
         o `None` si nadie disponible. Ya publicó `conv_assigned` al bus
         cuando retorna dict.
     """
@@ -124,14 +131,19 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
 
         # Persistir también en conversation_meta.assigned_agent_id (Postgres) —
         # sin esto el inbox UI muestra "Sin asignar" porque lee de la DB, no
-        # del Redis fast-path. session_id es el conversation_id (UUID) en el
-        # caso del widget, donde se llama desde process_widget_message.
-        try:
-            from memory import conversation_meta as cm
+        # del Redis fast-path. Necesita el conversation_id (UUID), NO el
+        # session_id del widget (que es un sid distinto del conv_id).
+        if conversation_id:
+            try:
+                from memory import conversation_meta as cm
 
-            await cm.assign(session_id, chosen["id"])
-        except Exception as _e:
-            logger.warning("assign_pg_persist_failed", session=session_id, error=str(_e))
+                await cm.assign(conversation_id, chosen["id"])
+            except Exception as _e:
+                logger.warning(
+                    "assign_pg_persist_failed",
+                    conversation_id=conversation_id,
+                    error=str(_e),
+                )
 
         broadcast_event(
             {

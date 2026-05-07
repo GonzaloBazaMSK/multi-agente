@@ -25,12 +25,34 @@ import type { Notification, Preferences } from "@/lib/notifications";
 type ListResponse = { notifications: Notification[]; count: number };
 type CountResponse = { count: number };
 
-function playBeep() {
+// Mantenemos un AudioContext único entre beeps. Si lo creamos en cada playBeep,
+// Chrome lo crea en estado "suspended" hasta la primera interacción del usuario,
+// y los beeps siguientes pueden seguir suspendidos.
+let _sharedAudioCtx: AudioContext | null = null;
+
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  if (_sharedAudioCtx) return _sharedAudioCtx;
   try {
     const Ctx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
+    _sharedAudioCtx = new Ctx();
+    return _sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+function playBeep() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  // Chrome bloquea audio hasta que el user interactúe con la página. resume()
+  // lo despierta. Si nunca hubo click, queda suspended y no suena (limitación
+  // del navegador, no nuestra). Una vez que el user clickea cualquier cosa,
+  // los beeps siguientes ya funcionan.
+  if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  try {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -42,7 +64,44 @@ function playBeep() {
     osc.start();
     osc.stop(ctx.currentTime + 0.3);
   } catch {
-    // Navegador con restricciones — silently ignore.
+    // Silently ignore.
+  }
+}
+
+/**
+ * Muestra una notificación push del navegador (la que aparece en la barra del
+ * SO incluso si el navegador está minimizado / sin foco). Requiere permiso
+ * explícito del usuario — la primera vez la pedimos con requestPermission().
+ */
+function showBrowserNotification(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, {
+      body,
+      icon: "/logo.png",
+      tag: "msk-inbox", // mismo tag → reemplaza la anterior, no se acumulan
+      silent: false, // que use el sonido del SO; nuestro beep es complementario
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    // Algunos navegadores tiran si Notification se llama desde service worker
+    // context. Si pasa, ignoramos — el beep + el badge de la consola son fallback.
+  }
+}
+
+/**
+ * Pide permiso para notifs push si todavía no se decidió. Idempotente — si ya
+ * está "granted" o "denied", no hace nada. Conviene llamarlo en respuesta a
+ * un click del user (Chrome rechaza requestPermission sin user gesture).
+ */
+function ensureNotificationPermission() {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
   }
 }
 
@@ -93,6 +152,14 @@ export function useNotifications() {
     },
   });
 
+  // Pedir permiso de notifs del navegador en el primer mount. Idempotente —
+  // si ya hay decisión guardada (granted/denied) no molesta. Chrome solo
+  // acepta la pedida en respuesta a un user gesture, pero si la pestaña se
+  // abre via click la primera invocación suele andar igual.
+  useEffect(() => {
+    ensureNotificationPermission();
+  }, []);
+
   // Connect SSE cuando hay prefs cargadas (necesitamos saber `sound_enabled`)
   useEffect(() => {
     if (!prefsQ.data) return;
@@ -124,6 +191,26 @@ export function useNotifications() {
             count: (old?.count ?? 0) + 1,
           }));
           if (prefs.sound_enabled) playBeep();
+          // Push del navegador — visible aunque el browser esté minimizado.
+          // Solo si hay permiso (request al mount). Mensaje contextualizado
+          // por tipo de notif.
+          const n = payload.notification as {
+            title?: string;
+            body?: string;
+            type?: string;
+            data?: { client_name?: string; preview?: string };
+          };
+          const title = n.title || "MSK Console";
+          const body =
+            n.body ||
+            (n.type === "new_message_mine"
+              ? `${n.data?.client_name ?? "Cliente"}: ${n.data?.preview ?? ""}`
+              : n.type === "conv_assigned"
+                ? `Te asignaron: ${n.data?.client_name ?? "una conversación"}`
+                : n.type === "conv_stale"
+                  ? `Sin respuesta hace 2h: ${n.data?.client_name ?? "cliente"}`
+                  : "Tenés una novedad");
+          showBrowserNotification(title, body);
         }
       } catch {
         // payload inválido, ignorar

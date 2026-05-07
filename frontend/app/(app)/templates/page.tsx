@@ -101,7 +101,7 @@ const EMPTY_DRAFT: Draft = {
 
 export default function TemplatesPage() {
   return (
-    <RoleGate min="supervisor" denyFallback={<NoAccess requiredRole="supervisor o admin" />}>
+    <RoleGate min="admin" denyFallback={<NoAccess requiredRole="admin" />}>
       <TemplatesPageInner />
     </RoleGate>
   );

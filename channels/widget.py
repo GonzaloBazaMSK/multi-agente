@@ -1146,6 +1146,20 @@ async def process_widget_message(
         }
     )
 
+    # Notificar al agente humano si la conv ya está asignada (bot pausado o no).
+    # Antes solo se disparaba desde WhatsApp; widget no la llamaba → si un user
+    # escribia por widget en una conv asignada, el agente no se enteraba.
+    try:
+        from utils.notifications import on_inbound_user_message
+
+        await on_inbound_user_message(
+            session_id=str(conversation.id),
+            content_preview=message_text,
+            sender_name=user_name or conversation.user_profile.name or "cliente",
+        )
+    except Exception as _e:
+        logger.debug("notify_inbound_widget_failed", error=str(_e))
+
     # ── Respuesta directa del menú (sin agente IA) ────────────────────────────
     if wflow_result is not None and not wflow_result.get("needs_routing"):
         menu_text = wflow_result["response"]

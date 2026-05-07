@@ -495,7 +495,11 @@ async def analytics(days: int = 30):
 
 
 @router.get("/courses")
-async def list_courses(country: str = "AR", limit: int = 200):
+async def list_courses(
+    country: str = "AR",
+    limit: int = 200,
+    auth: dict = Depends(require_role_or_admin("admin")),
+):
     """Lista de cursos del país con pitch_hook + pitch_by_profile."""
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
@@ -543,7 +547,12 @@ class UpdatePitchHookBody(BaseModel):
 
 
 @router.put("/courses/{country}/{slug}/pitch-hook")
-async def update_pitch_hook(country: str, slug: str, body: UpdatePitchHookBody):
+async def update_pitch_hook(
+    country: str,
+    slug: str,
+    body: UpdatePitchHookBody,
+    auth: dict = Depends(require_role_or_admin("admin")),
+):
     """Edita manualmente el pitch_hook de un curso."""
     pool = await postgres_store.get_pool()
     async with pool.acquire() as conn:
@@ -789,7 +798,7 @@ async def start_regen_pitches_job(
 
 
 @router.get("/courses/jobs")
-async def get_courses_jobs_state():
+async def get_courses_jobs_state(auth: dict = Depends(require_role_or_admin("admin"))):
     """Devuelve el estado de ambos jobs (sync briefs + regeneracion pitches)."""
     sync = await _job_read_state(_JOB_KEY_SYNC)
     pitch = await _job_read_state(_JOB_KEY_PITCH)

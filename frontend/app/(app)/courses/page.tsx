@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Search, Edit3, Check, X, Sparkles, Loader2, RefreshCw, Wand2 } from "lucide-react";
+import { RoleGate } from "@/lib/auth";
+import { NoAccess } from "@/components/ui/coming-soon";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +50,14 @@ type JobsState = {
 const COUNTRIES = ["AR", "MX", "CL", "CO", "PE", "UY", "EC", "ES"];
 
 export default function CoursesPage() {
+  return (
+    <RoleGate min="admin" denyFallback={<NoAccess requiredRole="admin" />}>
+      <CoursesPageInner />
+    </RoleGate>
+  );
+}
+
+function CoursesPageInner() {
   const [country, setCountry] = useState("AR");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<string | null>(null);

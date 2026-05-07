@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from api.admin import verify_admin_key
-from api.auth import get_current_user
+from api.auth import get_current_user, require_role
 
 logger = structlog.get_logger(__name__)
 
@@ -192,7 +192,7 @@ class CreateTemplateRequest(BaseModel):
 
 
 @router.get("/hsm")
-async def list_hsm_templates(user: dict = Depends(get_current_user)):
+async def list_hsm_templates(user: dict = Depends(require_role("admin"))):
     """
     Lista las plantillas aprobadas de Meta Business Manager.
     Se cachean en Redis 5 minutos para no saturar la API de Meta.
@@ -221,7 +221,7 @@ async def list_hsm_templates(user: dict = Depends(get_current_user)):
 
 @router.post("/send-hsm")
 async def send_hsm(
-    req: HSMRequest, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)
+    req: HSMRequest, background_tasks: BackgroundTasks, user: dict = Depends(require_role("admin"))
 ):
     """
     Envía una plantilla HSM a un contacto de WhatsApp desde el inbox.
@@ -341,7 +341,7 @@ async def _send_hsm_task(
 
 
 @router.get("/hsm/all")
-async def list_all_templates(user: dict = Depends(get_current_user)):
+async def list_all_templates(user: dict = Depends(require_role("admin"))):
     """
     Lista TODAS las plantillas (no solo aprobadas) para la gestión admin.
     Incluye: APPROVED, PENDING, REJECTED.
@@ -409,7 +409,7 @@ async def list_all_templates(user: dict = Depends(get_current_user)):
 
 
 @router.post("/hsm/create")
-async def create_template(req: CreateTemplateRequest, user: dict = Depends(get_current_user)):
+async def create_template(req: CreateTemplateRequest, user: dict = Depends(require_role("admin"))):
     """
     Crea una nueva plantilla en Meta Business Manager.
     La plantilla queda en estado PENDING hasta que Meta la apruebe (24-48h).
@@ -468,7 +468,7 @@ async def create_template(req: CreateTemplateRequest, user: dict = Depends(get_c
 
 
 @router.post("/hsm/upload-media")
-async def upload_header_media(request: Request, user: dict = Depends(get_current_user)):
+async def upload_header_media(request: Request, user: dict = Depends(require_role("admin"))):
     """
     Sube un archivo media para usar como header de plantilla.
     Sube a Meta via Resumable Upload API y retorna el header_handle.
@@ -548,7 +548,7 @@ async def upload_header_media(request: Request, user: dict = Depends(get_current
 
 
 @router.delete("/hsm/{template_name}")
-async def delete_template_endpoint(template_name: str, user: dict = Depends(get_current_user)):
+async def delete_template_endpoint(template_name: str, user: dict = Depends(require_role("admin"))):
     """
     Elimina una plantilla de Meta Business Manager.
     Solo admin puede eliminar plantillas.

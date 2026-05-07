@@ -12,12 +12,15 @@
 import { useState, useEffect } from "react";
 import { Bell, Volume2, Mail, Loader2, UserPlus, MessageCircle, Clock, CheckCircle2 } from "lucide-react";
 
+import { useAuth } from "@/lib/auth";
 import { useNotifications } from "@/lib/use-notifications";
 import { DEFAULT_PREFERENCES, type Preferences } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 export default function NotificationsSettingsPage() {
   const { preferences, updatePreferences, isSaving, isLoading } = useNotifications();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   // Estado local para edición — cuando llega `preferences` del backend, lo
   // sincronizamos. Si el user cambia algo mientras llega otra invalidación,
@@ -87,15 +90,17 @@ export default function NotificationsSettingsPage() {
               onChange={() => toggle("conv_stale")}
               disabled={isLoading}
             />
-            <Toggle
-              icon={CheckCircle2}
-              iconColor="text-success"
-              title="Plantilla HSM aprobada"
-              description="Meta aprobó una plantilla que subiste — ya podés usarla."
-              checked={draft.template_approved}
-              onChange={() => toggle("template_approved")}
-              disabled={isLoading}
-            />
+            {isAdmin && (
+              <Toggle
+                icon={CheckCircle2}
+                iconColor="text-success"
+                title="Plantilla HSM aprobada"
+                description="Meta aprobó una plantilla que subiste — ya podés usarla."
+                checked={draft.template_approved}
+                onChange={() => toggle("template_approved")}
+                disabled={isLoading}
+              />
+            )}
           </div>
         </section>
 

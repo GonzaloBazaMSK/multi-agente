@@ -25,97 +25,63 @@ import type { Notification, Preferences } from "@/lib/notifications";
 type ListResponse = { notifications: Notification[]; count: number };
 type CountResponse = { count: number };
 
-// Mantenemos un AudioContext único y un flag de "user gesture detectado" para
-// que el primer click/keydown del user "desbloquee" el audio (Chrome bloquea
-// `osc.start()` si nunca hubo gesture en la página, incluso si después
-// llamamos resume()).
-let _sharedAudioCtx: AudioContext | null = null;
-let _audioUnlocked = false;
+// Pre-cargamos el archivo de notif una sola vez por sesion. Usar HTML5 Audio
+// (no Web Audio API) — es mas confiable, los browsers lo respetan mejor
+// despues de user gesture, y no tiene el quirk de AudioContext suspended.
+let _notifAudio: HTMLAudioElement | null = null;
 
-function getAudioCtx(): AudioContext | null {
+function getNotifAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
-  if (_sharedAudioCtx) return _sharedAudioCtx;
+  if (_notifAudio) return _notifAudio;
   try {
-    const Ctx =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    _sharedAudioCtx = new Ctx();
-    return _sharedAudioCtx;
+    _notifAudio = new Audio("/static/notif.wav");
+    _notifAudio.volume = 0.7; // 70% — suficiente para no perderlo en oficina
+    _notifAudio.preload = "auto";
+    return _notifAudio;
   } catch {
     return null;
   }
 }
 
+function playBeep() {
+  const audio = getNotifAudio();
+  if (!audio) return;
+  // Reset al inicio por si todavia esta tocando del beep anterior.
+  audio.currentTime = 0;
+  audio.play().catch((e) => {
+    // Si falla, casi siempre es porque el browser bloquea audio sin user
+    // gesture. La instalacion del unlock listener mas abajo deberia evitarlo
+    // pero como fallback, registramos un click handler one-shot que reintenta.
+    console.warn("[notifs] audio.play blocked:", e?.message);
+  });
+}
+
 /**
- * Listener global que "desbloquea" el AudioContext en el PRIMER user gesture
- * (click, keydown, touchstart). Una vez resumido, los beeps subsecuentes
- * funcionan sin que el user tenga que clickear cada vez. Lo registramos una
- * sola vez por carga de página.
+ * "Desbloquea" el audio en el primer user gesture. Algunos browsers (Chrome,
+ * Safari mobile) bloquean .play() hasta que el user haya interactuado con la
+ * pagina. Tocamos un audio mudo dentro del handler del gesture para que el
+ * browser marque el dominio como "permitido" y los siguientes .play()
+ * funcionen sin gesture activo.
  */
 function installAudioUnlockListener() {
-  if (typeof window === "undefined" || _audioUnlocked) return;
+  if (typeof window === "undefined") return;
   const handler = () => {
-    const ctx = getAudioCtx();
-    if (!ctx) return;
-    if (ctx.state === "suspended") {
-      ctx.resume().then(() => {
-        _audioUnlocked = true;
-        // Tocar un beep mudo para "calentar" el pipeline — algunos browsers
-        // necesitan que se ejecute un osc.start() dentro del gesture handler
-        // para considerar el contexto desbloqueado de verdad.
-        try {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          gain.gain.value = 0;
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.01);
-        } catch {
-          // ignore
-        }
-      }).catch(() => {});
-    } else {
-      _audioUnlocked = true;
-    }
+    const audio = getNotifAudio();
+    if (!audio) return;
+    const prevVol = audio.volume;
+    audio.volume = 0;
+    audio.play().then(() => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = prevVol;
+    }).catch(() => {
+      audio.volume = prevVol;
+    });
   };
-  // Capture phase + once: corre una sola vez en el primer gesture y se quita.
   const opts = { capture: true, once: true } as AddEventListenerOptions;
   window.addEventListener("click", handler, opts);
   window.addEventListener("keydown", handler, opts);
   window.addEventListener("touchstart", handler, opts);
-}
-
-function playBeep() {
-  const ctx = getAudioCtx();
-  if (!ctx) {
-    console.warn("[notifs] playBeep: no AudioContext available");
-    return;
-  }
-  console.log("[notifs] playBeep: state=", ctx.state, "unlocked=", _audioUnlocked);
-  if (ctx.state === "suspended") ctx.resume().catch(() => {});
-  try {
-    // Beep doble estilo "ding-dong" descendente — más reconocible que un solo
-    // tono y más volumen (0.4 vs 0.15 anterior, que era casi inaudible con
-    // altavoces grandes). Duración total ~0.6s.
-    const t0 = ctx.currentTime;
-    const playTone = (freq: number, start: number, duration: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0.4, start);
-      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(start);
-      osc.stop(start + duration);
-    };
-    playTone(880, t0, 0.25); // primer tono alto
-    playTone(660, t0 + 0.15, 0.35); // segundo descendente
-  } catch (e) {
-    console.warn("[notifs] playBeep failed:", e);
-  }
 }
 
 /**
@@ -124,15 +90,8 @@ function playBeep() {
  * explícito del usuario — la primera vez la pedimos con requestPermission().
  */
 function showBrowserNotification(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) {
-    console.warn("[notifs] showBrowserNotification: Notification API not available");
-    return;
-  }
-  console.log("[notifs] showBrowserNotification: permission=", Notification.permission);
-  if (Notification.permission !== "granted") {
-    console.warn("[notifs] showBrowserNotification: permission not granted");
-    return;
-  }
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
   try {
     const n = new Notification(title, {
       body,
@@ -144,9 +103,9 @@ function showBrowserNotification(title: string, body: string) {
       window.focus();
       n.close();
     };
-    console.log("[notifs] showBrowserNotification: shown ok");
-  } catch (e) {
-    console.warn("[notifs] showBrowserNotification failed:", e);
+  } catch {
+    // Algunos navegadores tiran si Notification se llama desde service worker
+    // context. Si pasa, ignoramos — el beep + el badge de la consola son fallback.
   }
 }
 

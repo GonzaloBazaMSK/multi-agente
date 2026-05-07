@@ -53,7 +53,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   new_message_mine: true,
   conv_stale: true,
   template_approved: true,
-  sound_enabled: false,
+  sound_enabled: true,
   email_digest: false,
 };
 

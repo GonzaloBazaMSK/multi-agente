@@ -277,6 +277,16 @@ export function Composer({
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter envía. Shift+Enter inserta salto de línea (default
+              // del textarea — no hace falta hacer nada). Mantenemos el
+              // shift como escape porque a veces el agente quiere mandar
+              // un mensaje en 2 líneas.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             disabled={correcting}
             className="w-full bg-transparent text-sm placeholder-fg-dim focus:outline-none resize-none disabled:opacity-50"
             rows={2}

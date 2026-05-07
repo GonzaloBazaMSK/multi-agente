@@ -60,7 +60,7 @@ DEFAULT_PREFERENCES = {
     "new_message_mine": True,
     "conv_stale": True,
     "template_approved": True,
-    "sound_enabled": False,
+    "sound_enabled": True,
     "email_digest": False,
 }
 

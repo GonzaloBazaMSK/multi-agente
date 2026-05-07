@@ -506,7 +506,8 @@ export function ConversationList({
                       <span className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium", QUEUE_COLOR[item.queue])}>
                         {QUEUE_LABEL[item.queue]}
                       </span>
-                      <Badge variant={item.lifecycle}>{LIFECYCLE_LABEL[item.lifecycle]}</Badge>
+                      {/* Badge de lifecycle ("New Lead", "Hot Lead", etc.) oculto del row.
+                          La info sigue disponible en el filtro lateral "Por lifecycle" y en el detail. */}
                       <Badge variant={item.channel}>{item.channel === "whatsapp" ? "WA" : "Widget"}</Badge>
                       {item.needsHuman && <Badge variant="warn">⚠ Humano</Badge>}
                       {item.botPaused && (

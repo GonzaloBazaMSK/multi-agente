@@ -58,30 +58,36 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
 
         profiles = await list_profiles()
 
-        # Filtrar agentes disponibles
-        available: list[dict] = []
+        # Política B: asignar al agente con menos carga de la queue, esté
+        # online o no. Cuando se conecte verá las conversaciones asignadas.
+        # NO filtramos por agent_available — eso evita que las convs queden
+        # huérfanas en horarios sin agentes activos.
+        candidates: list[dict] = []
         for p in profiles:
             role = p.get("role")
             if role not in ("agente", "supervisor", "admin"):
                 continue
             user_id = p.get("id") or p.get("email", "")
-            status = await r.get(f"agent_available:{user_id}")
-            status_str = (status.decode() if isinstance(status, bytes) else status) if status else ""
-            if status_str != "available":
-                continue
             agent_queues = p.get("queues") or []
+            # Match estricto contra la queue de la conv (cobranzas_AR no cubre
+            # cobranzas_MX). queues vacío = wildcard (ven todo, típico de admin).
             if queue and agent_queues and queue not in agent_queues:
                 continue
-            available.append(
+            # Para preferir online cuando hay, leer el flag de Redis.
+            status = await r.get(f"agent_available:{user_id}")
+            status_str = (status.decode() if isinstance(status, bytes) else status) if status else ""
+            is_online = status_str == "available"
+            candidates.append(
                 {
                     "id": user_id,
                     "name": p.get("name") or p.get("email", ""),
                     "role": role,
                     "has_queue_match": bool(agent_queues and queue in agent_queues),
+                    "is_online": is_online,
                 }
             )
 
-        if not available:
+        if not candidates:
             logger.warning(
                 "auto_assign_no_agents_for_queue",
                 session_id=session_id,
@@ -89,12 +95,9 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
             )
             return None
 
-        # Preferir match exacto sobre wildcards. Dentro de cada grupo,
-        # ordenar por carga (least-loaded).
-        available.sort(key=lambda a: (0 if a["has_queue_match"] else 1,))
-
+        # Calcular carga de cada candidato (cantidad de convs ya asignadas).
         load: dict[str, int] = {}
-        for agent in available:
+        for agent in candidates:
             count = 0
             async for _k in r.scan_iter("conv_assigned:*", count=500):
                 val = await r.get(_k)
@@ -102,8 +105,18 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
                     count += 1
             load[agent["id"]] = count
 
-        available.sort(key=lambda a: (0 if a["has_queue_match"] else 1, load.get(a["id"], 0)))
-        chosen = available[0]
+        # Orden de preferencia (cada criterio es desempate del anterior):
+        #   1. Match exacto de queue antes que wildcard.
+        #   2. Online antes que offline.
+        #   3. Menos carga primero.
+        candidates.sort(
+            key=lambda a: (
+                0 if a["has_queue_match"] else 1,
+                0 if a["is_online"] else 1,
+                load.get(a["id"], 0),
+            )
+        )
+        chosen = candidates[0]
 
         # Persistir asignación (30 días TTL)
         await r.set(f"conv_assigned:{session_id}", chosen["id"], ex=86400 * 30)
@@ -118,7 +131,13 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
                 "queue": queue,
             }
         )
-        logger.info("auto_assigned", session_id=session_id, agent=chosen["name"], queue=queue)
+        logger.info(
+            "auto_assigned",
+            session_id=session_id,
+            agent=chosen["name"],
+            queue=queue,
+            online=chosen["is_online"],
+        )
         return chosen
     except Exception as e:
         logger.warning("auto_assign_failed", error=str(e))

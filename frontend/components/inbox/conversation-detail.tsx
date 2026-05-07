@@ -180,14 +180,18 @@ export function ConversationDetail({
                   : conversation.lifecycle === "customer" ? "Customer"
                   : "Cold Lead"}
               </Badge>
-              {conversation.botPaused && (
-                <Badge variant="warn"><Bot className="w-2.5 h-2.5" /> Bot pausado</Badge>
-              )}
+              {/* Badge "Bot pausado" removido del header — el estado se ve por
+                  el botón "Reactivar bot" amarillo a la derecha. */}
             </div>
             <div className="text-[11px] text-fg-dim truncate">
               {contact.phone} · {contact.channel === "whatsapp" ? "WhatsApp" : "Web Widget"}
               {contact.pageContext && ` · ${contact.pageContext}`}
-              {assignedAgent && ` · asignada a ${assignedAgent.name}`}
+              {assignedAgent && (
+                <>
+                  {" · asignada a "}
+                  <span className="text-accent font-medium">{assignedAgent.name}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -322,7 +326,7 @@ export function ConversationDetail({
 
           {/* Tomar control / Reactivar bot */}
           {conversation.botPaused ? (
-            <Button variant="secondary" size="sm" onClick={onToggleBot}>
+            <Button variant="warn" size="sm" onClick={onToggleBot}>
               <Play className="w-3.5 h-3.5" /> Reactivar bot
             </Button>
           ) : (

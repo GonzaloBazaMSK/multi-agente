@@ -145,6 +145,22 @@ async def auto_assign_round_robin(
                     error=str(_e),
                 )
 
+        # Loguear el evento al timeline de la conv (visible en el panel
+        # "Log de eventos" del inbox).
+        try:
+            from utils.conv_events import log_action
+
+            await log_action(
+                session_id,
+                action="auto_assigned",
+                detail=(
+                    f"Asignado a {chosen['name']} ({'online' if chosen['is_online'] else 'offline'}) "
+                    f"— queue: {queue or '—'}"
+                ),
+            )
+        except Exception:
+            pass
+
         broadcast_event(
             {
                 "type": "conv_assigned",

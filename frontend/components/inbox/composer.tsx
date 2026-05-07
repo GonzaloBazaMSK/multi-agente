@@ -209,26 +209,18 @@ export function Composer({
   // ─────────────────────────────────────────────────────────────────────
   return (
     <div className="border-t border-border bg-panel p-4">
-      {/* Estado del bot */}
-      <div className="flex items-center gap-2 mb-2">
-        {botPaused ? (
-          <span className="text-[10px] text-warn flex items-center gap-1.5">
-            <Pause className="w-3 h-3" />
-            Bot pausado · respondés vos como humano
-          </span>
-        ) : (
+      {/* Estado del bot — solo muestra "Bot activo" en gris para que el usuario
+          sepa que el bot está respondiendo. Cuando está pausado, no se muestra
+          nada acá: el indicador queda en el botón "Reactivar bot" amarillo del
+          header de la conversación (evita duplicación). */}
+      {!botPaused && (
+        <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] text-fg-dim flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
             Bot activo · respondiendo automáticamente
           </span>
-        )}
-        <button
-          onClick={onToggleBot}
-          className={`ml-auto text-[10px] hover:underline ${botPaused ? "text-success" : "text-warn"}`}
-        >
-          {botPaused ? "Reactivar bot" : "Pausar bot"}
-        </button>
-      </div>
+        </div>
+      )}
 
       {/* Input file oculto */}
       <input

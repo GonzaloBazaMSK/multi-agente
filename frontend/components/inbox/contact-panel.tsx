@@ -4,12 +4,14 @@ import { useState } from "react";
 import {
   ExternalLink, Sparkles, ArrowRight, DollarSign, AlertCircle, Copy,
   ChevronDown, ChevronUp, FileText, Calendar, CreditCard, TrendingUp,
-  Phone as PhoneIcon,
+  Phone as PhoneIcon, Activity,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Flag } from "@/components/ui/flag";
 import { CallHistory } from "@/components/inbox/call-history";
+import { api } from "@/lib/api";
 import type { ContactDetail, DebtStatus } from "@/lib/mock-data";
 
 const DEBT_STATUS: Record<DebtStatus, { label: string; color: string; dot: string }> = {
@@ -30,9 +32,10 @@ function formatMoney(amount: number, currency: string): string {
 
 interface Props {
   contact: ContactDetail | null;
+  conversationId?: string | null;
 }
 
-export function ContactPanel({ contact }: Props) {
+export function ContactPanel({ contact, conversationId = null }: Props) {
   const [insightsOpen, setInsightsOpen] = useState(false);
 
   if (!contact) return null;
@@ -346,8 +349,81 @@ export function ContactPanel({ contact }: Props) {
 
         {/* ============= CARD: HISTORIAL DE LLAMADAS (Zoho Voice) ============= */}
         <CallHistory phone={contact.phone} />
+
+        {/* ============= CARD: LOG DE EVENTOS DE LA CONVERSACIÓN ============= */}
+        {conversationId && <ConversationEvents conversationId={conversationId} />}
       </div>
     </aside>
+  );
+}
+
+type ConvEvent = {
+  ts: string;
+  type: "intent" | "action" | "error" | "info";
+  intent?: string;
+  agent?: string;
+  msg?: string;
+  action?: string;
+  detail?: string;
+  source?: string;
+  error?: string;
+};
+
+function ConversationEvents({ conversationId }: { conversationId: string }) {
+  const { data, isLoading } = useQuery<{ events: ConvEvent[]; count: number }>({
+    queryKey: ["inbox", "conv-events", conversationId],
+    queryFn: () => api.get(`/inbox/conversations/${conversationId}/events`),
+    refetchInterval: 10_000, // refresca cada 10s para timeline en vivo
+    staleTime: 5_000,
+  });
+
+  const events = (data?.events ?? []).slice().reverse(); // más reciente primero
+
+  return (
+    <CardSection title="Log de eventos" defaultOpen={false}>
+      {isLoading && events.length === 0 ? (
+        <div className="text-[11px] text-fg-dim">Cargando…</div>
+      ) : events.length === 0 ? (
+        <div className="text-[11px] text-fg-dim">Sin eventos registrados.</div>
+      ) : (
+        <ul className="space-y-1.5 text-[11px] max-h-[320px] overflow-y-auto scroll-thin pr-1">
+          {events.map((e, i) => {
+            const time = new Date(e.ts).toLocaleTimeString("es-AR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            });
+            const dotClass =
+              e.type === "error"
+                ? "bg-danger"
+                : e.type === "intent"
+                  ? "bg-info"
+                  : e.type === "action"
+                    ? "bg-success"
+                    : "bg-fg-dim";
+            const main =
+              e.type === "intent"
+                ? `intent: ${e.intent ?? "-"} → ${e.agent ?? "-"}`
+                : e.type === "action"
+                  ? `${e.action ?? "action"}${e.detail ? ` — ${e.detail}` : ""}`
+                  : e.type === "error"
+                    ? `${e.source ?? "error"}: ${e.error ?? ""}`
+                    : (e.detail ?? e.action ?? "info");
+
+            return (
+              <li key={i} className="flex items-start gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotClass}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-fg break-words">{main}</div>
+                  {e.msg && <div className="text-fg-dim text-[10px] truncate">{e.msg}</div>}
+                  <div className="text-fg-dim text-[10px]">{time}</div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </CardSection>
   );
 }
 

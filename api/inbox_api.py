@@ -1038,6 +1038,23 @@ async def list_conversations(
     return out
 
 
+@router.get("/conversations/{conv_id}/events")
+async def get_conv_events(conv_id: str, limit: int = Query(100, le=500)):
+    """Log de eventos de la conversación (intent, action, error, info).
+
+    Persistido por `utils.conv_events.log_event` en Redis bajo la clave
+    `conv_events:{conv_id}`. Retiene los últimos 100 eventos por conversación,
+    TTL 30 días.
+
+    El frontend lo usa para mostrar timeline de "qué pasó en esta conv":
+    a qué agente se clasificó, qué tools llamó, errores, handoffs, etc.
+    """
+    from utils.conv_events import get_events
+
+    events = await get_events(conv_id, limit=limit)
+    return {"events": events, "count": len(events)}
+
+
 @router.get("/conversations/{conv_id}/messages")
 async def get_messages(conv_id: str):
     """Mensajes de una conversación, en orden cronológico."""

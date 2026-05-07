@@ -118,9 +118,20 @@ async def auto_assign_round_robin(session_id: str, queue: str = "") -> dict | No
         )
         chosen = candidates[0]
 
-        # Persistir asignación (30 días TTL)
+        # Persistir asignación (30 días TTL en Redis para fast-path).
         await r.set(f"conv_assigned:{session_id}", chosen["id"], ex=86400 * 30)
         await r.set(f"conv_assigned_name:{session_id}", chosen["name"], ex=86400 * 30)
+
+        # Persistir también en conversation_meta.assigned_agent_id (Postgres) —
+        # sin esto el inbox UI muestra "Sin asignar" porque lee de la DB, no
+        # del Redis fast-path. session_id es el conversation_id (UUID) en el
+        # caso del widget, donde se llama desde process_widget_message.
+        try:
+            from memory import conversation_meta as cm
+
+            await cm.assign(session_id, chosen["id"])
+        except Exception as _e:
+            logger.warning("assign_pg_persist_failed", session=session_id, error=str(_e))
 
         broadcast_event(
             {

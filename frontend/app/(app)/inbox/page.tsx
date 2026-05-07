@@ -256,7 +256,7 @@ function InboxPageInner() {
         onToggleBot={handleToggleBot}
         onClassify={handleClassify}
       />
-      {showContactPanel && <ContactPanel contact={contactWithInsights} />}
+      {showContactPanel && <ContactPanel contact={contactWithInsights} conversationId={selected?.id ?? null} />}
     </>
   );
 }

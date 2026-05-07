@@ -837,7 +837,7 @@ async def queue_stats():
 
 @router.get("/conversations", response_model=list[ConversationOut])
 async def list_conversations(
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, le=1000),
     offset: int = 0,
     view: str | None = None,
     lifecycle: str | None = None,
@@ -935,6 +935,19 @@ async def list_conversations(
     if view == "unread":
         # placeholder: aún no tenemos read_status. Por ahora open + sin asignar
         where_parts.append("(cm.assigned_agent_id is null)")
+    elif view == "mine":
+        # Mías = conversaciones asignadas al user logueado.
+        # Sin esto el filtro no aplicaba y devolvía todas las convs (bug
+        # histórico: el branch "mine" nunca existió en el backend, solo en
+        # el frontend que lo envía como ?view=mine sin que nada lo procese).
+        if user and user.get("id"):
+            where_parts.append(f"cm.assigned_agent_id = ${idx}::uuid")
+            params.append(user["id"])
+            idx += 1
+        else:
+            # admin/supervisor sin user.id (caller con admin_key) → sin convs propias.
+            # Mejor devolver vacío que mostrar todas como bug.
+            where_parts.append("FALSE")
     elif view == "queue":
         where_parts.append("cm.assigned_agent_id is null AND cm.needs_human = true")
     elif view == "human-attn":

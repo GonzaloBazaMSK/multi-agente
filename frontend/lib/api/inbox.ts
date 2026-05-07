@@ -219,7 +219,9 @@ export function useConversations(params: ConversationsParams) {
   if (params.queue)     qs.set("queue", params.queue);
   if (params.country)   qs.set("country", params.country);
   if (params.search)    qs.set("search", params.search);
-  qs.set("limit", String(params.limit ?? 100));
+  // 500 cubre el caso real actual (MSK tiene <200 convs activas). Si crecemos
+  // habrá que pasar a paginación con un endpoint /count separado.
+  qs.set("limit", String(params.limit ?? 500));
 
   const key: QueryKey = ["inbox", "conversations", Object.fromEntries(qs)];
 

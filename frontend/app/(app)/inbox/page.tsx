@@ -2,6 +2,8 @@
 
 import { Suspense, useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationDetail } from "@/components/inbox/conversation-detail";
 import { ContactPanel } from "@/components/inbox/contact-panel";
@@ -89,6 +91,23 @@ function InboxPageInner() {
   // ── SSE: refetch en tiempo real cuando llegan eventos del backend ────
   useInboxSSE(selectedId || null);
 
+  // ── Mark as read cuando se abre una conv ──────────────────────────────
+  // Cada vez que selectedId cambia, dispara POST /conversations/{id}/read
+  // para que el badge de unread baje en próxima refetch del listado.
+  // Idempotente — el backend hace upsert con last_read_at = now().
+  const qcMain = useQueryClient();
+  useEffect(() => {
+    if (!selectedId) return;
+    api.post(`/inbox/conversations/${selectedId}/read`)
+      .then(() => {
+        // Invalidar lista para refrescar unread_count en el row visible.
+        qcMain.invalidateQueries({ queryKey: ["inbox", "conversations"] });
+      })
+      .catch(() => {
+        // silencioso — si falla no rompemos UX
+      });
+  }, [selectedId, qcMain]);
+
   // ── Queries ────────────────────────────────────────────────────────────
   const convsQ = useConversations({ view, lifecycle, channel, queue, country, search });
   const items = convsQ.data ?? [];
@@ -160,7 +179,7 @@ function InboxPageInner() {
       byLifecycle[c.lifecycle]++;
       byChannel[c.channel]++;
       byQueue[c.queue]++;
-      if (c.unread) unread++;
+      if (c.unread || (c.unreadCount ?? 0) > 0) unread++;
       if (c.assignedTo === ME_ID) mine++;
       if (c.assignedTo === null && c.needsHuman) qcount++;
       if (c.botPaused || c.assignedTo !== null) humanAttn++;

@@ -39,6 +39,7 @@ export type ApiConversation = {
   needs_human: boolean;
   tags: string[];
   unread: boolean;
+  unread_count: number;
 };
 
 export type ApiContact = {
@@ -130,6 +131,7 @@ export function apiToListItem(c: ApiConversation): ConversationListItem {
     lifecycle: c.lifecycle,
     channel: c.channel,
     unread: c.unread,
+    unreadCount: c.unread_count ?? 0,
     assignedTo: c.assigned_agent_id,
     needsHuman: c.needs_human,
     botPaused: c.bot_paused,

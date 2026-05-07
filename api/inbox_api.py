@@ -74,7 +74,8 @@ class ConversationOut(BaseModel):
     bot_paused: bool = False
     needs_human: bool = False
     tags: list[str] = []
-    unread: bool = False  # placeholder (necesita read_status separado)
+    unread: bool = False  # true si unread_count > 0
+    unread_count: int = 0  # cantidad de mensajes user no leídos por este agente
 
 
 class MessageOut(BaseModel):
@@ -942,8 +943,26 @@ async def list_conversations(
 
     # vistas
     if view == "unread":
-        # placeholder: aún no tenemos read_status. Por ahora open + sin asignar
-        where_parts.append("(cm.assigned_agent_id is null)")
+        # "No leídas" = convs con al menos 1 mensaje role='user' posterior al
+        # last_read_at del agente (o sin row de read_state, o sea nunca abierta).
+        # Filtro server-side via EXISTS para no traer convs que ya están leídas.
+        if user and user.get("id"):
+            where_parts.append(
+                f"""EXISTS (
+                    SELECT 1 FROM public.messages m2
+                    LEFT JOIN public.inbox_read_state rs2
+                        ON rs2.conversation_id = m2.conversation_id
+                        AND rs2.user_id = ${idx}::uuid
+                    WHERE m2.conversation_id = c.id
+                      AND m2.role = 'user'
+                      AND (rs2.last_read_at IS NULL OR m2.created_at > rs2.last_read_at)
+                )"""
+            )
+            params.append(user["id"])
+            idx += 1
+        else:
+            # Sin user (admin key): no aplicamos filtro real.
+            where_parts.append("FALSE")
     elif view == "mine":
         # Mías = conversaciones asignadas al user logueado.
         # Sin esto el filtro no aplicaba y devolvía todas las convs (bug
@@ -1009,6 +1028,20 @@ async def list_conversations(
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *params)
 
+    # Calcular unread_count por cada conv para el agente logueado.
+    # Si el caller usa admin_key (sin user), no calculamos — devolvemos 0.
+    unread_map: dict[str, int] = {}
+    if user and user.get("id"):
+        try:
+            from memory import inbox_read_state
+
+            conv_ids = [str(r["id"]) for r in rows]
+            unread_map = await inbox_read_state.unread_counts_for_user(
+                user["id"], conv_ids
+            )
+        except Exception as e:
+            logger.warning("unread_counts_failed", error=str(e))
+
     out: list[ConversationOut] = []
     for r in rows:
         profile = r["user_profile"] or {}
@@ -1042,9 +1075,28 @@ async def list_conversations(
                 bot_paused=bool(r["bot_paused"]),
                 needs_human=bool(r["needs_human"]),
                 tags=list(r["tags"] or []),
+                unread_count=unread_map.get(str(r["id"]), 0),
+                unread=unread_map.get(str(r["id"]), 0) > 0,
             )
         )
     return out
+
+
+@router.post("/conversations/{conv_id}/read")
+async def mark_conversation_read(
+    conv_id: str,
+    auth: dict = Depends(verify_admin_or_session),
+):
+    """Marca la conv como leída para el agente que llama. Upsert en
+    inbox_read_state. Idempotente — si ya está marcada hoy, vuelve a setear
+    last_read_at = now() y no falla."""
+    user = (auth or {}).get("user") if (auth or {}).get("auth") == "session" else None
+    if not user or not user.get("id"):
+        return {"ok": False, "reason": "no_user"}
+    from memory import inbox_read_state
+
+    await inbox_read_state.mark_read(user["id"], conv_id)
+    return {"ok": True}
 
 
 @router.get("/conversations/{conv_id}/events")

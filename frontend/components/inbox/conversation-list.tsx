@@ -494,10 +494,17 @@ export function ConversationList({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
-                      <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                      <div className={cn(
+                        "text-sm truncate flex items-center gap-1.5 min-w-0",
+                        item.unreadCount > 0 ? "font-bold" : "font-medium",
+                      )}>
                         <Flag iso={item.contact.country} size={11} />
-                        {item.contact.name}
-                        {item.unread && <span className="w-1.5 h-1.5 rounded-full bg-accent" />}
+                        <span className="truncate">{item.contact.name}</span>
+                        {item.unreadCount > 0 && (
+                          <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-accent text-white text-[10px] font-bold shrink-0">
+                            {item.unreadCount > 99 ? "99+" : item.unreadCount}
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-fg-dim shrink-0">{item.lastMessageAt}</div>
                     </div>

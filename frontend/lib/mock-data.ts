@@ -72,6 +72,8 @@ export type ConversationListItem = {
   lifecycle: LifecycleStage;
   channel: Channel;
   unread: boolean;
+  /** cantidad de mensajes role='user' no leídos por el agente actual */
+  unreadCount: number;
   /** id del agente humano asignado, o null si nadie */
   assignedTo: string | null;
   /** true si requiere atención humana (escaló del bot) */

@@ -161,6 +161,25 @@ async def auto_assign_round_robin(
         except Exception:
             pass
 
+        # Disparar notif `conv_assigned` al agente — tabla de notifications +
+        # SSE de /notifications/stream (lo que la consola escucha para sonido,
+        # push y badge). Antes solo emitiamos broadcast_event (SSE genérico
+        # del inbox) lo cual NO persiste ni dispara push browser.
+        try:
+            from utils.notifications import notify
+
+            await notify(
+                chosen["id"],
+                "conv_assigned",
+                {
+                    "conversation_id": conversation_id or session_id,
+                    "client_name": "una conversación nueva",
+                    "queue": queue,
+                },
+            )
+        except Exception as _e:
+            logger.warning("notify_conv_assigned_failed", error=str(_e))
+
         broadcast_event(
             {
                 "type": "conv_assigned",

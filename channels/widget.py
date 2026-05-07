@@ -1357,11 +1357,18 @@ async def process_widget_message(
     # ── Persistir agente actual en la conversación ─────────────────────────────
     # Sin esto, el router pierde el agente en el segundo mensaje y defaultea a
     # "sales" — rompe cobranzas y post_venta.
+    #
+    # ⚠️ Las keys de este map deben coincidir con `AgentType.<X>.value` que es
+    # lo que devuelve el supervisor en `agent_used`. Esos values son en español
+    # (ventas/cobranzas/post_venta), NO en inglés. Bug histórico: el map estaba
+    # con keys en inglés ("sales"/"collections"/"post_sales") y NUNCA matcheaba
+    # → conversation.current_agent quedaba siempre en SALES default → todos los
+    # turnos post-bootstrap caían a ventas.
     _agent_type_map = {
-        "sales": AgentType.SALES,
-        "collections": AgentType.COLLECTIONS,
-        "post_sales": AgentType.POST_SALES,
-        "closer": AgentType.SALES,  # closer vuelve a ventas
+        AgentType.SALES.value: AgentType.SALES,             # "ventas"
+        AgentType.COLLECTIONS.value: AgentType.COLLECTIONS, # "cobranzas"
+        AgentType.POST_SALES.value: AgentType.POST_SALES,   # "post_venta"
+        AgentType.CLOSER.value: AgentType.SALES,            # "closer" → vuelve a ventas
     }
     new_agent_type = _agent_type_map.get(agent_used)
     if new_agent_type and conversation.current_agent != new_agent_type:

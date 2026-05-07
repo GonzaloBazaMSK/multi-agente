@@ -1421,6 +1421,16 @@ async def process_widget_message(
         conversation.status = ConversationStatus.HANDED_OFF
         await store.save(conversation)
 
+        # 3b) Pausar el bot — sin esto el composer del inbox sigue mostrando
+        # "Bot activo · respondiendo automáticamente" aunque la conv esté en
+        # handoff. La pausa la lee `c.bot_paused` en el front.
+        try:
+            from memory import conversation_meta as cm
+
+            await cm.set_bot_paused(conversation.id, True)
+        except Exception as _e:
+            logger.debug("set_bot_paused_failed", error=str(_e))
+
         # 4) Asignar a un humano de la cola correcta (cobranzas_AR, ventas_MX, etc.)
         try:
             queue_key = f"conv_queue:{conversation.id}"

@@ -37,7 +37,7 @@ async def get_student_info(email: str = "", phone: str = "", contact_id: str = "
         contact = await contacts.search_by_phone(phone)
 
     if not contact:
-        return "No encontré un alumno registrado con esos datos. ¿Podés verificar el email?"
+        return "No encontré un alumno registrado con esos datos. ¿Puedes verificar el email?"
 
     name = f"{contact.get('First_Name', '')} {contact.get('Last_Name', '')}".strip()
     c_id = contact.get("id", "")
@@ -85,12 +85,13 @@ async def request_campus_access(
     )
     return (
         f"Registré el problema de acceso para {course_name}.\n"
-        f"El equipo técnico revisará tu caso en las próximas 2-4 horas hábiles.\n"
-        f"Número de ticket: SOPORTE-{order_id[:8].upper()}\n\n"
-        f"Mientras tanto, podés intentar:\n"
+        f"El equipo técnico revisará tu caso. Si pasan 2-4 horas hábiles sin respuesta, "
+        f"podés generar un ticket directo en el Centro de Ayuda: "
+        f"https://ayuda.msklatam.com/portal/es/newticket\n\n"
+        f"Mientras tanto, puedes intentar:\n"
         f"• Limpiar caché del navegador\n"
         f"• Usar el link de ingreso que llegó al email al momento de la inscripción\n"
-        f"• Probar con otro navegador (Chrome recomendado)"
+        f"• Probar con otro navegador (Chrome o Firefox recomendados)"
     )
 
 
@@ -125,9 +126,12 @@ async def request_certificate(
         f"Solicitud de certificado registrada correctamente.\n\n"
         f"📋 Detalles:\n"
         f"• Curso: {course_name}\n"
-        f"• Nombre en certificado: {student_full_name}\n"
-        f"• Referencia: CERT-{order_id[:8].upper()}\n\n"
-        f"El certificado será emitido y enviado a tu email registrado dentro de 3 a 5 días hábiles."
+        f"• Nombre en certificado: {student_full_name}\n\n"
+        f"El certificado se procesa automáticamente y se notifica por email/WhatsApp dentro de 72 horas hábiles "
+        f"desde la aprobación del examen y el pago completo del curso. "
+        f"Si pasaron las 72 hs y no recibiste el certificado, puedes consultar a "
+        f"certificaciones@msklatam.com o generar un ticket en "
+        f"https://ayuda.msklatam.com/portal/es/newticket"
     )
 
 
@@ -156,30 +160,30 @@ async def log_technical_issue(
 
     quick_fixes = {
         "video": (
-            "• Verificá tu conexión a internet (se necesitan al menos 10 Mbps)\n"
-            "• Desactivá el VPN si lo tenés activo\n"
-            "• Probá con Chrome o Firefox actualizados\n"
-            "• Limpiar caché: Ctrl+Shift+Delete"
+            "• Verifica tu conexión a internet (se necesitan al menos 10 Mbps)\n"
+            "• Desactiva el VPN si lo tienes activo\n"
+            "• Prueba con Chrome o Firefox actualizados\n"
+            "• Limpia caché: Ctrl+Shift+Delete"
         ),
         "descarga": (
-            "• Verificá que no tenés bloqueador de descargas activo\n"
-            "• Intentá hacer click derecho → Guardar enlace como\n"
-            "• Probá con otro navegador"
+            "• Verifica que no tienes bloqueador de descargas activo\n"
+            "• Intenta hacer click derecho → Guardar enlace como\n"
+            "• Prueba con otro navegador"
         ),
         "login": (
-            "• Usá el link de recuperación de contraseña en la pantalla de login\n"
-            "• Verificá que estás usando el email con el que te registraste\n"
-            "• Revisá la carpeta de spam por el email de bienvenida"
+            "• Usa el link de recuperación de contraseña en la pantalla de login\n"
+            "• Verifica que estás usando el email con el que te registraste\n"
+            "• Revisa la carpeta de spam por el email de bienvenida"
         ),
     }
 
-    tip = quick_fixes.get(issue_type, "• Intentá limpiar la caché del navegador y volver a intentar.")
+    tip = quick_fixes.get(issue_type, "• Intenta limpiar la caché del navegador y volver a probar.")
 
     return (
         f"Registré tu problema técnico de tipo '{issue_type}'.\n\n"
-        f"Algunas cosas que podés probar:\n{tip}\n\n"
-        f"Si el problema persiste, nuestro equipo técnico lo revisará. "
-        f"Ticket de soporte: TEC-{contact_id[:6].upper()}"
+        f"Algunas cosas que puedes probar:\n{tip}\n\n"
+        f"Si el problema persiste, puedes generar un ticket en el Centro de Ayuda: "
+        f"https://ayuda.msklatam.com/portal/es/newticket"
     )
 
 

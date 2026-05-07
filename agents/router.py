@@ -626,6 +626,11 @@ async def route_message(
             "phone": phone,
         }
 
+    # Cantidad de mensajes ANTES de invocar el supervisor — sirve para detectar
+    # si algún agente IA agregó respuesta nueva en este turno o si el flow pasó
+    # directo a handoff sin generar AI message (keyword "asesor", forced humano).
+    messages_before = len(initial_state["messages"])
+
     try:
         final_state = await supervisor.ainvoke(initial_state)
         openai_breaker.record_success()
@@ -642,17 +647,24 @@ async def route_message(
             "phone": phone,
         }
 
-    # Extraer respuesta del último mensaje del asistente
+    # Extraer respuesta — solo de los mensajes NUEVOS (post-invocación). Si un
+    # agente IA corrió, agregó al menos un AIMessage. Si fue handoff por keyword
+    # sin pasar por agente, no hay AI nuevo y messages_after == messages_before.
+    # ANTES tomábamos el último AIMessage del historial y eso duplicaba la
+    # respuesta del turno anterior cuando el user pedía "quiero hablar con un
+    # asesor".
     response_text = ""
-    for m in reversed(final_state["messages"]):
+    new_messages = final_state["messages"][messages_before:]
+    for m in reversed(new_messages):
         if isinstance(m, AIMessage) and m.content:
             response_text = m.content
             break
 
-    # Si es handoff directo (sin pasar por agente), generar mensaje para el usuario
+    # Si no hay AI message nuevo y se pidió handoff, generar mensaje para el user
     if not response_text and final_state.get("handoff_requested"):
         response_text = (
-            "Te voy a conectar con un asesor para que pueda ayudarte personalmente. Un momento, por favor 🙏"
+            "Te voy a conectar con un asesor académico para que pueda ayudarte "
+            "personalmente. En breve te responderá por este mismo canal 🙏"
         )
 
     # ── Cleanup centralizado de tags internos ────────────────────────────────

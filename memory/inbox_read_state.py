@@ -52,6 +52,10 @@ async def unread_counts_for_user(
     posteriores al last_read_at del agente. Si nunca abrió → cuenta TODOS los
     mensajes user de esa conv.
 
+    SOLO cuenta convs con `bot_paused = true` (humano atendiendo). Cuando el
+    bot IA está atendiendo solo, no es responsabilidad del agente humano leer
+    cada mensaje — el bot maneja el flujo.
+
     Retorna dict {conv_id_str: count}. Las convs sin mensajes no leídos NO
     aparecen en el dict (se asume 0 implícito).
     """
@@ -63,11 +67,14 @@ async def unread_counts_for_user(
             """
             SELECT m.conversation_id::text AS conv_id, count(*)::int AS cnt
             FROM public.messages m
+            JOIN public.conversation_meta cm
+                ON cm.conversation_id = m.conversation_id
             LEFT JOIN public.inbox_read_state rs
                 ON rs.conversation_id = m.conversation_id
                 AND rs.user_id = $1::uuid
             WHERE m.conversation_id = ANY($2::uuid[])
               AND m.role = 'user'
+              AND cm.bot_paused = true
               AND (rs.last_read_at IS NULL OR m.created_at > rs.last_read_at)
             GROUP BY m.conversation_id
             """,

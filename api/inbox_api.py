@@ -943,12 +943,13 @@ async def list_conversations(
 
     # vistas
     if view == "unread":
-        # "No leídas" = convs con al menos 1 mensaje role='user' posterior al
-        # last_read_at del agente (o sin row de read_state, o sea nunca abierta).
-        # Filtro server-side via EXISTS para no traer convs que ya están leídas.
+        # "No leídas" = convs con bot_paused=true (humano atendiendo) Y al menos
+        # 1 mensaje role='user' posterior al last_read_at del agente (o sin row
+        # de read_state, o sea nunca abierta). Si el bot IA está atendiendo
+        # solo, no contamos como "no leído" — el bot maneja el flujo.
         if user and user.get("id"):
             where_parts.append(
-                f"""EXISTS (
+                f"""(cm.bot_paused = true AND EXISTS (
                     SELECT 1 FROM public.messages m2
                     LEFT JOIN public.inbox_read_state rs2
                         ON rs2.conversation_id = m2.conversation_id
@@ -956,7 +957,7 @@ async def list_conversations(
                     WHERE m2.conversation_id = c.id
                       AND m2.role = 'user'
                       AND (rs2.last_read_at IS NULL OR m2.created_at > rs2.last_read_at)
-                )"""
+                ))"""
             )
             params.append(user["id"])
             idx += 1

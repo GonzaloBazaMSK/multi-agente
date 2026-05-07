@@ -25,10 +25,12 @@ import type { Notification, Preferences } from "@/lib/notifications";
 type ListResponse = { notifications: Notification[]; count: number };
 type CountResponse = { count: number };
 
-// Mantenemos un AudioContext único entre beeps. Si lo creamos en cada playBeep,
-// Chrome lo crea en estado "suspended" hasta la primera interacción del usuario,
-// y los beeps siguientes pueden seguir suspendidos.
+// Mantenemos un AudioContext único y un flag de "user gesture detectado" para
+// que el primer click/keydown del user "desbloquee" el audio (Chrome bloquea
+// `osc.start()` si nunca hubo gesture en la página, incluso si después
+// llamamos resume()).
 let _sharedAudioCtx: AudioContext | null = null;
+let _audioUnlocked = false;
 
 function getAudioCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -44,13 +46,53 @@ function getAudioCtx(): AudioContext | null {
   }
 }
 
+/**
+ * Listener global que "desbloquea" el AudioContext en el PRIMER user gesture
+ * (click, keydown, touchstart). Una vez resumido, los beeps subsecuentes
+ * funcionan sin que el user tenga que clickear cada vez. Lo registramos una
+ * sola vez por carga de página.
+ */
+function installAudioUnlockListener() {
+  if (typeof window === "undefined" || _audioUnlocked) return;
+  const handler = () => {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      ctx.resume().then(() => {
+        _audioUnlocked = true;
+        // Tocar un beep mudo para "calentar" el pipeline — algunos browsers
+        // necesitan que se ejecute un osc.start() dentro del gesture handler
+        // para considerar el contexto desbloqueado de verdad.
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.01);
+        } catch {
+          // ignore
+        }
+      }).catch(() => {});
+    } else {
+      _audioUnlocked = true;
+    }
+  };
+  // Capture phase + once: corre una sola vez en el primer gesture y se quita.
+  const opts = { capture: true, once: true } as AddEventListenerOptions;
+  window.addEventListener("click", handler, opts);
+  window.addEventListener("keydown", handler, opts);
+  window.addEventListener("touchstart", handler, opts);
+}
+
 function playBeep() {
   const ctx = getAudioCtx();
-  if (!ctx) return;
-  // Chrome bloquea audio hasta que el user interactúe con la página. resume()
-  // lo despierta. Si nunca hubo click, queda suspended y no suena (limitación
-  // del navegador, no nuestra). Una vez que el user clickea cualquier cosa,
-  // los beeps siguientes ya funcionan.
+  if (!ctx) {
+    console.warn("[notifs] playBeep: no AudioContext available");
+    return;
+  }
+  console.log("[notifs] playBeep: state=", ctx.state, "unlocked=", _audioUnlocked);
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
   try {
     const osc = ctx.createOscillator();
@@ -63,8 +105,8 @@ function playBeep() {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.3);
-  } catch {
-    // Silently ignore.
+  } catch (e) {
+    console.warn("[notifs] playBeep failed:", e);
   }
 }
 
@@ -74,8 +116,15 @@ function playBeep() {
  * explícito del usuario — la primera vez la pedimos con requestPermission().
  */
 function showBrowserNotification(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
+  if (typeof window === "undefined" || !("Notification" in window)) {
+    console.warn("[notifs] showBrowserNotification: Notification API not available");
+    return;
+  }
+  console.log("[notifs] showBrowserNotification: permission=", Notification.permission);
+  if (Notification.permission !== "granted") {
+    console.warn("[notifs] showBrowserNotification: permission not granted");
+    return;
+  }
   try {
     const n = new Notification(title, {
       body,
@@ -87,9 +136,9 @@ function showBrowserNotification(title: string, body: string) {
       window.focus();
       n.close();
     };
-  } catch {
-    // Algunos navegadores tiran si Notification se llama desde service worker
-    // context. Si pasa, ignoramos — el beep + el badge de la consola son fallback.
+    console.log("[notifs] showBrowserNotification: shown ok");
+  } catch (e) {
+    console.warn("[notifs] showBrowserNotification failed:", e);
   }
 }
 
@@ -158,6 +207,7 @@ export function useNotifications() {
   // abre via click la primera invocación suele andar igual.
   useEffect(() => {
     ensureNotificationPermission();
+    installAudioUnlockListener();
   }, []);
 
   // Connect SSE cuando hay prefs cargadas (necesitamos saber `sound_enabled`)
@@ -178,6 +228,7 @@ export function useNotifications() {
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data);
+        console.log("[notifs] SSE message:", payload);
         if (payload.event === "new" && payload.notification) {
           // Actualiza lista + count localmente sin refetch full
           qc.setQueryData<ListResponse>(["notifications", "list"], (old) => {
@@ -190,6 +241,7 @@ export function useNotifications() {
           qc.setQueryData<CountResponse>(["notifications", "unread-count"], (old) => ({
             count: (old?.count ?? 0) + 1,
           }));
+          console.log("[notifs] sound_enabled:", prefs.sound_enabled);
           if (prefs.sound_enabled) playBeep();
           // Push del navegador — visible aunque el browser esté minimizado.
           // Solo si hay permiso (request al mount). Mensaje contextualizado

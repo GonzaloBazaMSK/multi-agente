@@ -95,16 +95,24 @@ function playBeep() {
   console.log("[notifs] playBeep: state=", ctx.state, "unlocked=", _audioUnlocked);
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
   try {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.3);
+    // Beep doble estilo "ding-dong" descendente — más reconocible que un solo
+    // tono y más volumen (0.4 vs 0.15 anterior, que era casi inaudible con
+    // altavoces grandes). Duración total ~0.6s.
+    const t0 = ctx.currentTime;
+    const playTone = (freq: number, start: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.4, start);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + duration);
+    };
+    playTone(880, t0, 0.25); // primer tono alto
+    playTone(660, t0 + 0.15, 0.35); // segundo descendente
   } catch (e) {
     console.warn("[notifs] playBeep failed:", e);
   }

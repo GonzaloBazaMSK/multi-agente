@@ -5,18 +5,12 @@ from langgraph.prebuilt import create_react_agent
 from agents.post_sales.prompts import POST_SALES_SYSTEM_PROMPT
 from agents.post_sales.tools import (
     get_student_info,
-    log_technical_issue,
-    request_campus_access,
-    request_certificate,
     send_nps_survey,
 )
 from config.settings import get_settings
 
 POST_SALES_TOOLS = [
     get_student_info,
-    request_campus_access,
-    request_certificate,
-    log_technical_issue,
     send_nps_survey,
 ]
 

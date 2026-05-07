@@ -8,6 +8,7 @@
 - [Pending: Supabase rotation](pending_supabase_rotation.md) — Rotar SUPABASE_SECRET_KEY que estuvo hardcodeada.
 - [Pending: sales prompt enhancements](pending_sales_prompt_enhancements.md) — Mejoras pendientes script de Gino: banco objeciones + cierre cálido (sondeo parcialmente cubierto por regla 0b).
 - [Feedback: cobranzas tools independientes](feedback_collections_tools.md) — Las 2 tools de Rebill (suscripcion + insta_link) NO tienen fallback cruzado. Si suscripcion falla → derivar, NO probar insta_link.
+- [Feedback: post-venta NO loguea en Zoho Cobranzas](feedback_post_venta_no_zoho_log.md) — Para problemas técnicos/acceso/certificados, el bot da info de FAQ + link al portal de tickets. Sin pasar por Zoho.
 - [Feedback: no reescribir lo que está armado](feedback_dont_rewrite.md) — Si hay bug, fixear quirúrgico. No rediseñar decision trees existentes.
 - [Workflow preferences](workflow_preferences.md) — Trabajar en `main` directo, nunca worktrees. Verificación real (HTTP 200, screenshot) antes de decir "listo".
 - [Language](language.md) — Español rioplatense informal.

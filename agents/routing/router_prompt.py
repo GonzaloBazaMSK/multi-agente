@@ -42,21 +42,64 @@ Al final del historial verás un bloque opcional [SEÑALES]. Úsalo así:
 - is_student=false → nunca clasifiques cobranzas salvo que el usuario mencione
   explícitamente una deuda o un cobro ya hecho.
 
-REGLA IMPORTANTE — CONTINUIDAD DE FLUJO:
+REGLA CRÍTICA — CONTINUIDAD DE FLUJO (PESO ALTO):
 Si la conversación ya está en curso con un agente (ventas, cobranzas, post_venta),
-mantené ese mismo agente a menos que el usuario cambie CLARAMENTE de tema.
-Mensajes cortos, respuestas, confirmaciones o preguntas de clarificación dentro
-de un flujo activo NO deben cambiar de agente.
-Ejemplo: si estaban en ventas recolectando datos para inscripción y el usuario dice
-"¿problemas con qué?" o "¿cómo?" o "no entiendo", seguir en ventas.
+**MANTENÉ ese mismo agente** salvo que el usuario cambie INEQUÍVOCAMENTE de tema.
+Esto incluye:
+- Mensajes cortos, respuestas, confirmaciones, preguntas de clarificación → mismo agente.
+- Preguntas que pueden interpretarse como pre-venta O post-venta → mismo agente.
+- Si current_agent='post_venta' (el alumno entró por "Soporte Alumnos" del widget),
+  preguntas sobre vigencia, certificados, avales del curso, oficina, factura, pagos
+  pasados, contraseña → SIGUEN EN POST_VENTA, no saltar a ventas aunque el LLM
+  "sienta" que es info comercial.
+- Si current_agent='cobranzas', preguntas sobre cómo pagar, descuentos, fechas → SIGUEN
+  EN COBRANZAS.
+- Solo cambiar de agente si el alumno explícitamente menciona otro tema (ej: estaban
+  en post_venta y dice "querría inscribirme a otro curso, ¿cuánto sale?" → ventas).
 
-REGLA — SALUDO GENÉRICO:
-Si el mensaje es un saludo ("hola", "buenas", "necesito ayuda") sin tema específico,
-clasificá como VENTAS. Solo usá humano si el usuario LO PIDE EXPLÍCITAMENTE.
+Ejemplo: si current_agent='ventas' recolectando datos para inscripción y el usuario
+dice "¿problemas con qué?" o "¿cómo?" o "no entiendo", seguir en ventas.
 
-Ejemplos post_venta (NO humano ni cobranzas):
+REGLA — POSESIVOS DEL ALUMNO:
+Si el mensaje contiene posesivos del alumno ("mi factura", "mi certificado", "mi
+curso", "mi cuenta", "mi contraseña", "mis pagos") → es claramente alumno YA INSCRIPTO,
+clasificá COBRANZAS o POST_VENTA según el contenido. **NO clasifiques ventas** cuando
+el usuario habla en posesivo de algo que ya tiene.
+
+REGLA — SALUDO GENÉRICO (SIN current_agent):
+Si current_agent está vacío y el mensaje es un saludo ("hola", "buenas", "necesito
+ayuda") sin tema específico → VENTAS por default. Solo usá humano si el usuario LO
+PIDE EXPLÍCITAMENTE.
+
+Si current_agent ya está seteado y el alumno solo saluda → mantener current_agent.
+
+EJEMPLOS POST_VENTA (NO ventas, NO humano, NO cobranzas):
+Acceso/login:
 - "no puedo acceder al campus"
+- "perdí mi contraseña" / "olvidé mi password"
+- "no me llegó el mail con las claves"
+- "no encuentro mi cuenta"
+Certificados:
 - "necesito mi certificado"
+- "cuándo me llega el certificado"
+- "no recibí el diploma"
+- "tengo aprobado el examen pero no tengo el certificado"
+Soporte técnico:
 - "el video no carga"
+- "el campus me tira error"
+- "no puedo descargar el material"
+Datos del curso:
+- "cuánto tiempo tengo para hacer el curso" (si is_student=true o current_agent=post_venta)
+- "qué avales tiene mi curso"
+- "mi curso vence cuándo"
+- "puedo ampliar la vigencia"
+Facturación pasada:
+- "dónde bajo mi factura"
+- "necesito el comprobante del pago de octubre"
+Empresa:
+- "MSK tiene oficina física" (si current_agent=post_venta o is_student=true)
+- "tienen teléfono de contacto"
+Otros:
+- "quiero darme de baja del curso" (puede ir a cobranzas si hay deuda, o post_venta si no)
 
 Respondé solo con la palabra, sin explicación."""

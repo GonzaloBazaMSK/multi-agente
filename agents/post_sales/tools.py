@@ -1,7 +1,17 @@
 """
 Herramientas del agente de post-venta.
-El alta en LMS la gestiona Zoho automáticamente al crear el contrato.
-Aquí solo consultamos estado y gestionamos soporte.
+
+Filosofía: el bot responde con info de la FAQ embebida en el prompt; cuando
+no puede resolver o el caso requiere acción humana, deriva al portal de
+tickets (https://ayuda.msklatam.com/portal/es/newticket).
+
+NO logueamos cosas en Zoho desde acá — el módulo "Cobranzas" no es para
+soporte técnico ni campus access ni certificados, y nadie del equipo técnico
+monitorea eso. El portal de tickets oficial sí tiene seguimiento real.
+
+Tools activas:
+- get_student_info: identifica al alumno en Zoho (Contacts + Sales Orders).
+- send_nps_survey: registra puntaje NPS si el alumno lo manda.
 """
 
 import structlog
@@ -58,133 +68,6 @@ async def get_student_info(email: str = "", phone: str = "", contact_id: str = "
         lines.append(f"\nUsuario LMS: {contact['LMS_User_ID']}")
 
     return "\n".join(lines)
-
-
-@tool
-async def request_campus_access(
-    contact_id: str,
-    order_id: str,
-    course_name: str,
-    issue_description: str,
-) -> str:
-    """
-    Registra un problema de acceso al campus y escala para revisión.
-    El acceso lo gestiona Zoho automáticamente; si falló, se crea un ticket.
-
-    Args:
-        contact_id: ID del contacto en Zoho
-        order_id: ID de la orden del curso
-        course_name: Nombre del curso
-        issue_description: Descripción del problema de acceso
-    """
-    collections = ZohoCollections()
-    await collections.log_interaction(
-        contact_id=contact_id,
-        notes=f"Problema de acceso al campus. Curso: {course_name}. Descripción: {issue_description}",
-        interaction_type="Soporte - Acceso campus",
-    )
-    return (
-        f"Registré el problema de acceso para {course_name}.\n"
-        f"El equipo técnico revisará tu caso. Si pasan 2-4 horas hábiles sin respuesta, "
-        f"podés generar un ticket directo en el Centro de Ayuda: "
-        f"https://ayuda.msklatam.com/portal/es/newticket\n\n"
-        f"Mientras tanto, puedes intentar:\n"
-        f"• Limpiar caché del navegador\n"
-        f"• Usar el link de ingreso que llegó al email al momento de la inscripción\n"
-        f"• Probar con otro navegador (Chrome o Firefox recomendados)"
-    )
-
-
-@tool
-async def request_certificate(
-    contact_id: str,
-    order_id: str,
-    course_name: str,
-    student_full_name: str,
-    student_dni: str = "",
-) -> str:
-    """
-    Registra una solicitud de certificado de aprobación.
-
-    Args:
-        contact_id: ID del contacto
-        order_id: ID de la orden del curso
-        course_name: Nombre del curso
-        student_full_name: Nombre completo tal como debe figurar en el certificado
-        student_dni: DNI / documento del alumno (opcional, según país)
-    """
-    collections = ZohoCollections()
-    await collections.log_interaction(
-        contact_id=contact_id,
-        notes=(
-            f"Solicitud de certificado. Curso: {course_name}. "
-            f"Nombre en certificado: {student_full_name}. DNI: {student_dni or 'No proporcionado'}"
-        ),
-        interaction_type="Solicitud de certificado",
-    )
-    return (
-        f"Solicitud de certificado registrada correctamente.\n\n"
-        f"📋 Detalles:\n"
-        f"• Curso: {course_name}\n"
-        f"• Nombre en certificado: {student_full_name}\n\n"
-        f"El certificado se procesa automáticamente y se notifica por email/WhatsApp dentro de 72 horas hábiles "
-        f"desde la aprobación del examen y el pago completo del curso. "
-        f"Si pasaron las 72 hs y no recibiste el certificado, puedes consultar a "
-        f"certificaciones@msklatam.com o generar un ticket en "
-        f"https://ayuda.msklatam.com/portal/es/newticket"
-    )
-
-
-@tool
-async def log_technical_issue(
-    contact_id: str,
-    issue_type: str,
-    description: str,
-    course_name: str = "",
-) -> str:
-    """
-    Registra un problema técnico (videos, descargas, plataforma) y escala si no tiene solución rápida.
-
-    Args:
-        contact_id: ID del contacto
-        issue_type: Tipo de problema ('video', 'descarga', 'login', 'plataforma', 'otro')
-        description: Descripción detallada del problema
-        course_name: Nombre del curso afectado (opcional)
-    """
-    collections = ZohoCollections()
-    await collections.log_interaction(
-        contact_id=contact_id,
-        notes=f"Soporte técnico. Tipo: {issue_type}. Curso: {course_name}. Descripción: {description}",
-        interaction_type="Soporte técnico",
-    )
-
-    quick_fixes = {
-        "video": (
-            "• Verifica tu conexión a internet (se necesitan al menos 10 Mbps)\n"
-            "• Desactiva el VPN si lo tienes activo\n"
-            "• Prueba con Chrome o Firefox actualizados\n"
-            "• Limpia caché: Ctrl+Shift+Delete"
-        ),
-        "descarga": (
-            "• Verifica que no tienes bloqueador de descargas activo\n"
-            "• Intenta hacer click derecho → Guardar enlace como\n"
-            "• Prueba con otro navegador"
-        ),
-        "login": (
-            "• Usa el link de recuperación de contraseña en la pantalla de login\n"
-            "• Verifica que estás usando el email con el que te registraste\n"
-            "• Revisa la carpeta de spam por el email de bienvenida"
-        ),
-    }
-
-    tip = quick_fixes.get(issue_type, "• Intenta limpiar la caché del navegador y volver a probar.")
-
-    return (
-        f"Registré tu problema técnico de tipo '{issue_type}'.\n\n"
-        f"Algunas cosas que puedes probar:\n{tip}\n\n"
-        f"Si el problema persiste, puedes generar un ticket en el Centro de Ayuda: "
-        f"https://ayuda.msklatam.com/portal/es/newticket"
-    )
 
 
 @tool

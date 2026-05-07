@@ -172,14 +172,10 @@ export function ConversationDetail({
             <div className="text-sm font-semibold flex items-center gap-2 flex-wrap">
               <Flag iso={contact.country} size={13} />
               <span className="truncate">{contact.name}</span>
-              {/* Badge sincronizado con el lifecycle ACTUAL de la conversación
-                  (no del contacto) — para que el cambio en "Clasificar" se vea acá */}
-              <Badge variant={conversation.lifecycle}>
-                {conversation.lifecycle === "hot" ? "Hot Lead"
-                  : conversation.lifecycle === "new" ? "New Lead"
-                  : conversation.lifecycle === "customer" ? "Customer"
-                  : "Cold Lead"}
-              </Badge>
+              {/* Badge "New Lead" / lifecycle removido del header.
+                  El lifecycle sigue en el filtro lateral del inbox. La
+                  etiqueta visible al usuario es la del clasificador IA
+                  (Caliente/Tibio/Frío) — más útil porque se actualiza solo. */}
               {/* Badge "Bot pausado" removido del header — el estado se ve por
                   el botón "Reactivar bot" amarillo a la derecha. */}
             </div>
@@ -187,10 +183,7 @@ export function ConversationDetail({
               {contact.phone} · {contact.channel === "whatsapp" ? "WhatsApp" : "Web Widget"}
               {contact.pageContext && ` · ${contact.pageContext}`}
               {assignedAgent && (
-                <>
-                  {" · asignada a "}
-                  <span className="text-accent font-medium">{assignedAgent.name}</span>
-                </>
+                <span className="text-accent font-bold"> · asignada a {assignedAgent.name}</span>
               )}
             </div>
           </div>

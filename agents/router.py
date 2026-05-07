@@ -84,6 +84,52 @@ def detect_handoff_keywords(text: str) -> bool:
     return any(kw in text_lower for kw in HANDOFF_KEYWORDS)
 
 
+async def _persist_queue_and_intent(
+    conversation_id: str,
+    agent: str,
+    intent_label: str,
+    last_user_msg: str,
+    handoff: bool,
+) -> None:
+    """Persiste la queue + needs_human en conversation_meta y logea el intent.
+
+    Se llama desde AMBOS paths del classifier (forced_agent y LLM clásico) — sin
+    esto, las conversaciones que vienen por botón del widget (Soporte Cobros /
+    Soporte Alumnos) quedan etiquetadas como "ventas" en el inbox aunque el
+    agente que respondió sea cobranzas o post_venta.
+    """
+    if not conversation_id:
+        return
+    try:
+        from utils.conv_events import log_intent
+
+        await log_intent(
+            conversation_id,
+            intent_label,
+            agent,
+            (last_user_msg or "")[:80],
+        )
+    except Exception:
+        pass
+
+    try:
+        from memory import conversation_meta as cm
+
+        queue_map = {
+            AgentType.SALES.value: "sales",
+            AgentType.CLOSER.value: "sales",
+            AgentType.COLLECTIONS.value: "billing",
+            AgentType.POST_SALES.value: "post-sales",
+        }
+        queue = queue_map.get(agent)
+        if queue:
+            await cm.set_queue(conversation_id, queue)
+        if handoff:
+            await cm.set_needs_human(conversation_id, True)
+    except Exception as e:
+        logger.warning("queue_persist_failed", error=str(e), conversation_id=conversation_id)
+
+
 async def classify_intent(state: SupervisorState) -> dict:
     """Nodo clasificador — decide qué agente usar."""
 
@@ -91,12 +137,28 @@ async def classify_intent(state: SupervisorState) -> dict:
     if state.get("forced_agent"):
         forced = state["forced_agent"]
         logger.info("intent_forced", agent=forced)
+
+        # Extraer último mensaje user para el log_intent
+        messages = state.get("messages", [])
+        last_user_msg = ""
+        for m in reversed(messages):
+            if isinstance(m, HumanMessage):
+                last_user_msg = m.content
+                break
+
+        is_handoff = forced == AgentType.HUMAN.value
+        await _persist_queue_and_intent(
+            conversation_id=state.get("conversation_id", "") or state.get("phone", ""),
+            agent=forced,
+            intent_label="forced_by_widget",
+            last_user_msg=last_user_msg,
+            handoff=is_handoff,
+        )
+
         return {
             "current_agent": forced,
-            "handoff_requested": forced == AgentType.HUMAN.value,
-            "handoff_reason": "Derivación forzada por flujo del widget"
-            if forced == AgentType.HUMAN.value
-            else "",
+            "handoff_requested": is_handoff,
+            "handoff_reason": "Derivación forzada por flujo del widget" if is_handoff else "",
         }
 
     messages = state["messages"]
@@ -185,44 +247,14 @@ async def classify_intent(state: SupervisorState) -> dict:
 
     logger.info("intent_classified", intent=intent, agent=agent)
 
-    # Loguear evento de intent para el inbox
-    conversation_id = state.get("conversation_id", "") or state.get("phone", "")
-    if conversation_id:
-        try:
-            from utils.conv_events import log_intent
-
-            await log_intent(
-                conversation_id,
-                intent,
-                agent,
-                last_user_msg[:80] if last_user_msg else "",
-            )
-        except Exception:
-            pass
-
     handoff = agent == AgentType.HUMAN.value
-
-    # Persistir queue + needs_human en conversation_meta para que el inbox
-    # del back-office los filtre. La queue NO cambia cuando el bot decide
-    # "humano" — sólo se levanta el flag needs_human (sigue en su cola
-    # original de ventas/cobranzas/post-venta).
-    if conversation_id:
-        try:
-            from memory import conversation_meta as cm
-
-            queue_map = {
-                AgentType.SALES.value: "sales",
-                AgentType.CLOSER.value: "sales",
-                AgentType.COLLECTIONS.value: "billing",
-                AgentType.POST_SALES.value: "post-sales",
-            }
-            queue = queue_map.get(agent)
-            if queue:
-                await cm.set_queue(conversation_id, queue)
-            if handoff:
-                await cm.set_needs_human(conversation_id, True)
-        except Exception as e:
-            logger.warning("queue_persist_failed", error=str(e))
+    await _persist_queue_and_intent(
+        conversation_id=state.get("conversation_id", "") or state.get("phone", ""),
+        agent=agent,
+        intent_label=intent,
+        last_user_msg=last_user_msg,
+        handoff=handoff,
+    )
 
     return {
         "current_agent": agent,

@@ -907,6 +907,51 @@ async def process_widget_message(
             "bot_disabled": True,
         }
 
+    # ── Bot pausado manualmente (humano tomó control sin handoff) ──────────
+    # Distinto del handoff: el agente puede pausar el bot desde el botón
+    # "Tomar control" del inbox sin hacer handoff explícito. En ese caso
+    # bot_paused=true pero status sigue ACTIVE. Sin este gate, el bot seguía
+    # respondiendo y pisaba las respuestas del humano.
+    try:
+        from memory import conversation_meta as cm
+
+        _meta = await cm.get(str(conversation.id))
+        if _meta and _meta.get("bot_paused"):
+            # Persistimos el mensaje del usuario para que el humano lo vea.
+            user_msg = Message(role=MessageRole.USER, content=message_text)
+            await store.append_message(conversation, user_msg)
+            await _broadcast(
+                {
+                    "type": "new_message",
+                    "session_id": session_id,
+                    "role": "user",
+                    "content": message_text,
+                    "sender_name": user_name or "Usuario",
+                    "timestamp": user_msg.timestamp.isoformat(),
+                }
+            )
+            # Notificar al humano asignado — sonido + cartel del navegador.
+            try:
+                from utils.notifications import on_inbound_user_message
+
+                await on_inbound_user_message(
+                    session_id=str(conversation.id),
+                    content_preview=message_text,
+                    sender_name=user_name or conversation.user_profile.name or "cliente",
+                )
+            except Exception as _e:
+                logger.debug("notify_inbound_botpaused_failed", error=str(_e))
+
+            return {
+                "response": "",  # bot pausado — el humano atiende
+                "agent_used": "humano",
+                "handoff_requested": False,
+                "session_id": session_id,
+                "bot_disabled": True,
+            }
+    except Exception as _e:
+        logger.debug("bot_paused_gate_failed", error=str(_e))
+
     # ── Conversación ya derivada a humano ─────────────────────────────────────
     # Doble gate: (1) status persistido en la conversación (fuente de verdad)
     # (2) flag rápido en Redis `conv_handoff:{sid}` — se setea sincrónico al

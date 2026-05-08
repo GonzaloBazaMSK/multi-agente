@@ -120,8 +120,21 @@ async def run_stale_conversations_check() -> int:
             except Exception:
                 user_profile = {}
 
+        # external_id de widgets es un UUID generado por el cliente (sin sentido
+        # para humanos). Solo usarlo si parece un nombre real (no UUID, no
+        # número de teléfono crudo). Si no hay nada útil, "Visitante anónimo".
+        ext_id = r["external_id"] or ""
+        looks_like_uuid = (
+            len(ext_id) >= 32 and ext_id.count("-") >= 4
+        )
+        looks_like_phone = ext_id.lstrip("+").isdigit()
+        usable_ext = ext_id if (ext_id and not looks_like_uuid and not looks_like_phone) else ""
+
         client_name = (
-            user_profile.get("name") or user_profile.get("full_name") or r["external_id"] or "cliente"
+            user_profile.get("name")
+            or user_profile.get("full_name")
+            or usable_ext
+            or "Visitante anónimo"
         )
         mins = int((now - last_msg_at).total_seconds() / 60)
 

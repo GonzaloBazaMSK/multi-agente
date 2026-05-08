@@ -74,11 +74,20 @@ async def notify(
     user_id: str,
     type: str,
     data: dict[str, Any] | None = None,
+    persist: bool = True,
 ) -> str | None:
     """Crea una notificación y la publica por pubsub.
 
     Devuelve el `id` de la notif creada, o `None` si el user silenció ese
-    tipo (chequea `notification_preferences` primero).
+    tipo (chequea `notification_preferences` primero), o si `persist=False`.
+
+    Args:
+        persist: si True (default) → INSERT en `notifications` table → aparece
+            en el dropdown del rail + GET /notifications. Si False → solo
+            publica al pubsub (push browser + sonido en tiempo real) pero
+            NO se persiste — útil para eventos transient como "mensaje nuevo
+            en conv asignada", donde el badge unread + el msg en la conv ya
+            son indicador suficiente y el dropdown es solo ruido.
 
     No hace raise en errores — logea y devuelve None. La razón: si Redis o
     Postgres están inestables no queremos bloquear el path crítico (ej.
@@ -97,36 +106,49 @@ async def notify(
         if prefs.get(type) is False:
             return None
 
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                insert into public.notifications (user_id, type, data)
-                values ($1, $2, $3::jsonb)
-                returning id, user_id, type, data, created_at, read_at
-                """,
-                user_id,
-                type,
-                json.dumps(data),
-            )
-        notif = _row_to_dict(row)
+        notif: dict | None = None
+        if persist:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    insert into public.notifications (user_id, type, data)
+                    values ($1, $2, $3::jsonb)
+                    returning id, user_id, type, data, created_at, read_at
+                    """,
+                    user_id,
+                    type,
+                    json.dumps(data),
+                )
+            notif = _row_to_dict(row)
 
-        # Publish a Redis pubsub para que los SSE conectados la reciban en
-        # tiempo real. Si Redis no anda, igualmente la notif quedó en DB y
-        # se cargará la próxima vez que hagan GET /notifications.
+        # Publish a Redis pubsub. Si persistimos, mandamos el row completo (el
+        # frontend lo muestra en el dropdown). Si NO persistimos (transient),
+        # mandamos solo type + data + flag transient=True para que el
+        # frontend solo haga beep + push del browser sin tocar el dropdown.
         try:
             from memory.conversation_store import get_conversation_store
 
             store = await get_conversation_store()
+            payload: dict = {"event": "new"}
+            if notif is not None:
+                payload["notification"] = notif
+            else:
+                payload["transient"] = True
+                payload["type"] = type
+                payload["data"] = data
             await store._redis.publish(
                 _pubsub_channel(user_id),
-                json.dumps({"event": "new", "notification": notif}),
+                json.dumps(payload),
             )
         except Exception as e:
             logger.debug("notify_pubsub_failed", error=str(e))
 
-        logger.info("notification_created", user_id=user_id, type=type, id=notif["id"])
-        return notif["id"]
+        if notif:
+            logger.info("notification_created", user_id=user_id, type=type, id=notif["id"])
+            return notif["id"]
+        logger.info("notification_transient", user_id=user_id, type=type)
+        return None
     except Exception as e:
         logger.error("notify_failed", user_id=user_id, type=type, error=str(e))
         return None
@@ -313,6 +335,10 @@ async def on_inbound_user_message(
         agent_id = meta.get("assigned_agent_id")
         if not agent_id:
             return
+        # transient=True: solo dispara push browser + sonido (no llena el
+        # dropdown). El badge unread en la conv + el msg en el detail ya son
+        # indicador suficiente; el dropdown es para acciones pendientes
+        # (asignaciones, stale, HSM aprobadas), no para cada mensaje en vivo.
         await notify(
             agent_id,
             "new_message_mine",
@@ -321,6 +347,7 @@ async def on_inbound_user_message(
                 "client_name": sender_name or "cliente",
                 "preview": (content_preview or "")[:120],
             },
+            persist=False,
         )
     except Exception as e:
         logger.debug("notify_inbound_msg_failed", session_id=session_id, error=str(e))

@@ -195,9 +195,26 @@ export function useNotifications() {
     es.onmessage = (ev) => {
       try {
         const payload = JSON.parse(ev.data);
-        console.log("[notifs] SSE message:", payload);
-        if (payload.event === "new" && payload.notification) {
-          // Actualiza lista + count localmente sin refetch full
+        if (payload.event !== "new") return;
+
+        // Eventos transient (ej: new_message_mine): solo beep + push browser.
+        // No tocan el dropdown — el badge unread + el msg en la conv ya
+        // alcanzan; el dropdown es para "cosas pendientes" (asignaciones,
+        // stale, HSM aprobada), no para cada mensaje en vivo.
+        if (payload.transient) {
+          if (prefs.sound_enabled) playBeep();
+          const t = payload.type as string | undefined;
+          const d = (payload.data || {}) as { client_name?: string; preview?: string };
+          const body =
+            t === "new_message_mine"
+              ? `${d.client_name ?? "Cliente"}: ${d.preview ?? ""}`
+              : "Tenés una novedad";
+          showBrowserNotification("MSK Console", body);
+          return;
+        }
+
+        // Persistente: dropdown + badge + beep + push.
+        if (payload.notification) {
           qc.setQueryData<ListResponse>(["notifications", "list"], (old) => {
             if (!old) return { notifications: [payload.notification], count: 1 };
             return {
@@ -208,11 +225,7 @@ export function useNotifications() {
           qc.setQueryData<CountResponse>(["notifications", "unread-count"], (old) => ({
             count: (old?.count ?? 0) + 1,
           }));
-          console.log("[notifs] sound_enabled:", prefs.sound_enabled);
           if (prefs.sound_enabled) playBeep();
-          // Push del navegador — visible aunque el browser esté minimizado.
-          // Solo si hay permiso (request al mount). Mensaje contextualizado
-          // por tipo de notif.
           const n = payload.notification as {
             title?: string;
             body?: string;
@@ -222,13 +235,11 @@ export function useNotifications() {
           const title = n.title || "MSK Console";
           const body =
             n.body ||
-            (n.type === "new_message_mine"
-              ? `${n.data?.client_name ?? "Cliente"}: ${n.data?.preview ?? ""}`
-              : n.type === "conv_assigned"
-                ? `Te asignaron: ${n.data?.client_name ?? "una conversación"}`
-                : n.type === "conv_stale"
-                  ? `Sin respuesta hace 2h: ${n.data?.client_name ?? "cliente"}`
-                  : "Tenés una novedad");
+            (n.type === "conv_assigned"
+              ? `Te asignaron: ${n.data?.client_name ?? "una conversación"}`
+              : n.type === "conv_stale"
+                ? `Sin respuesta hace 2h: ${n.data?.client_name ?? "cliente"}`
+                : "Tenés una novedad");
           showBrowserNotification(title, body);
         }
       } catch {

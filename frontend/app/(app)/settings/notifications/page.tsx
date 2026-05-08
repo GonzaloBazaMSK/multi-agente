@@ -6,6 +6,7 @@ import { Bell, Volume2, Mail, Loader2, UserPlus, MessageCircle, Clock, CheckCirc
 import { useAuth } from "@/lib/auth";
 import { useNotifications } from "@/lib/use-notifications";
 import { DEFAULT_PREFERENCES, type Preferences } from "@/lib/notifications";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function NotificationsSettingsPage() {
@@ -125,6 +126,12 @@ export default function NotificationsSettingsPage() {
               comingSoon
             />
           </div>
+          <button
+            onClick={playTestSound}
+            className="mt-2 text-[11px] text-fg-dim hover:text-fg underline underline-offset-2"
+          >
+            ▶ Probar sonido ahora
+          </button>
         </section>
 
         <div className="bg-card border border-border rounded-lg p-3 text-[11px] text-fg-dim leading-relaxed">
@@ -142,8 +149,27 @@ export default function NotificationsSettingsPage() {
   );
 }
 
+function playTestSound() {
+  const audio = new Audio("/notif.wav");
+  audio.volume = 0.7;
+  audio.play().catch((e) => console.warn("[test] audio blocked:", e?.message));
+}
+
+async function sendDebugNotif() {
+  try {
+    await api.post("/notifications/debug-notify-me", {
+      type: "new_message_mine",
+      data: { client_name: "Prueba", preview: "Esto es una notificación de prueba" },
+    });
+  } catch (e) {
+    console.warn("[test] debug-notify-me failed:", e);
+  }
+}
+
 function BrowserPermissionCard() {
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<"ok" | "err" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -159,11 +185,33 @@ function BrowserPermissionCard() {
     const result = await Notification.requestPermission();
     setPermission(result);
     if (result === "granted") {
+      playTestSound();
       new Notification("MSK Console", {
-        body: "¡Notificaciones del navegador activadas!",
+        body: "¡Notificaciones activadas! Así se verán.",
         icon: "/logo.png",
         tag: "msk-perm-test",
       });
+    }
+  };
+
+  const testAll = async () => {
+    setTesting(true);
+    setTestResult(null);
+    playTestSound();
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      new Notification("MSK Console", {
+        body: "Notificación de prueba — sonido + badge en campana",
+        icon: "/logo.png",
+        tag: "msk-test",
+      });
+    }
+    try {
+      await sendDebugNotif();
+      setTestResult("ok");
+    } catch {
+      setTestResult("err");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -178,19 +226,26 @@ function BrowserPermissionCard() {
 
   if (permission === "granted") {
     return (
-      <div className="flex items-center gap-3 p-3 rounded-lg border border-success/40 bg-success/5">
-        <BellRing className="w-4 h-4 shrink-0 text-success" />
+      <div className="flex items-start gap-3 p-3 rounded-lg border border-success/40 bg-success/5">
+        <BellRing className="w-4 h-4 shrink-0 mt-0.5 text-success" />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-success">Activadas</div>
+          <div className="text-sm font-medium text-success">Activadas ✓</div>
           <div className="text-[11px] text-fg-dim mt-0.5">
             Chrome mostrará alertas del sistema aunque la ventana esté minimizada.
           </div>
+          {testResult === "ok" && (
+            <div className="text-[11px] text-success mt-1">Notificación enviada — deberías ver el popup y escuchar el sonido.</div>
+          )}
+          {testResult === "err" && (
+            <div className="text-[11px] text-destructive mt-1">Error al enviar — revisá la consola del navegador.</div>
+          )}
         </div>
         <button
-          onClick={request}
-          className="text-[11px] text-fg-dim hover:text-fg underline underline-offset-2 shrink-0"
+          onClick={testAll}
+          disabled={testing}
+          className="shrink-0 text-[12px] font-medium bg-accent text-white px-3 py-1.5 rounded-md hover:bg-accent/90 transition-colors disabled:opacity-50"
         >
-          Probar
+          {testing ? "…" : "Probar todo"}
         </button>
       </div>
     );
@@ -203,20 +258,19 @@ function BrowserPermissionCard() {
         <div className="text-sm">
           <span className="font-medium text-destructive">Bloqueadas por el navegador.</span>
           <p className="text-[11px] text-fg-dim mt-1 leading-snug">
-            Para activarlas: hacé clic en el candado (🔒) en la barra de dirección →{" "}
-            <strong>Notificaciones</strong> → <strong>Permitir</strong>, y recargá la página.
+            Hacé clic en el candado en la barra de dirección → <strong>Notificaciones</strong> → <strong>Permitir</strong>, y recargá la página.
           </p>
         </div>
       </div>
     );
   }
 
-  // default — no se pidió todavía
+  // default — nunca se pidió permiso
   return (
-    <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card">
+    <div className="flex items-start gap-3 p-3 rounded-lg border border-warn/40 bg-warn/5">
       <BellDot className="w-4 h-4 shrink-0 mt-0.5 text-warn" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium">No activadas</div>
+        <div className="text-sm font-medium">Permiso no solicitado</div>
         <div className="text-[11px] text-fg-dim mt-0.5 leading-snug">
           Activá las notificaciones del sistema para recibir alertas cuando Chrome esté minimizado.
         </div>

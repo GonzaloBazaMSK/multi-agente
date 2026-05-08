@@ -915,7 +915,7 @@ async def process_widget_message(
     try:
         from memory import conversation_meta as cm
 
-        _meta = await cm.get(str(conversation.id))
+        _meta = await cm.get_meta(str(conversation.id))
         if _meta and _meta.get("bot_paused"):
             # Persistimos el mensaje del usuario para que el humano lo vea.
             user_msg = Message(role=MessageRole.USER, content=message_text)

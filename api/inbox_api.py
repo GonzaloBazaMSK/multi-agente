@@ -1364,7 +1364,7 @@ async def assign(conv_id: str, body: AssignBody):
         from utils.notifications import notify
 
         try:
-            conv = await cm.get(conv_id)
+            conv = await cm.get_meta(conv_id)
             data = {
                 "conversation_id": conv_id,
                 "client_name": (conv or {}).get("name") or "cliente",

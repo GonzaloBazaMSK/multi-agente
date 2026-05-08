@@ -307,7 +307,7 @@ async def on_inbound_user_message(
     try:
         from memory import conversation_meta as cm
 
-        meta = await cm.get(session_id)
+        meta = await cm.get_meta(session_id)
         if not meta:
             return
         agent_id = meta.get("assigned_agent_id")

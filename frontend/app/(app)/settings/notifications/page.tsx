@@ -1,16 +1,7 @@
 "use client";
 
-/**
- * /settings/notifications — preferencias del usuario logueado.
- *
- * No es admin-only — cada usuario decide qué notifs recibir.
- *
- * Hoy se persiste por-user en `notification_preferences`. La creación de
- * la fila es lazy (al primer GET /preferences). No hace falta seed.
- */
-
 import { useState, useEffect } from "react";
-import { Bell, Volume2, Mail, Loader2, UserPlus, MessageCircle, Clock, CheckCircle2 } from "lucide-react";
+import { Bell, Volume2, Mail, Loader2, UserPlus, MessageCircle, Clock, CheckCircle2, BellRing, BellOff, BellDot } from "lucide-react";
 
 import { useAuth } from "@/lib/auth";
 import { useNotifications } from "@/lib/use-notifications";
@@ -104,6 +95,12 @@ export default function NotificationsSettingsPage() {
           </div>
         </section>
 
+        {/* Permisos del navegador */}
+        <section>
+          <h2 className="text-sm font-semibold mb-3">Permisos del navegador</h2>
+          <BrowserPermissionCard />
+        </section>
+
         {/* Preferencias UX */}
         <section>
           <h2 className="text-sm font-semibold mb-3">Cómo las recibo</h2>
@@ -141,6 +138,95 @@ export default function NotificationsSettingsPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function BrowserPermissionCard() {
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">("default");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) {
+      setPermission("unsupported");
+      return;
+    }
+    setPermission(Notification.permission);
+  }, []);
+
+  const request = async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    if (result === "granted") {
+      new Notification("MSK Console", {
+        body: "¡Notificaciones del navegador activadas!",
+        icon: "/logo.png",
+        tag: "msk-perm-test",
+      });
+    }
+  };
+
+  if (permission === "unsupported") {
+    return (
+      <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card">
+        <BellOff className="w-4 h-4 shrink-0 mt-0.5 text-fg-muted" />
+        <div className="text-sm text-fg-dim">Tu navegador no soporta notificaciones push.</div>
+      </div>
+    );
+  }
+
+  if (permission === "granted") {
+    return (
+      <div className="flex items-center gap-3 p-3 rounded-lg border border-success/40 bg-success/5">
+        <BellRing className="w-4 h-4 shrink-0 text-success" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-success">Activadas</div>
+          <div className="text-[11px] text-fg-dim mt-0.5">
+            Chrome mostrará alertas del sistema aunque la ventana esté minimizada.
+          </div>
+        </div>
+        <button
+          onClick={request}
+          className="text-[11px] text-fg-dim hover:text-fg underline underline-offset-2 shrink-0"
+        >
+          Probar
+        </button>
+      </div>
+    );
+  }
+
+  if (permission === "denied") {
+    return (
+      <div className="flex items-start gap-3 p-3 rounded-lg border border-destructive/40 bg-destructive/5">
+        <BellOff className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
+        <div className="text-sm">
+          <span className="font-medium text-destructive">Bloqueadas por el navegador.</span>
+          <p className="text-[11px] text-fg-dim mt-1 leading-snug">
+            Para activarlas: hacé clic en el candado (🔒) en la barra de dirección →{" "}
+            <strong>Notificaciones</strong> → <strong>Permitir</strong>, y recargá la página.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // default — no se pidió todavía
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-lg border border-border bg-card">
+      <BellDot className="w-4 h-4 shrink-0 mt-0.5 text-warn" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium">No activadas</div>
+        <div className="text-[11px] text-fg-dim mt-0.5 leading-snug">
+          Activá las notificaciones del sistema para recibir alertas cuando Chrome esté minimizado.
+        </div>
+      </div>
+      <button
+        onClick={request}
+        className="shrink-0 text-[12px] font-medium bg-accent text-white px-3 py-1.5 rounded-md hover:bg-accent/90 transition-colors"
+      >
+        Activar
+      </button>
     </div>
   );
 }

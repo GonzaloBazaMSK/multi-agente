@@ -34,7 +34,7 @@ function getNotifAudio(): HTMLAudioElement | null {
   if (typeof window === "undefined") return null;
   if (_notifAudio) return _notifAudio;
   try {
-    _notifAudio = new Audio("/static/notif.wav");
+    _notifAudio = new Audio("/notif.wav");
     _notifAudio.volume = 0.7; // 70% — suficiente para no perderlo en oficina
     _notifAudio.preload = "auto";
     return _notifAudio;

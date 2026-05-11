@@ -44,8 +44,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         "accion": (
             "Lo más rápido es probar con una tarjeta distinta volviendo al "
             "checkout. Si querés usar esta misma, ampliá el cupo de compras "
-            "online desde la app del banco y reintentá. Si no podés "
-            "resolverlo, te derivo con un asesor académico que te ayuda."
+            "online desde la app del banco y reintentá."
         ),
     },
     "card_declined": {
@@ -83,8 +82,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         ),
         "accion": (
             "Si tenés el plástico nuevo, activalo desde la app del banco y "
-            "reintentá desde el checkout. Si no, usá otra tarjeta vigente. "
-            "Si necesitás ayuda extra, te derivo con un asesor académico."
+            "reintentá desde el checkout. Si no, usá otra tarjeta vigente."
         ),
     },
     "invalid_card": {
@@ -118,8 +116,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         ),
         "accion": (
             "Lo más probable es que andá en 5-10 minutos sin tocar nada. Si "
-            "querés, esperá un cafecito y reintentá. Si después de 30 min "
-            "sigue, te derivo con un asesor académico para revisar."
+            "querés, esperá un cafecito y reintentá."
         ),
     },
     "fraud_high_risk": {
@@ -155,8 +152,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         ),
         "accion": (
             "Refrescá la página del checkout (F5) y la sesión se regenera "
-            "automáticamente. Si después de refrescar sigue sin andar, te "
-            "derivo con un asesor académico para que te asista."
+            "automáticamente. Reintentá el pago desde ahí."
         ),
     },
     "rejected": {
@@ -175,8 +171,7 @@ PAYMENT_REJECTIONS: dict[str, dict[str, str]] = {
         "accion": (
             "Lo más eficiente: probá con otra tarjeta de entrada — si esa "
             "anda, era problema del banco emisor de la primera. Si querés "
-            "diagnosticar la original, llamá al banco al número del dorso. "
-            "Si preferís que te ayude un asesor académico, te derivo."
+            "diagnosticar la original, llamá al banco al número del dorso."
         ),
     },
 }
@@ -234,14 +229,60 @@ def explain_rejection(
         ),
         "accion": (
             "Probá con otra tarjeta como primer paso — si esa anda, era "
-            "problema del banco de la primera. Si preferís, te derivo con "
-            "un asesor académico."
+            "problema del banco de la primera."
         ),
         "code": code_norm or "unknown",
     }
 
 
-def build_context_block(rejection: dict) -> str:
+# Números de WhatsApp por país para escalado humano tras 2do+ rechazo de pago.
+# El usuario sigue en el checkout — le pasamos un link wa.me prellenado para
+# que un asesor de carne y hueso lo asista. AR/MX/CL/EC tienen línea local;
+# el resto cae al número MP (Colombia/Perú/Uruguay/Bolivia/Paraguay/etc.).
+WHATSAPP_NUMBERS_BY_COUNTRY: dict[str, str] = {
+    "AR": "5491152170771",
+    "MX": "5215590586200",
+    "CL": "56224875300",
+    "EC": "593993957801",
+}
+WHATSAPP_DEFAULT_NUMBER = "5753161349"
+
+
+def _wa_number_for_country(country: str) -> str:
+    return WHATSAPP_NUMBERS_BY_COUNTRY.get((country or "").upper(), WHATSAPP_DEFAULT_NUMBER)
+
+
+def build_wa_handoff_link(
+    country: str,
+    user_email: str = "",
+    **_unused,
+) -> str:
+    """Arma el link wa.me con texto pre-cargado para que el usuario pida
+    ayuda humana tras un 2do+ intento fallido de pago.
+
+    Texto: «Hola soy <email> y tuve un inconveniente para realizar la
+    suscripción.» — el email identifica al lead en el CRM cuando el asesor
+    abre la conv.
+    """
+    import urllib.parse
+
+    number = _wa_number_for_country(country)
+    if user_email:
+        text = f"Hola soy {user_email} y tuve un inconveniente para realizar la suscripción."
+    else:
+        text = "Hola, tuve un inconveniente para realizar la suscripción."
+    return f"https://wa.me/{number}?text={urllib.parse.quote(text)}"
+
+
+def build_context_block(
+    rejection: dict,
+    *,
+    attempt_count: int = 1,
+    country: str = "",
+    crm_name: str = "",
+    user_email: str = "",
+    course_slug: str = "",
+) -> str:
     """
     Toma el payload `payment_rejection` (que viene del widget vía
     `msk:paymentRejected`) y devuelve un bloque markdown para inyectar al
@@ -251,7 +292,11 @@ def build_context_block(rejection: dict) -> str:
     `rejection` debe tener la forma:
         {reason: str, code: str, message: str, gateway?: str}
 
-    Si todos los campos están vacíos, devuelve "" (no se inyecta nada).
+    `attempt_count`: cuántos rechazos lleva la sesión (incluido el actual).
+        - 1 → primer turno: explicar + sugerir self-service, sin ofrecer asesor.
+        - ≥2 → además del explain, pasarle un link wa.me a un asesor humano.
+
+    Si todos los campos del rejection están vacíos, devuelve "" (no inyecta).
     """
     if not rejection or not isinstance(rejection, dict):
         return ""
@@ -266,7 +311,7 @@ def build_context_block(rejection: dict) -> str:
 
     info = explain_rejection(code=code, raw_message=raw_message, reason=reason)
 
-    return (
+    base = (
         "## ⚠️ CONTEXTO CRÍTICO — RECHAZO DE PAGO RECIENTE\n\n"
         "El usuario acaba de tener un pago rechazado en el checkout y el chat se "
         "abrió automáticamente para ayudarlo. **Tu primer turno DEBE arrancar "
@@ -276,12 +321,40 @@ def build_context_block(rejection: dict) -> str:
         "Tu valor está en explicar **causas posibles + cómo diagnosticar + "
         "qué hacer**.\n\n"
         f"**Motivo del rechazo: {info['titulo']}**\n"
-        f"  - Código del gateway: `{info['code']}`{(' (' + gateway + ')') if gateway else ''}\n\n"
+        f"  - Código del gateway: `{info['code']}`{(' (' + gateway + ')') if gateway else ''}\n"
+        f"  - Intentos rechazados en esta sesión: {attempt_count}\n\n"
         "**Información ampliada (parafraseala — NO la pegues literal):**\n"
         f"{info['explicacion']}\n\n"
         "**Acción que el usuario puede intentar por su cuenta (sugeríla):**\n"
         f"{info['accion']}\n\n"
-        "## INSTRUCCIONES PARA ESTE TURNO\n"
+    )
+
+    if attempt_count >= 2:
+        wa_link = build_wa_handoff_link(country=country, user_email=user_email)
+        return base + (
+            "## INSTRUCCIONES PARA ESTE TURNO (2DO+ INTENTO RECHAZADO)\n"
+            "Ya falló más de un intento de pago en esta sesión. El self-service "
+            "no está alcanzando — es momento de ofrecerle hablar con un asesor "
+            "humano por WhatsApp. **NO uses HANDOFF_REQUIRED** (el handoff del "
+            "bot es para la consola web; acá lo derivamos al WhatsApp de "
+            "ventas con un link directo).\n\n"
+            "1. Empatía breve (1 línea): «Veo que sigue sin pasar el pago».\n"
+            "2. Mencioná el motivo del rechazo en lenguaje claro (NO el código).\n"
+            "3. **Pasale este link de WhatsApp tal cual** (es markdown — el "
+            "widget lo renderiza como clickeable y abre WA con el texto "
+            "prellenado «Hola soy <email> y tuve un inconveniente para "
+            "realizar la suscripción»):\n\n"
+            f"   [Hablar con un asesor por WhatsApp]({wa_link})\n\n"
+            "4. Cerrá con: «Te van a contestar en pocos minutos y te ayudan a "
+            "completar la compra». No prometas tiempos exactos.\n"
+            "5. **🚫 PROHIBIDO regenerar links de pago.** NO uses "
+            "`create_payment_link`. El reintento se hace por WA o desde el "
+            "checkout original.\n"
+            "6. **NO leas el código crudo** (`cc_rejected_*`, etc.) — es ruido."
+        )
+
+    return base + (
+        "## INSTRUCCIONES PARA ESTE TURNO (PRIMER RECHAZO)\n"
         "1. Empezá con empatía breve (1 línea, sin sobreactuar): «Vi que tuviste "
         "un problema con el pago — te explico qué pasó».\n"
         "2. Explicá el motivo del rechazo aportando las **causas posibles** "
@@ -294,11 +367,11 @@ def build_context_block(rejection: dict) -> str:
         "NO digas «te genero un link nuevo», «te paso un link directo» ni nada "
         "parecido. El reintento del pago se hace desde el checkout original — "
         "el usuario refresca o vuelve a la página y reintenta.\n"
-        "5. **Si el usuario insiste en reintentar el pago, no puede resolverlo "
-        "solo, o pide hablar con alguien → derivá SIEMPRE con "
-        "HANDOFF_REQUIRED.** Un asesor académico puede asistirlo personalmente "
-        "(verificar datos, generar manualmente un link distinto, ofrecer "
-        "alternativas caso a caso).\n"
+        "5. **NO ofrezcas hablar con un asesor en este turno.** No digas "
+        "«te derivo», «te paso con un asesor», «un asesor te puede ayudar», "
+        "ni nada parecido — ni siquiera como opción al final. El primer turno "
+        "es solo explicar + sugerir self-service. **Si falla un 2do intento "
+        "te vamos a pasar el link de WA en el próximo contexto.**\n"
         "6. **NO inventes** otros métodos que MSK no acepta (solo tarjeta "
         "crédito/débito — ver Regla #7).\n"
         "7. **NO leas el código crudo** (`cc_rejected_*`, `card_declined`) — "

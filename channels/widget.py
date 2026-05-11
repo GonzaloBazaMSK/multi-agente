@@ -1344,11 +1344,29 @@ async def process_widget_message(
     # Se inyecta como system msg ALTO en la pila para que el agente arranque
     # el turno explicando el motivo del rechazo (ver
     # `integrations.payment_rejections.build_context_block`).
+    #
+    # Contador de intentos en Redis `pay_rejects:{session_id}` (TTL 24h). Si
+    # llega un 2do+ rechazo en la misma sesión, el builder agrega el link
+    # wa.me al asesor humano del país.
     if payment_rejection:
         try:
             from integrations.payment_rejections import build_context_block as _build_pr_block
 
-            pr_block = _build_pr_block(payment_rejection)
+            attempt_count = 1
+            try:
+                attempt_count = int(
+                    await store._redis.incr(f"pay_rejects:{session_id}")
+                )
+                await store._redis.expire(f"pay_rejects:{session_id}", 86400)
+            except Exception as _e:
+                logger.debug("pay_rejects_counter_failed", error=str(_e))
+
+            pr_block = _build_pr_block(
+                payment_rejection,
+                attempt_count=attempt_count,
+                country=country,
+                user_email=user_email or "",
+            )
             if pr_block:
                 history_without_last = [{"role": "system", "content": pr_block}] + history_without_last
                 await log_event(
@@ -1357,7 +1375,7 @@ async def process_widget_message(
                     {
                         "action": "rechazo_pago_recibido",
                         "detail": (
-                            f"Rechazo inyectado al contexto — "
+                            f"Rechazo #{attempt_count} inyectado al contexto — "
                             f"code={payment_rejection.get('code', '—')} | "
                             f"gateway={payment_rejection.get('gateway', '—')} | "
                             f"reason={(payment_rejection.get('reason') or payment_rejection.get('message') or '')[:80]}"

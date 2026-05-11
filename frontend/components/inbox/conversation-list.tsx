@@ -517,9 +517,13 @@ export function ConversationList({
                           La info sigue disponible en el filtro lateral "Por lifecycle" y en el detail. */}
                       <Badge variant={item.channel}>{item.channel === "whatsapp" ? "WA" : "Widget"}</Badge>
                       {item.needsHuman && <Badge variant="warn">⚠ Humano</Badge>}
-                      {item.botPaused && (
-                        <Badge variant="muted" title="Bot pausado">
+                      {item.botPaused ? (
+                        <Badge variant="muted" title="Bot pausado — humano atendiendo">
                           <Bot className="w-2.5 h-2.5" /> Off
+                        </Badge>
+                      ) : (
+                        <Badge variant="success" title="Bot activo respondiendo">
+                          <Bot className="w-2.5 h-2.5" /> On
                         </Badge>
                       )}
                       {item.status === "resolved" && (

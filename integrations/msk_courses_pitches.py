@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
 
 import asyncpg
 import structlog
@@ -159,8 +159,8 @@ ProgressCb = Callable[[dict], Awaitable[None]]
 async def generate_pitches(
     *,
     force: bool = False,
-    only_slugs: Optional[list[str]] = None,
-    on_progress: Optional[ProgressCb] = None,
+    only_slugs: list[str] | None = None,
+    on_progress: ProgressCb | None = None,
 ) -> dict:
     """
     Genera pitch_hook + pitch_by_profile para los slugs que tienen kb_ai.

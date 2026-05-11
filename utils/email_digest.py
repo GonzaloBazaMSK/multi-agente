@@ -35,7 +35,6 @@ import structlog
 
 from config.settings import get_settings
 from memory import postgres_store
-from utils.notifications import DEFAULT_PREFERENCES
 
 logger = structlog.get_logger(__name__)
 

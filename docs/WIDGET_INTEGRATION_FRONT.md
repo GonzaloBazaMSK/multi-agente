@@ -1,6 +1,6 @@
 # Integración del widget de chat en msk-front
 
-Doc para el equipo de **msk-front** (Ariel/Rober). Define las 3 integraciones
+Doc para el equipo de **msk-front** (Ariel). Define las 3 integraciones
 que tienen que cablearse del lado del frontend para que el widget de soporte
 (servido desde `agentes.msklatam.com`) reaccione bien al checkout.
 

@@ -1256,14 +1256,24 @@
         togglePanel();
       }
       // Disparar primer turno automático solo si la conv no arrancó aún.
-      // Mandamos un mensaje natural del user ("Tuve un problema con el pago…")
-      // que se renderiza en la UI como un saludo del lado del cliente y le
-      // da pie al bot. El detalle del rechazo viaja en el body via
-      // pendingPaymentRejection (consumido en el próximo sendMessage).
+      // El texto del "mensaje del user" varía según el código de rechazo
+      // así no aparece siempre el mismo string fijo. El detalle completo
+      // viaja en el body via pendingPaymentRejection.
       // Si ya hay conv en curso, esperamos al próximo turno del user — el
       // contexto del rechazo se inyecta sin necesidad de un mensaje extra.
       if (!conversationMaterialized && !isLoading) {
-        sendMessage("Acabo de tener un rechazo en el pago.");
+        var codeToUserMsg = {
+          insufficient_funds: "Tuve un rechazo en el pago por fondos insuficientes",
+          card_declined: "El banco me rechazó la tarjeta",
+          expired_card: "Mi tarjeta está vencida",
+          invalid_card: "Hay un problema con los datos de la tarjeta",
+          processing_error: "Hubo un error al procesar el pago",
+          fraud_high_risk: "El sistema antifraude bloqueó el pago",
+          invalid_session: "La sesión de pago se cayó",
+          rejected: "Tuve un rechazo en el pago",
+        };
+        var userMsg = codeToUserMsg[String(detail.code || "").toLowerCase()] || "Tuve un problema con el pago";
+        sendMessage(userMsg);
       }
     });
   }

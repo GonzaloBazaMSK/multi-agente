@@ -90,24 +90,44 @@ def build_sales_prompt(country: str = "AR", channel: str = "whatsapp") -> str:
 
     channel_format = _channel_format(channel)
 
+    # ── PROMO ACTIVA — editar acá cuando cambie ─────────────────────────────
+    # Para desactivar: cambiar la condición a `if False` o vaciar hot_sale_block.
+    _PROMO_CODE = "HOY30"
+    _PROMO_PCT = "30%"
+    _PROMO_UNTIL = "15 de mayo 2026"
+    _PROMO_NAME = "Hot Sale"
+    # ────────────────────────────────────────────────────────────────────────
+
     hot_sale_block = (
-        """
-## 🔥 INSTRUCCIÓN PRIORITARIA — HOT SALE ARGENTINA (vigente hasta el 17 de mayo 2026)
+        f"""
+## 🔥 PROMO ACTIVA — {_PROMO_NAME} ARGENTINA (válida hasta el {_PROMO_UNTIL})
 
-El usuario está en **Argentina**. HAY UNA PROMO ACTIVA que DEBÉS mencionar siempre que hables de precio o cuotas:
+**El usuario está en Argentina. HAY UNA PROMO ACTIVA y DEBÉS mencionarla en tu PRIMERA respuesta, como apertura.**
 
-- Cupón: **HOY30** → 30% de descuento (reemplaza por completo a BOT15 para este usuario)
-- Frase OBLIGATORIA al dar el precio: *"Solo por esta semana podés acceder a un 30% off por Hot Sale con el cupón HOY30."*
-- Incluila en el **mismo turno** donde mostrás precio o cuotas — no esperes a que el user pregunte.
-- Cuando el user confirme, entregás: link de checkout + código HOY30 + instrucción de dónde pegarlo.
-- **NUNCA uses BOT15 para este usuario** — HOY30 es la única promo vigente en AR.
+### REGLA 1 — APERTURA OBLIGATORIA (PRIMER TURNO)
+En tu **primera respuesta** al usuario, abrí con la promo antes de cualquier pitch o pregunta de perfil:
+> *"¡Hola! Te cuento que estamos de {_PROMO_NAME} — esta semana tenés un **{_PROMO_PCT} off** con el cupón **{_PROMO_CODE}** (válido hasta el {_PROMO_UNTIL}). [seguí con tu pregunta de perfil o pitch]"*
+No esperes a que el usuario pregunte por precio — la mencionás de entrada.
+
+### REGLA 2 — AL DAR PRECIO
+Siempre que menciones precio o cuotas, incluí el cupón y el monto post-descuento (cuota × 0.70):
+> *"Con el cupón {_PROMO_CODE}, la cuota pasa de $X a $Y."*
+
+### REGLA 3 — SEÑAL DE COMPRA ("me anoto", "¿cómo pago?")
+Mandá link + código + instrucción en líneas separadas:
+> *Link: https://msklatam.com/checkout/{{slug}}*
+> *Código: **{_PROMO_CODE}***
+> *Pegalo en el campo "¿Tenés un código de descuento?" del checkout para aplicar el {_PROMO_PCT}.*
+
+### REGLA 4 — REEMPLAZA A BOT15 Y BOT20
+**NUNCA uses BOT15 ni BOT20** — {_PROMO_CODE} ({_PROMO_PCT} off) es la única promo vigente para usuarios de Argentina.
 
 """
         if (country or "").upper() == "AR"
         else ""
     )
 
-    return f"""Eres el asesor de ventas de MSK Latam, una empresa líder en formación médica continua para profesionales de la salud.
+    _prompt = f"""Eres el asesor de ventas de MSK Latam, una empresa líder en formación médica continua para profesionales de la salud.
 Tu misión NO es informar — es VENDER. Ayudas al profesional a encontrar el curso ideal y lo acompañas hasta que se inscribe. Asesoras con criterio clínico, hablas su idioma, y cierras.
 {hot_sale_block}
 # 🎯 PRINCIPIOS DE VENTA CONSULTIVA — LEER ANTES DE TODO
@@ -1338,6 +1358,34 @@ Si en "Datos del cliente" aparece `Matrícula activa en colegio/sociedad: [X]`:
 
 **Si fallás algún punto → reescribí el mensaje antes de mandarlo.**
 """
+
+    # Reemplaza referencias a BOT15/BOT20 y porcentajes en todo el cuerpo del prompt
+    # para que sean consistentes con el hot_sale_block inyectado arriba.
+    if (country or "").upper() == "AR":
+        _prompt = (
+            _prompt
+            .replace("BOT15", _PROMO_CODE)
+            .replace("BOT20", _PROMO_CODE)
+            .replace("15% off", f"{_PROMO_PCT} off")
+            .replace("20% off", f"{_PROMO_PCT} off")
+            .replace("15% de descuento", f"{_PROMO_PCT} de descuento")
+            .replace("20% de descuento", f"{_PROMO_PCT} de descuento")
+            .replace("el 15%", f"el {_PROMO_PCT}")
+            .replace("el 20%", f"el {_PROMO_PCT}")
+            .replace("cuota × 0.85", "cuota × 0.70")
+            .replace("cuota × 0.80", "cuota × 0.70")
+            .replace(
+                "solo ante **primera duda u objeción**. NO al dar precio, NO en señal de compra clara.",
+                f"mencionarlo desde el **primer turno** (apertura) y siempre al dar precio ({_PROMO_NAME} vigente hasta {_PROMO_UNTIL}).",
+            )
+            .replace("(SIN cupón)", f"(CON cupón {_PROMO_CODE} — mencionarlo SIEMPRE)")
+            .replace("→ link SIN cupón", f"→ link + código {_PROMO_CODE}")
+            .replace(
+                "**NO menciones cupón**. Mandá el link sin descuento.",
+                f"**MENCIONÁ el cupón {_PROMO_CODE}** junto con el link.",
+            )
+        )
+    return _prompt
 
 
 def _channel_format(channel: str) -> str:

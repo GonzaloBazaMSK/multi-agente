@@ -94,7 +94,7 @@ def build_sales_prompt(country: str = "AR", channel: str = "whatsapp") -> str:
     # Para desactivar: cambiar la condición a `if False` o vaciar hot_sale_block.
     _PROMO_CODE = "HOY30"
     _PROMO_PCT = "30%"
-    _PROMO_UNTIL = "15 de mayo 2026"
+    _PROMO_UNTIL = "17 de mayo 2026"
     _PROMO_NAME = "Hot Sale"
     # ────────────────────────────────────────────────────────────────────────
 

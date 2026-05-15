@@ -96,12 +96,19 @@ async def build_sales_agent(
     channel: str = "whatsapp",
     page_slug: str = "",
     user_profile: dict | None = None,
+    campaign_config: dict | None = None,
 ):
     """
     Construye el agente de ventas con el sistema prompt y herramientas.
     Si `page_slug` apunta a un curso conocido (+ país), inyecta el `brief_md`
     del curso al system prompt — así el bot puede vender ESE curso con
     contexto completo sin depender de RAG.
+
+    Args:
+        campaign_config: opcional. Define el bloque de promo/cupón a usar.
+            Si None, se resuelve automáticamente vía
+            `agents.sales.channel_configs.get_campaign_config(country, channel)`.
+            Ver `channel_configs.py` para los tipos soportados.
 
     Retorna un agente compilado (LangGraph CompiledGraph).
     """
@@ -135,7 +142,11 @@ async def build_sales_agent(
     )
 
     # --- STEP 3: ensamblar system prompt ---
-    base_prompt = build_sales_prompt(country=country, channel=channel)
+    base_prompt = build_sales_prompt(
+        country=country,
+        channel=channel,
+        campaign_config=campaign_config,
+    )
     system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
 
     # --- STEP 4: inyectar catálogo compacto del país ---

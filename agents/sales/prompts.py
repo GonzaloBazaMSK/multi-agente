@@ -64,7 +64,28 @@ El registro es **de asesor académico profesional**, cálido pero formal. Como u
 Cálido pero más formal que rioplatense — como un asesor profesional que habla claro."""
 
 
-def build_sales_prompt(country: str = "AR", channel: str = "whatsapp") -> str:
+def build_sales_prompt(
+    country: str = "AR",
+    channel: str = "whatsapp",
+    campaign_config: dict | None = None,
+) -> str:
+    """
+    Construye el system prompt del agente de ventas.
+
+    Args:
+        country: ISO-2 del país del usuario (AR/MX/CL/...). Define tono y moneda.
+        channel: "whatsapp" o "widget". Define formato (asteriscos, links, etc.).
+        campaign_config: opcional. Define el bloque de promo/cupón a inyectar
+            (Hot Sale, BOT15/BOT20 escalado, ninguno). Si es None, se resuelve
+            automáticamente con `get_campaign_config(country, channel)`.
+
+            Ver `agents/sales/channel_configs.py` para los tipos soportados.
+    """
+    from agents.sales.channel_configs import get_campaign_config
+
+    if campaign_config is None:
+        campaign_config = get_campaign_config(country, channel)
+
     currency_map = {
         "AR": "ARS (pesos argentinos)",
         "BO": "BOB (bolivianos)",
@@ -90,46 +111,27 @@ def build_sales_prompt(country: str = "AR", channel: str = "whatsapp") -> str:
 
     channel_format = _channel_format(channel)
 
-    # ── PROMO ACTIVA — editar acá cuando cambie ─────────────────────────────
-    # Para desactivar: cambiar la condición a `if False` o vaciar hot_sale_block.
-    _PROMO_CODE = "HOY30"
-    _PROMO_PCT = "30%"
-    _PROMO_UNTIL = "17 de mayo 2026"
-    _PROMO_NAME = "Hot Sale"
-    # ────────────────────────────────────────────────────────────────────────
+    # ── PROMO / CUPÓN — renderizado desde campaign_config ───────────────────
+    promo_block = _render_promo_block(campaign_config)
 
-    hot_sale_block = (
-        f"""
-## 🔥 PROMO ACTIVA — {_PROMO_NAME} ARGENTINA (válida hasta el {_PROMO_UNTIL})
-
-**El usuario está en Argentina. HAY UNA PROMO ACTIVA y DEBÉS mencionarla en tu PRIMERA respuesta, como apertura.**
-
-### REGLA 1 — APERTURA OBLIGATORIA (PRIMER TURNO)
-En tu **primera respuesta** al usuario, abrí con la promo antes de cualquier pitch o pregunta de perfil:
-> *"¡Hola! Te cuento que estamos de {_PROMO_NAME} — esta semana tenés un **{_PROMO_PCT} off** con el cupón **{_PROMO_CODE}** (válido hasta el {_PROMO_UNTIL}). [seguí con tu pregunta de perfil o pitch]"*
-No esperes a que el usuario pregunte por precio — la mencionás de entrada.
-
-### REGLA 2 — AL DAR PRECIO
-Siempre que menciones precio o cuotas, incluí el cupón y el monto post-descuento (cuota × 0.70):
-> *"Con el cupón {_PROMO_CODE}, la cuota pasa de $X a $Y."*
-
-### REGLA 3 — SEÑAL DE COMPRA ("me anoto", "¿cómo pago?")
-Mandá link + código + instrucción en líneas separadas:
-> *Link: https://msklatam.com/checkout/{{slug}}*
-> *Código: **{_PROMO_CODE}***
-> *Pegalo en el campo "¿Tenés un código de descuento?" del checkout para aplicar el {_PROMO_PCT}.*
-
-### REGLA 4 — REEMPLAZA A BOT15 Y BOT20
-**NUNCA uses BOT15 ni BOT20** — {_PROMO_CODE} ({_PROMO_PCT} off) es la única promo vigente para usuarios de Argentina.
-
-"""
-        if (country or "").upper() == "AR"
+    # Variables legacy del Hot Sale (solo se usan en los `.replace()` finales
+    # del prompt cuando aplica). Se setean desde el config si es hot_sale_block,
+    # o quedan vacías si es scaled_coupons / none.
+    _is_hot_sale = campaign_config.get("promo_type") == "hot_sale_block"
+    _PROMO_CODE = campaign_config.get("code", "") if _is_hot_sale else ""
+    _PROMO_PCT = f"{campaign_config.get('pct', '')}%" if _is_hot_sale else ""
+    _PROMO_UNTIL = campaign_config.get("until", "") if _is_hot_sale else ""
+    _PROMO_NAME = campaign_config.get("name", "") if _is_hot_sale else ""
+    _FACTOR_TEXT = (
+        f"cuota × {campaign_config['factor']}"
+        if _is_hot_sale and "factor" in campaign_config
         else ""
     )
+    # ────────────────────────────────────────────────────────────────────────
 
     _prompt = f"""Eres el asesor de ventas de MSK Latam, una empresa líder en formación médica continua para profesionales de la salud.
 Tu misión NO es informar — es VENDER. Ayudas al profesional a encontrar el curso ideal y lo acompañas hasta que se inscribe. Asesoras con criterio clínico, hablas su idioma, y cierras.
-{hot_sale_block}
+{promo_block}
 # 🎯 PRINCIPIOS DE VENTA CONSULTIVA — LEER ANTES DE TODO
 
 Sos un **asesor consultivo**, no un buscador de cursos. La diferencia es:
@@ -1359,9 +1361,11 @@ Si en "Datos del cliente" aparece `Matrícula activa en colegio/sociedad: [X]`:
 **Si fallás algún punto → reescribí el mensaje antes de mandarlo.**
 """
 
-    # Reemplaza referencias a BOT15/BOT20 y porcentajes en todo el cuerpo del prompt
-    # para que sean consistentes con el hot_sale_block inyectado arriba.
-    if (country or "").upper() == "AR":
+    # Reemplazos legacy del Hot Sale: solo aplican cuando el config es
+    # "hot_sale_block" (típicamente widget AR). Para WhatsApp con
+    # scaled_coupons o canales sin promo, NO se hacen los replace y el
+    # prompt mantiene las referencias originales a BOT15/BOT20.
+    if _is_hot_sale and _PROMO_CODE:
         _prompt = (
             _prompt
             .replace("BOT15", _PROMO_CODE)
@@ -1372,8 +1376,8 @@ Si en "Datos del cliente" aparece `Matrícula activa en colegio/sociedad: [X]`:
             .replace("20% de descuento", f"{_PROMO_PCT} de descuento")
             .replace("el 15%", f"el {_PROMO_PCT}")
             .replace("el 20%", f"el {_PROMO_PCT}")
-            .replace("cuota × 0.85", "cuota × 0.70")
-            .replace("cuota × 0.80", "cuota × 0.70")
+            .replace("cuota × 0.85", _FACTOR_TEXT or "cuota × 0.70")
+            .replace("cuota × 0.80", _FACTOR_TEXT or "cuota × 0.70")
             .replace(
                 "solo ante **primera duda u objeción**. NO al dar precio, NO en señal de compra clara.",
                 f"mencionarlo desde el **primer turno** (apertura) y siempre al dar precio ({_PROMO_NAME} vigente hasta {_PROMO_UNTIL}).",
@@ -1386,6 +1390,105 @@ Si en "Datos del cliente" aparece `Matrícula activa en colegio/sociedad: [X]`:
             )
         )
     return _prompt
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Renderers de bloques de promo/cupón según el `campaign_config`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_promo_block(config: dict) -> str:
+    """Devuelve el bloque de promo formateado según el `promo_type` del config."""
+    if not config:
+        return ""
+    ptype = config.get("promo_type", "none")
+    if ptype == "hot_sale_block":
+        return _render_hot_sale_block(config)
+    if ptype == "scaled_coupons":
+        return _render_scaled_coupons_block(config)
+    # "none" o desconocido → sin bloque
+    return ""
+
+
+def _render_hot_sale_block(c: dict) -> str:
+    """Promo única tipo Hot Sale (1 código, 1 %, vigencia). Se MENCIONA en apertura."""
+    code = c.get("code", "")
+    pct = c.get("pct", 0)
+    factor = c.get("factor", 1.0)
+    until = c.get("until", "")
+    name = c.get("name", "Promo")
+    return f"""
+## 🔥 PROMO ACTIVA — {name} ARGENTINA (válida hasta el {until})
+
+**El usuario está en Argentina. HAY UNA PROMO ACTIVA y DEBÉS mencionarla en tu PRIMERA respuesta, como apertura.**
+
+### REGLA 1 — APERTURA OBLIGATORIA (PRIMER TURNO)
+En tu **primera respuesta** al usuario, abrí con la promo antes de cualquier pitch o pregunta de perfil:
+> *"¡Hola! Te cuento que estamos de {name} — esta semana tenés un **{pct}% off** con el cupón **{code}** (válido hasta el {until}). [seguí con tu pregunta de perfil o pitch]"*
+No esperes a que el usuario pregunte por precio — la mencionás de entrada.
+
+### REGLA 2 — AL DAR PRECIO
+Siempre que menciones precio o cuotas, incluí el cupón y el monto post-descuento (cuota × {factor}):
+> *"Con el cupón {code}, la cuota pasa de $X a $Y."*
+
+### REGLA 3 — SEÑAL DE COMPRA ("me anoto", "¿cómo pago?")
+Mandá link + código + instrucción en líneas separadas:
+> *Link: https://msklatam.com/checkout/{{slug}}*
+> *Código: **{code}***
+> *Pegalo en el campo "¿Tenés un código de descuento?" del checkout para aplicar el {pct}%.*
+
+### REGLA 4 — REEMPLAZA A BOT15 Y BOT20
+**NUNCA uses BOT15 ni BOT20** — {code} ({pct}% off) es la única promo vigente para usuarios de Argentina.
+
+"""
+
+
+def _render_scaled_coupons_block(c: dict) -> str:
+    """Cupones del bot vendedor con escalado por objeción. NO se menciona en apertura."""
+    levels = c.get("levels", [])
+    if not levels:
+        return ""
+    # Tabla de niveles + ejemplos
+    rows = "\n".join(
+        f"| **{code}** | {pct}% off (cuota × {factor}) | {desc} |"
+        for code, pct, factor, desc in levels
+    )
+    nivel1 = levels[0]
+    nivel2 = levels[1] if len(levels) > 1 else None
+    code1, pct1, factor1, _ = nivel1
+    nivel2_text = (
+        f"""
+**Si insiste con segunda objeción (Nivel 2 — {nivel2[0]}, techo)**:
+> *"Comprendo. Te puedo ofrecer el cupón **{nivel2[0]}** — {nivel2[1]}% off, que es el máximo disponible. La cuota pasa de ARS X a ARS [X × {nivel2[2]}]. Si te suma para confirmar, te paso el link."*
+"""
+        if nivel2
+        else ""
+    )
+    return f"""
+## 💳 CUPONES DEL BOT VENDEDOR — ESCALADO POR OBJECIÓN DE PRECIO
+
+**Importante**: en este canal NO hay promo en apertura. Los cupones aparecen
+SOLO ante objeción real de precio, en escalado de niveles. **Los códigos
+listados en la tabla de abajo son los ÚNICOS válidos** — NO inventes otros
+ni uses códigos que vengan del contexto del lead.
+
+| Código | Descuento | Cuándo usar |
+|---|---|---|
+{rows}
+
+**Reglas duras:**
+- **Señal limpia de compra** (sin objeción previa) → cerrá con link **SIN cupón** (paga precio lleno).
+- **Duda real de precio** ("está caro", "no puedo ahora", "¿hay descuento?") → ofrecé **{code1}** con monto exacto post-descuento (cuota × {factor1}).
+- **Segunda objeción** después de {code1} → ofrecé **{nivel2[0] if nivel2 else 'el siguiente nivel'}** (techo, no escales más).
+- **Tercera objeción** después del techo → NO insistas, cierre cálido sin presión.
+
+**Estructura de oferta (Nivel 1 — {code1}, pregunta cerrada SIMPLE — OBL-2):**
+> *"Comprendo. Si te resulta útil para decidir hoy, te puedo activar el cupón **{code1}** — {pct1}% off, la cuota pasa de ARS X a ARS [X × {factor1}]. ¿Avanzamos?"*
+{nivel2_text}
+Cuando ofrecés cualquier cupón, emití `[OBJECION_PRECIO]` al final del mensaje.
+Cuando mandás el link de checkout, emití `[CIERRE_ENVIADO]`.
+
+"""
 
 
 def _channel_format(channel: str) -> str:

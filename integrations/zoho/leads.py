@@ -64,6 +64,30 @@ class ZohoLeads:
             resp.raise_for_status()
         return resp.json()
 
+    async def get(self, lead_id: str) -> dict | None:
+        """
+        Obtiene un Lead de Zoho por ID. Devuelve el dict crudo de Zoho
+        (con `id`, `First_Name`, `Email`, `Pais`, `Programa.name`,
+        `curso_nombre_plantilla`, `Link_checkout`, etc.).
+
+        Devuelve None si el lead no existe (404).
+        """
+        if not lead_id:
+            return None
+        headers = await self._auth.auth_headers()
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self._base}/Leads/{lead_id}",
+                headers=headers,
+                timeout=15,
+            )
+            if resp.status_code in (204, 404):
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+        rows = data.get("data") or []
+        return rows[0] if rows else None
+
     async def search_by_phone(self, phone: str) -> dict | None:
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:

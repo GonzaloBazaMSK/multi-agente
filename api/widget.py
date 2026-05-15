@@ -23,6 +23,82 @@ router = APIRouter(prefix="/widget", tags=["widget"])
 widget_limiter = Limiter(key_func=get_remote_address)
 
 
+# ─── Presencia online/offline del visitante ──────────────────────────────────
+# El widget manda heartbeats cada 30s. Si no hay heartbeat en 90s → offline.
+# Status posibles:
+#   - "active": pestaña visible y activa
+#   - "hidden": pestaña cambiada / minimizada (browser tab oculta)
+#   - "gone":   pagehide / beforeunload (cerró pestaña o navegó fuera)
+
+PRESENCE_TTL_SECONDS = 90  # 3x el intervalo del heartbeat (30s)
+
+
+def _presence_key(session_id: str) -> str:
+    return f"widget_presence:{session_id}"
+
+
+class PresenceRequest(BaseModel):
+    session_id: str
+    status: str = "active"  # "active" | "hidden" | "gone"
+
+
+@router.post("/presence")
+async def widget_presence(payload: PresenceRequest) -> dict:
+    """Heartbeat del visitante. El widget llama cada 30s + en eventos clave."""
+    if not payload.session_id:
+        raise HTTPException(status_code=400, detail="missing session_id")
+    status = payload.status if payload.status in ("active", "hidden", "gone") else "active"
+
+    from datetime import datetime, timezone
+
+    store = await get_conversation_store()
+    r = store._redis
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if status == "gone":
+        # Visitante cerró pestaña / navegó fuera → marcamos como tal pero
+        # mantenemos el TTL corto para que se limpie pronto.
+        await r.setex(
+            _presence_key(payload.session_id),
+            PRESENCE_TTL_SECONDS,
+            json.dumps({"status": "gone", "last_seen_at": now_iso}),
+        )
+    else:
+        # active / hidden → renueva TTL completo.
+        await r.setex(
+            _presence_key(payload.session_id),
+            PRESENCE_TTL_SECONDS,
+            json.dumps({"status": status, "last_seen_at": now_iso}),
+        )
+    return {"ok": True}
+
+
+async def get_presence_for(session_ids: list[str]) -> dict[str, dict]:
+    """Trae presence (status + last_seen_at) para múltiples session_ids de un toque.
+    Usado por inbox_api para inyectar el estado online/offline en el listado."""
+    if not session_ids:
+        return {}
+    store = await get_conversation_store()
+    r = store._redis
+    keys = [_presence_key(sid) for sid in session_ids]
+    raw = await r.mget(keys)
+    out: dict[str, dict] = {}
+    for sid, val in zip(session_ids, raw):
+        if not val:
+            out[sid] = {"status": "offline", "last_seen_at": None}
+            continue
+        try:
+            data = json.loads(val if isinstance(val, str) else val.decode("utf-8"))
+            # `hidden` lo tratamos como online para el inbox (la pestaña sigue abierta).
+            out[sid] = {
+                "status": "online" if data.get("status") in ("active", "hidden") else "offline",
+                "last_seen_at": data.get("last_seen_at"),
+            }
+        except Exception:
+            out[sid] = {"status": "offline", "last_seen_at": None}
+    return out
+
+
 class PaymentRejectionPayload(BaseModel):
     """
     Payload del evento `msk:paymentRejected` que dispara el frontend del site

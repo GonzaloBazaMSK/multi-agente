@@ -516,6 +516,19 @@ export function ConversationList({
                       {/* Badge de lifecycle ("New Lead", "Hot Lead", etc.) oculto del row.
                           La info sigue disponible en el filtro lateral "Por lifecycle" y en el detail. */}
                       <Badge variant={item.channel}>{item.channel === "whatsapp" ? "WA" : "Widget"}</Badge>
+                      {/* Presencia online (solo widget) — punto verde si la pestaña
+                          está abierta, gris si se fue. WhatsApp no aplica. */}
+                      {item.channel === "widget" && (
+                        item.online ? (
+                          <Badge variant="success" title="Visitante con la pestaña abierta">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" /> Conectado
+                          </Badge>
+                        ) : (
+                          <Badge variant="muted" title={item.lastSeenAt ? `Última vez: ${new Date(item.lastSeenAt).toLocaleString("es-AR")}` : "Visitante offline"}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-fg-muted inline-block" /> Offline
+                          </Badge>
+                        )
+                      )}
                       {item.needsHuman && <Badge variant="warn">⚠ Humano</Badge>}
                       {item.botPaused ? (
                         <Badge variant="muted" title="Bot pausado — humano atendiendo">

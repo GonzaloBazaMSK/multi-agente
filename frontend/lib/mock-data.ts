@@ -86,6 +86,10 @@ export type ConversationListItem = {
   tags?: string[];
   /** cola de atención (asignada por el bot router según contenido + país) */
   queue: Queue;
+  /** Presencia online del visitante (solo widget — WhatsApp no aplica) */
+  online?: boolean;
+  /** ISO timestamp del último heartbeat del visitante (widget) */
+  lastSeenAt?: string | null;
 };
 
 export type MessageAttachment = {

@@ -76,6 +76,10 @@ class ConversationOut(BaseModel):
     tags: list[str] = []
     unread: bool = False  # true si unread_count > 0
     unread_count: int = 0  # cantidad de mensajes user no leídos por este agente
+    # Presencia online del visitante (solo widget — WhatsApp no aplica).
+    # Se infiere de heartbeats del widget cada 30s + visibilitychange/pagehide.
+    online: bool = False
+    last_seen_at: str | None = None
 
 
 class MessageOut(BaseModel):
@@ -1043,6 +1047,19 @@ async def list_conversations(
         except Exception as e:
             logger.warning("unread_counts_failed", error=str(e))
 
+    # Presencia online del visitante (solo widget) — batch mget a Redis.
+    presence_map: dict[str, dict] = {}
+    try:
+        from api.widget import get_presence_for
+
+        widget_sessions = [
+            r["external_id"] for r in rows if r["channel"] == "widget" and r["external_id"]
+        ]
+        if widget_sessions:
+            presence_map = await get_presence_for(widget_sessions)
+    except Exception as e:
+        logger.warning("presence_fetch_failed", error=str(e))
+
     out: list[ConversationOut] = []
     for r in rows:
         profile = r["user_profile"] or {}
@@ -1078,6 +1095,10 @@ async def list_conversations(
                 tags=list(r["tags"] or []),
                 unread_count=unread_map.get(str(r["id"]), 0),
                 unread=unread_map.get(str(r["id"]), 0) > 0,
+                online=(
+                    presence_map.get(r["external_id"] or "", {}).get("status") == "online"
+                ),
+                last_seen_at=presence_map.get(r["external_id"] or "", {}).get("last_seen_at"),
             )
         )
     return out

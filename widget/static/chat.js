@@ -1304,12 +1304,73 @@
     };
   }
 
+  // ─── Presencia online/offline ────────────────────────────────────────────
+  // Mandamos heartbeats cada 30s al backend con el estado de visibilidad de la
+  // pestaña. El inbox lo usa para mostrar "conectado/desconectado" en el listado
+  // de conversaciones. Si el browser cierra la pestaña, mandamos un beacon con
+  // `status: "gone"` (sendBeacon sobrevive al unload, fetch normal no).
+  function startPresenceTracker() {
+    var HEARTBEAT_MS = 30000;
+    var presenceUrl = CONFIG.apiUrl + "/widget/presence";
+    var lastStatus = null;
+
+    function currentStatus() {
+      try {
+        return document.visibilityState === "hidden" ? "hidden" : "active";
+      } catch (e) {
+        return "active";
+      }
+    }
+
+    function sendPresence(status, useBeacon) {
+      if (!sessionId) return;
+      var payload = JSON.stringify({ session_id: sessionId, status: status });
+      try {
+        if (useBeacon && navigator.sendBeacon) {
+          var blob = new Blob([payload], { type: "application/json" });
+          navigator.sendBeacon(presenceUrl, blob);
+        } else {
+          fetch(presenceUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+            keepalive: true,
+          }).catch(function () { /* silent */ });
+        }
+        lastStatus = status;
+      } catch (e) { /* silent */ }
+    }
+
+    // Heartbeat periódico cada 30s — siempre que la pestaña no esté "gone".
+    setInterval(function () {
+      sendPresence(currentStatus(), false);
+    }, HEARTBEAT_MS);
+
+    // Evento de cambio de visibilidad (cambia de pestaña, minimiza, etc.)
+    document.addEventListener("visibilitychange", function () {
+      sendPresence(currentStatus(), false);
+    });
+
+    // Pagehide / beforeunload — el visitante se está yendo. Usar Beacon
+    // para que el request sobreviva al cierre.
+    window.addEventListener("pagehide", function () {
+      sendPresence("gone", true);
+    });
+    window.addEventListener("beforeunload", function () {
+      sendPresence("gone", true);
+    });
+
+    // Mandar un primer heartbeat inmediato al bootear.
+    sendPresence("active", false);
+  }
+
   // ─── Init ─────────────────────────────────────────────────────────────────
   async function _bootstrap() {
     await mount();
     _exposePublicAPI();
     startPaymentRejectionListener();
     startInactivityWatcher();
+    startPresenceTracker();
   }
 
   if (document.readyState === "loading") {

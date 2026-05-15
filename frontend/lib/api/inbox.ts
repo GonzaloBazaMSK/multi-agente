@@ -40,6 +40,9 @@ export type ApiConversation = {
   tags: string[];
   unread: boolean;
   unread_count: number;
+  // Presencia online del visitante (solo widget — WhatsApp no aplica).
+  online?: boolean;
+  last_seen_at?: string | null;
 };
 
 export type ApiContact = {
@@ -138,6 +141,8 @@ export function apiToListItem(c: ApiConversation): ConversationListItem {
     status: c.status,
     tags: c.tags,
     queue: c.queue,
+    online: !!c.online,
+    lastSeenAt: c.last_seen_at ?? null,
   };
 }
 

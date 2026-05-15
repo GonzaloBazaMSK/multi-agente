@@ -27,12 +27,14 @@ from __future__ import annotations
 import json
 import re
 
+import httpx
 import structlog
 from fastapi import APIRouter, HTTPException
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 
 from agents.sales.agent import build_sales_agent
+from integrations.stt import transcribe_bytes
 from integrations.zoho.leads import ZohoLeads
 from memory.conversation_store import get_conversation_store
 
@@ -284,6 +286,99 @@ async def _append_history(phone: str, user_msg: str, bot_msg: str) -> None:
     await pipe.execute()
 
 
+async def _transcribe_audio_url(audio_url: str) -> str:
+    """Descarga el audio de Botmaker/WhatsApp y lo transcribe con Whisper.
+    Devuelve string vacío si falla (sin romper el flow)."""
+    if not audio_url:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(audio_url)
+            r.raise_for_status()
+            audio_bytes = r.content
+        # Extraer extensión de la URL para hint al transcriber.
+        ext = ""
+        for e in (".ogg", ".oga", ".mp3", ".m4a", ".wav", ".webm", ".amr"):
+            if e in audio_url.lower():
+                ext = e
+                break
+        filename = f"audio{ext or '.ogg'}"
+        text = await transcribe_bytes(audio_bytes, filename=filename, language="es")
+        logger.info("sales_whatsapp_audio_transcribed", url_hash=hash(audio_url), chars=len(text))
+        return text
+    except Exception as e:
+        logger.warning("sales_whatsapp_audio_transcribe_failed", error=str(e))
+        return ""
+
+
+async def _describe_image_url(image_url: str) -> str:
+    """
+    Descarga la imagen de Botmaker/WhatsApp y la describe con GPT-4o vision.
+    Devuelve un string con la descripción + clasificación de la imagen, lista
+    para inyectar como userMessage al agente sales.
+
+    Casos típicos en ventas: captura de error de pago en checkout, foto de
+    matrícula/título, screenshot de conversación, comprobante. El bot recibe
+    la descripción y decide qué responder.
+
+    Devuelve string vacío si falla (sin romper el flow).
+    """
+    if not image_url:
+        return ""
+    try:
+        import base64
+
+        from openai import AsyncOpenAI
+
+        from config.settings import get_settings
+
+        # 1. Descargar imagen.
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(image_url)
+            r.raise_for_status()
+            img_bytes = r.content
+            content_type = r.headers.get("content-type", "image/jpeg")
+
+        # 2. Encode base64 para enviar a GPT-4o vision.
+        b64 = base64.b64encode(img_bytes).decode("ascii")
+        data_url = f"data:{content_type};base64,{b64}"
+
+        # 3. Pedir descripción al modelo.
+        settings = get_settings()
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        resp = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Eres un clasificador de imágenes para un bot de ventas de cursos médicos. "
+                        "Describí brevemente (1-2 oraciones) qué ves en la imagen. "
+                        "Si es un screenshot de error de pago / checkout fallido, mencionalo explícitamente. "
+                        "Si es una matrícula / título / certificado profesional, indicá perfil. "
+                        "Si es un meme / selfie / foto sin relación con el tema, decí 'imagen sin relación con consulta'."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Describí esta imagen brevemente:"},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            max_tokens=200,
+            temperature=0.2,
+        )
+        desc = (resp.choices[0].message.content or "").strip()
+        logger.info("sales_whatsapp_image_described", url_hash=hash(image_url), chars=len(desc))
+        # Prefijar para que el agente sales entienda el contexto.
+        return f"[El lead envió una imagen. Descripción: {desc}]"
+    except Exception as e:
+        logger.warning("sales_whatsapp_image_analysis_failed", error=str(e))
+        return ""
+
+
 async def _is_duplicate_msgid(msg_id: str) -> bool:
     """Anti-doble-procesamiento por msgId. TTL 24h."""
     if not msg_id:
@@ -319,17 +414,53 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         logger.info("sales_whatsapp_duplicate_msgid", msg_id=payload.msgId)
         return BotmakerResponse(skip_response=True)
 
-    # 1. Validaciones mínimas.
-    if not payload.userMessage or payload.userMessage in ("__audio__", "__image__"):
-        # Audio/imagen: por ahora respondemos con disclaimer. Más adelante
-        # podemos sumar transcripción/OCR como en el flow n8n.
-        return BotmakerResponse(
-            text="Recibí tu mensaje. Por ahora prefiero responderte por texto — escribime tu consulta y te ayudo. 🙏",
-            context={},
-        )
-
+    # 1. Validaciones mínimas + procesamiento audio/imagen.
     if not payload.phone:
         raise HTTPException(status_code=400, detail="missing phone")
+
+    user_msg = payload.userMessage or ""
+
+    # Audio: si llega audioUrl o el marcador __audio__, descargar y transcribir.
+    if payload.audioUrl or user_msg == "__audio__":
+        if payload.audioUrl:
+            transcribed = await _transcribe_audio_url(payload.audioUrl)
+        else:
+            transcribed = ""
+        if transcribed:
+            user_msg = transcribed
+            logger.info(
+                "sales_whatsapp_audio_replaced_msg",
+                phone=payload.phone,
+                chars=len(transcribed),
+            )
+        else:
+            return BotmakerResponse(
+                text="Recibí tu audio pero no logré transcribirlo. ¿Me lo escribís en texto, por favor? Así te ayudo mejor 🙏",
+                context={},
+            )
+
+    # Imagen: si llega imageUrl o el marcador __image__, describirla con GPT-4o vision.
+    elif payload.imageUrl or user_msg == "__image__":
+        if payload.imageUrl:
+            description = await _describe_image_url(payload.imageUrl)
+        else:
+            description = ""
+        if description:
+            user_msg = description
+            logger.info(
+                "sales_whatsapp_image_replaced_msg",
+                phone=payload.phone,
+                chars=len(description),
+            )
+        else:
+            return BotmakerResponse(
+                text="Recibí tu imagen pero no logré procesarla. ¿Me contás por texto qué necesitás? 🙏",
+                context={},
+            )
+
+    # Si después de todo no hay nada que procesar, abortar.
+    if not user_msg:
+        return BotmakerResponse(skip_response=True)
 
     # 2. Fetch lead Zoho (best-effort: si falla, seguimos con fallback del payload).
     lead: dict | None = None
@@ -364,7 +495,7 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
 
     # 4. Historial.
     history = await _load_history(payload.phone)
-    messages_in = history + [HumanMessage(content=payload.userMessage)]
+    messages_in = history + [HumanMessage(content=user_msg)]
 
     # 5. Invocar agente.
     try:
@@ -383,7 +514,7 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
 
     # 7. Guardar en historial (best-effort).
     try:
-        await _append_history(payload.phone, payload.userMessage, clean_text)
+        await _append_history(payload.phone, user_msg, clean_text)
     except Exception as e:
         logger.debug("sales_whatsapp_history_save_failed", error=str(e))
 

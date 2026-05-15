@@ -182,8 +182,24 @@ def _build_user_profile(lead: dict, fallback_payload: BotmakerPayload) -> dict:
     }
 
 
-# Tags que el agente puede emitir al final del mensaje (para tracking).
-_TAGS_PATTERN = re.compile(r"\[(DERIVAR_HUMANO|CIERRE_ENVIADO|OBJECION_PRECIO)\]")
+# Tags que el agente puede emitir al final del mensaje (para tracking +
+# routing en Botmaker).
+#
+#   [DERIVAR_HUMANO]         → handoff genérico al asesor académico asignado
+#                              (owner del lead en Zoho).
+#   [DERIVAR_MASTERS_VANESA] → handoff específico a Vanesa Hernández
+#                              (vanessahernandez@msklatam.com) para Másters
+#                              que NO se venden por sitio. El Custom Code
+#                              Botmaker setea asesorEmail antes del handoff.
+#   [CIERRE_ENVIADO]         → bot mandó el link de checkout en este turno.
+#   [OBJECION_PRECIO]        → bot ofreció cupón BOT15/BOT20 por objeción de precio.
+#   [CARGAR_TICKET]          → bot dirigió al lead al portal de tickets
+#                              (bajas, anulaciones, reclamos, refunds).
+#                              NO genera handoff a humano — la baja la
+#                              tramita el cliente en el portal.
+_TAGS_PATTERN = re.compile(
+    r"\[(DERIVAR_HUMANO|DERIVAR_MASTERS_VANESA|CIERRE_ENVIADO|OBJECION_PRECIO|CARGAR_TICKET)\]"
+)
 
 # WhatsApp usa **UN** asterisco para negrita (`*texto*`). Si el LLM emite
 # `**texto**` (markdown estándar), WhatsApp lo muestra LITERAL con los
@@ -210,10 +226,20 @@ def _parse_tags(ai_text: str) -> tuple[str, dict]:
     tags = set(_TAGS_PATTERN.findall(ai_text or ""))
     clean = _TAGS_PATTERN.sub("", ai_text or "").strip()
     clean = _format_for_whatsapp(clean)
+
+    # `derivarConAsesor` se activa con cualquiera de los dos handoffs.
+    # `asesorEmailOverride` solo se setea para Másters → permite que el
+    # Custom Code Botmaker haga `user.set('asesorEmail', ...)` y rutee a
+    # Vanesa en lugar del owner del lead.
+    is_masters = "DERIVAR_MASTERS_VANESA" in tags
+    is_generic = "DERIVAR_HUMANO" in tags
     return clean, {
-        "derivarConAsesor": "DERIVAR_HUMANO" in tags,
+        "derivarConAsesor": is_masters or is_generic,
+        "asesorEmailOverride": "vanessahernandez@msklatam.com" if is_masters else "",
+        "motivoDerivacion": "masters" if is_masters else ("generico" if is_generic else ""),
         "cierreEnviado": "CIERRE_ENVIADO" in tags,
         "objecionPrecio": "OBJECION_PRECIO" in tags,
+        "cargarTicket": "CARGAR_TICKET" in tags,
     }
 
 

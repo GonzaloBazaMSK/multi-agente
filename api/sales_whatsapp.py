@@ -286,25 +286,83 @@ async def _append_history(phone: str, user_msg: str, bot_msg: str) -> None:
     await pipe.execute()
 
 
+async def _convert_audio_to_mp3(audio_bytes: bytes, src_ext: str = ".ogg") -> bytes:
+    """
+    Convierte audio (OGG/Opus de WhatsApp, AMR, etc.) a MP3 vía ffmpeg.
+
+    Whisper acepta OGG en la lista de extensiones, pero falla con el OGG/Opus
+    específico de WhatsApp en algunos casos ("Invalid file format" desde el
+    backend de OpenAI). Convertir a MP3 elimina la ambigüedad de container.
+    """
+    import asyncio
+    import os
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=src_ext) as src:
+        src.write(audio_bytes)
+        src_path = src.name
+    dst_path = src_path.rsplit(".", 1)[0] + ".mp3"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", src_path, "-acodec", "libmp3lame", "-ar", "16000", dst_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+        if proc.returncode != 0:
+            logger.warning(
+                "sales_whatsapp_ffmpeg_failed",
+                returncode=proc.returncode,
+                stderr=stderr.decode("utf-8", errors="ignore")[:500],
+            )
+            return b""
+        with open(dst_path, "rb") as f:
+            return f.read()
+    finally:
+        for p in (src_path, dst_path):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+
+
 async def _transcribe_audio_url(audio_url: str) -> str:
-    """Descarga el audio de Botmaker/WhatsApp y lo transcribe con Whisper.
-    Devuelve string vacío si falla (sin romper el flow)."""
+    """Descarga el audio de Botmaker/WhatsApp, lo convierte a MP3 con ffmpeg
+    y lo transcribe con Whisper. Devuelve string vacío si falla."""
     if not audio_url:
         return ""
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             r = await client.get(audio_url)
             r.raise_for_status()
-            audio_bytes = r.content
-        # Extraer extensión de la URL para hint al transcriber.
-        ext = ""
-        for e in (".ogg", ".oga", ".mp3", ".m4a", ".wav", ".webm", ".amr"):
+            raw_bytes = r.content
+        # Extraer extensión de la URL (default .ogg para WhatsApp).
+        ext = ".ogg"
+        for e in (".ogg", ".oga", ".mp3", ".m4a", ".wav", ".webm", ".amr", ".opus"):
             if e in audio_url.lower():
                 ext = e
                 break
-        filename = f"audio{ext or '.ogg'}"
+
+        # Convertir a MP3 si NO es ya MP3 (WhatsApp manda ogg/opus que falla
+        # en Whisper aunque la extensión esté en la whitelist).
+        if ext != ".mp3":
+            mp3_bytes = await _convert_audio_to_mp3(raw_bytes, src_ext=ext)
+            if not mp3_bytes:
+                logger.warning("sales_whatsapp_audio_convert_failed", url_hash=hash(audio_url))
+                return ""
+            audio_bytes = mp3_bytes
+            filename = "audio.mp3"
+        else:
+            audio_bytes = raw_bytes
+            filename = "audio.mp3"
+
         text = await transcribe_bytes(audio_bytes, filename=filename, language="es")
-        logger.info("sales_whatsapp_audio_transcribed", url_hash=hash(audio_url), chars=len(text))
+        logger.info(
+            "sales_whatsapp_audio_transcribed",
+            url_hash=hash(audio_url),
+            chars=len(text),
+            converted=(ext != ".mp3"),
+        )
         return text
     except Exception as e:
         logger.warning("sales_whatsapp_audio_transcribe_failed", error=str(e))

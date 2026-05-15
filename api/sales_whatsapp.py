@@ -185,14 +185,31 @@ def _build_user_profile(lead: dict, fallback_payload: BotmakerPayload) -> dict:
 # Tags que el agente puede emitir al final del mensaje (para tracking).
 _TAGS_PATTERN = re.compile(r"\[(DERIVAR_HUMANO|CIERRE_ENVIADO|OBJECION_PRECIO)\]")
 
+# WhatsApp usa **UN** asterisco para negrita (`*texto*`). Si el LLM emite
+# `**texto**` (markdown estándar), WhatsApp lo muestra LITERAL con los
+# asteriscos. Convertimos cualquier `**...**` a `*...*` para asegurar
+# que la negrita se renderice bien.
+_WA_BOLD_PATTERN = re.compile(r"\*\*([^*\n]+?)\*\*")
+
+
+def _format_for_whatsapp(text: str) -> str:
+    """Adapta el texto del LLM al formato que WhatsApp interpreta correctamente."""
+    if not text:
+        return ""
+    # Doble asterisco → single asterisco (negrita WhatsApp).
+    text = _WA_BOLD_PATTERN.sub(r"*\1*", text)
+    return text
+
 
 def _parse_tags(ai_text: str) -> tuple[str, dict]:
     """
-    Extrae tags de tracking del output del agente y devuelve el texto limpio
-    + un dict de contexto compatible con el Custom Code de Botmaker.
+    Extrae tags de tracking del output del agente, adapta el formato para
+    WhatsApp y devuelve el texto limpio + un dict de contexto compatible
+    con el Custom Code de Botmaker.
     """
     tags = set(_TAGS_PATTERN.findall(ai_text or ""))
     clean = _TAGS_PATTERN.sub("", ai_text or "").strip()
+    clean = _format_for_whatsapp(clean)
     return clean, {
         "derivarConAsesor": "DERIVAR_HUMANO" in tags,
         "cierreEnviado": "CIERRE_ENVIADO" in tags,

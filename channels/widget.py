@@ -9,6 +9,7 @@ Flujo de una sesión:
 
 import datetime
 import json as _json
+import re as _re
 
 import structlog
 
@@ -30,6 +31,36 @@ from models.message import Message, MessageRole
 from utils.conv_events import log_action, log_error, log_event
 
 logger = structlog.get_logger(__name__)
+
+
+# ── Horario laboral ───────────────────────────────────────────────────────────
+
+_COUNTRY_TZ_OFFSET: dict[str, int] = {
+    # UTC offset en horas (offset fijo — sin DST para simplicidad operativa)
+    "AR": -3, "UY": -3, "BR": -3,
+    "CL": -4, "BO": -4, "VE": -4, "PY": -4,
+    "CO": -5, "PE": -5, "EC": -5,
+    "MX": -6, "CR": -6, "GT": -6, "HN": -6, "NI": -6, "SV": -6,
+    "PA": -5,
+    "ES":  2,  # CEST verano / CET invierno — aproximación +1; usamos +2 conservador
+    "INT": -3,
+}
+
+_OFF_HOURS_MSG = (
+    "Ahora estamos fuera del horario de atención (lunes a viernes de 9 a 18 hs), "
+    "pero no queremos que pierdas la oportunidad de recibir información. "
+    "Dejanos tu teléfono y un asesor académico de MSK retomará tu consulta "
+    "apenas estemos nuevamente disponibles. 🙏"
+)
+
+
+def _is_business_hours(country: str) -> bool:
+    """True si el momento actual está dentro de L-V 9-18 hs del país."""
+    offset = _COUNTRY_TZ_OFFSET.get((country or "AR").upper().strip(), -3)
+    now_local = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=offset)
+    if now_local.weekday() >= 5:   # sábado=5, domingo=6
+        return False
+    return 9 <= now_local.hour < 18
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1407,7 +1438,6 @@ async def process_widget_message(
     response_text = result["response"]
     # Stripear tags internos que el prompt emite para WhatsApp/Botmaker
     # pero que no deben llegar al usuario del widget.
-    import re as _re
     response_text = _re.sub(
         r"\s*\[(OBJECION_PRECIO|CIERRE_ENVIADO|DERIVAR_HUMANO|DERIVAR_MASTERS_VANESA|CARGAR_TICKET)\]",
         "",
@@ -1416,6 +1446,12 @@ async def process_widget_message(
     handoff = result["handoff_requested"]
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]
+
+    # Si hay handoff pero estamos fuera de horario laboral, sustituimos la
+    # respuesta por el mensaje de fuera de horario (el handoff sigue activo
+    # para que el agente lo vea en el inbox cuando entre).
+    if handoff and not _is_business_hours(country):
+        response_text = _OFF_HOURS_MSG
 
     await log_event(
         session_id,

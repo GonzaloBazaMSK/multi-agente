@@ -61,7 +61,7 @@ NO_PROMO: dict[str, Any] = {"promo_type": "none"}
 # Si una combinación no está, se usa el default por canal (ver get_campaign_config).
 _CONFIGS: dict[tuple[str, str], dict[str, Any]] = {
     # Widget
-    ("AR", "widget"): WIDGET_AR,
+    ("AR", "widget"): WHATSAPP_DEFAULT,  # Hot Sale finalizado 17/5/2026 — vuelve a BOT15/BOT20
     # WhatsApp (todos los países usan el mismo BOT15/BOT20 por ahora)
     ("AR", "whatsapp"): WHATSAPP_DEFAULT,
     ("MX", "whatsapp"): WHATSAPP_DEFAULT,

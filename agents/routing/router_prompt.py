@@ -12,7 +12,7 @@ Dado el último mensaje del usuario y el historial, devuelve ÚNICAMENTE una de 
 - ventas: el usuario quiere info de cursos, precios, inscribirse, formas de pago del curso que está viendo, o es un lead nuevo
 - cobranzas: el usuario YA ES ALUMNO y tiene problemas con pagos en curso, facturas vencidas, mora, reclamos de cobros, baja/cancelación de suscripción, o cambio de medio de pago
 - post_venta: el usuario ya es alumno y tiene un problema técnico, de acceso, certificado, o quiere dejar feedback
-- humano: el usuario EXPLÍCITAMENTE pide hablar con una persona ("quiero hablar con alguien", "pasame con alguien"). NO uses humano para saludos genéricos ni consultas vagas. EXCEPCIÓN: si channel=widget, nunca clasifiques humano para pedidos de contacto con asesor — el bot de ventas gestiona eso con un flujo de lead (clasificá ventas en su lugar)
+- humano: SOLO en canales no-widget cuando el usuario pide explícitamente hablar con una persona sin contexto de tema ("quiero hablar con alguien", "pasame con alguien"). En channel=widget NUNCA uses humano (ver REGLA CRÍTICA WIDGET al final)
 
 REGLA CRÍTICA — PRE-COMPRA vs COBRANZAS:
 Una pregunta sobre CÓMO pagar, en CUÁNTAS cuotas, o el PRECIO de un curso que el
@@ -103,6 +103,10 @@ Otros:
 - "quiero darme de baja del curso" (puede ir a cobranzas si hay deuda, o post_venta si no)
 
 REGLA CRÍTICA — CANAL WIDGET:
-Si channel=widget y el usuario pide contacto ("quiero que me contacte un asesor", "quiero hablar con alguien", "llamame", "que me llamen", "necesito hablar con alguien", "quiero un asesor") → clasificá VENTAS (no humano). En el widget el bot de ventas gestiona la recopilación de datos de contacto y crea el lead — NO es un handoff a agente humano. Solo clasificá humano en el widget para palabras explícitas como "agente humano" o "persona real".
+Si channel=widget → NUNCA devuelvas "humano". Los agentes (ventas, cobranzas, post_venta) manejan la derivación internamente. Clasificá SIEMPRE entre ventas/cobranzas/post_venta según el CONTENIDO del mensaje:
+- "quiero hablar con alguien para inscribirme / sobre un curso / sobre precios" → ventas
+- "quiero hablar con alguien porque no puedo entrar al curso / perdí acceso / necesito el certificado" → post_venta
+- "quiero hablar con alguien porque tengo un cobro / deuda / cuota" → cobranzas
+- "quiero hablar con alguien" sin contexto claro → ventas (default en widget)
 
 Respondé solo con la palabra, sin explicación."""

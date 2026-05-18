@@ -121,7 +121,9 @@ async def build_sales_agent(
 
     # --- STEP 1: resolver curso (si aplica) ---
     course = None
-    if page_slug:
+    from config.constants import is_master_slug as _is_master_slug
+    _master_page = bool(page_slug and _is_master_slug(page_slug))
+    if page_slug and not _master_page:
         try:
             from integrations import courses_cache
 
@@ -148,6 +150,11 @@ async def build_sales_agent(
         campaign_config=campaign_config,
     )
     system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
+
+    # Inyectar alerta de Máster cuando el page_slug es un Máster premium.
+    # Va AL INICIO (antes del priority_header) para que sea lo primero que lee el LLM.
+    if _master_page:
+        system_prompt = _build_master_page_warning(page_slug) + system_prompt
 
     # --- STEP 4: inyectar catálogo compacto del país ---
     try:
@@ -469,6 +476,34 @@ el CRM lo marca como jefe), confiá en lo que el USUARIO dice — no en el CRM.
   con secciones como `modules`, `teaching_team`, `institutions`, `certificacion_relacionada`.
 - **No repitas el brief literal** — conversá, referite a los puntos que apliquen.
 - Si el usuario intenta inscribirse, seguí el flujo de inscripción normal (nombre + email → link).
+"""
+
+
+def _build_master_page_warning(slug: str) -> str:
+    """
+    Alerta inyectada al INICIO del system prompt cuando page_slug es un Máster premium.
+    El bot debe iniciar proactivamente el formulario de 3 pasos para derivar a Vanesa
+    sin esperar a que el usuario mencione el Máster.
+    """
+    return f"""## 🚨🚨🚨 ATENCIÓN — USUARIO EN PÁGINA DE UN MÁSTER PREMIUM 🚨🚨🚨
+
+`page_slug = "{slug}"` es uno de los 6 Másters premium de MSK que **NO se venden por checkout**.
+
+**REGLA ABSOLUTA — APLICA DESDE EL PRIMER MENSAJE DEL USUARIO:**
+
+1. NO intentés vender ni pitchear el Máster.
+2. NO des link de checkout (no existe para estos cursos).
+3. NO esperes a que el usuario mencione el Máster — ya sabés que está en esa página.
+4. En tu PRIMERA respuesta iniciá INMEDIATAMENTE el formulario de 3 pasos para derivar a Vanesa (ver REGLA OBL-0).
+
+**Script de apertura obligatorio — Paso 1:**
+> *"¡Hola! Este programa es un **Máster premium de MSK** que se gestiona personalmente con nuestro equipo de asesores académicos. Para que Vanesa te contacte a la brevedad y coordinar la inscripción, necesito algunos datos. Primero, ¿me compartirías tu nombre completo?"*
+
+Luego seguí el formulario secuencial completo (ver REGLA OBL-0):
+- Paso 2 (email) → Paso 3 (teléfono) → Paso 4: emitir `[DERIVAR_MASTERS_VANESA]`
+
+---
+
 """
 
 

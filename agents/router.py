@@ -212,6 +212,7 @@ async def classify_intent(state: SupervisorState) -> dict:
     email = state.get("email", "") or ""
     signals_hint = (
         "\n\n[SEÑALES]\n"
+        f"channel: {channel or 'whatsapp'}\n"
         f"page_slug: {page_slug or '(ninguno)'}\n"
         f"has_debt: {'true' if has_debt else 'false'}\n"
         f"is_student: {'true' if is_student else 'false'}\n"

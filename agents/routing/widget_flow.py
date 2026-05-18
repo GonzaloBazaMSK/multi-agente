@@ -76,10 +76,12 @@ def _match(user_text: str, buttons: list[str]) -> str | None:
     porque comparte 2 palabras ("soporte" + "cobros") vs 1 de "Alumnos".
     """
     u = _alpha(user_text)
-    # Pase 1 — match completo (subcadena exacta).
+    # Pase 1 — el texto completo del botón aparece en lo que escribió el usuario.
+    # NO se chequea u in b para evitar falsos positivos con palabras cortas
+    # (ej: "si" es substring de "asistencia" → matcheaba mal el botón Asistencia).
     for btn in buttons:
         b = _alpha(btn)
-        if b in u or u in b:
+        if b in u:
             return btn
     # Pase 2 — elegir el botón con MÁS palabras significativas en común.
     best_btn: str | None = None

@@ -1090,7 +1090,7 @@ async def list_conversations(
                 name=profile.get("name") or "",
                 email=profile.get("email") or "",
                 phone=profile.get("phone") or "",
-                country=profile.get("country") or _infer_country_from_phone(profile.get("phone") or "") or "AR",
+                country=_infer_country_from_phone(profile.get("phone") or "") or profile.get("country") or "AR",
                 last_message=last_msg or "",
                 last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat()
                 if (r["last_message_at"] or r["updated_at"])

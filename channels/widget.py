@@ -1405,6 +1405,14 @@ async def process_widget_message(
     )
 
     response_text = result["response"]
+    # Stripear tags internos que el prompt emite para WhatsApp/Botmaker
+    # pero que no deben llegar al usuario del widget.
+    import re as _re
+    response_text = _re.sub(
+        r"\s*\[(OBJECION_PRECIO|CIERRE_ENVIADO|DERIVAR_HUMANO|DERIVAR_MASTERS_VANESA|CARGAR_TICKET)\]",
+        "",
+        response_text,
+    ).strip()
     handoff = result["handoff_requested"]
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]

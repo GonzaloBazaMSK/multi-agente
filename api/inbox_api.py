@@ -33,12 +33,23 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from pydantic import BaseModel, Field
 
 from api.admin import require_role_or_admin, verify_admin_or_session  # admin key + session + role gate
+from config.constants import COUNTRY_PHONE_PREFIXES
 from integrations.zoho.contacts import ZohoContacts
 from memory import conversation_meta as cm
 from memory import postgres_store
 from utils.rate_limits import BULK_OPS_PER_USER, LLM_PER_USER, UPLOAD_PER_USER, limiter
 
 logger = structlog.get_logger(__name__)
+
+
+def _infer_country_from_phone(phone: str) -> str:
+    """Infers 2-letter country code from phone number prefix. Returns empty string if unknown."""
+    digits = "".join(c for c in (phone or "") if c.isdigit())
+    for prefix in sorted(COUNTRY_PHONE_PREFIXES, key=len, reverse=True):  # longest first
+        if digits.startswith(prefix):
+            return COUNTRY_PHONE_PREFIXES[prefix].value
+    return ""
+
 
 router = APIRouter(prefix="/api/v1/inbox", tags=["inbox"], dependencies=[Depends(verify_admin_or_session)])
 
@@ -1079,7 +1090,7 @@ async def list_conversations(
                 name=profile.get("name") or "",
                 email=profile.get("email") or "",
                 phone=profile.get("phone") or "",
-                country=profile.get("country") or "AR",
+                country=profile.get("country") or _infer_country_from_phone(profile.get("phone") or "") or "AR",
                 last_message=last_msg or "",
                 last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat()
                 if (r["last_message_at"] or r["updated_at"])

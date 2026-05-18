@@ -27,11 +27,10 @@ class ZohoLeads:
                     "Phone": data.get("phone", ""),
                     "Email": data.get("email", ""),
                     "Country": data.get("country", "Argentina"),
-                    "Lead_Source": data.get("canal_origen", "WhatsApp"),
-                    # Campos personalizados
-                    "Curso_de_Interes": data.get("curso_de_interes", ""),
-                    "Canal_Origen": data.get("canal_origen", ""),
-                    "Estado_Pago": data.get("estado_pago", "Pendiente"),
+                    "Lead_Source": "Widget",
+                    "Lead_Status": "Atención BOT IA",
+                    "Ad_Account": "Widget",
+                    "Description": data.get("curso_de_interes", ""),
                     "Notas_Bot": data.get("notas", ""),
                 }
             ]

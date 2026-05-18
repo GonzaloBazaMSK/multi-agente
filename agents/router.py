@@ -168,8 +168,11 @@ async def classify_intent(state: SupervisorState) -> dict:
             last_user_msg = m.content
             break
 
-    # Detección rápida de handoff por keywords
-    if detect_handoff_keywords(last_user_msg):
+    # Detección rápida de handoff por keywords — solo para canales no-widget.
+    # En el widget, el sales agent maneja "quiero un asesor" con flujo de lead
+    # (recolección de datos + Zoho), sin escalar a humano en consola.
+    channel = state.get("channel", "") or ""
+    if channel.lower() != "widget" and detect_handoff_keywords(last_user_msg):
         logger.info("handoff_keyword_detected")
         return {
             "current_agent": AgentType.HUMAN.value,

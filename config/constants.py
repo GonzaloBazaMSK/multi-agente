@@ -119,7 +119,6 @@ HANDOFF_KEYWORDS = [
     "persona real",
     "quiero hablar con alguien",
     "operador",
-    "asesor",
 ]
 
 

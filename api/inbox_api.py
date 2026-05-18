@@ -1090,7 +1090,9 @@ async def list_conversations(
                 name=profile.get("name") or "",
                 email=profile.get("email") or "",
                 phone=profile.get("phone") or "",
-                country=_infer_country_from_phone(profile.get("phone") or "") or profile.get("country") or "AR",
+                country=_infer_country_from_phone(
+                    profile.get("phone") or (r["external_id"] if r["channel"] == "whatsapp" else "") or ""
+                ) or profile.get("country") or "AR",
                 last_message=last_msg or "",
                 last_timestamp=(r["last_message_at"] or r["updated_at"]).isoformat()
                 if (r["last_message_at"] or r["updated_at"])
@@ -1349,6 +1351,37 @@ async def get_contact(email: str):
     except Exception as e:
         logger.debug("cobranza_zoho_lookup_failed", email=email, error=str(e))
 
+    zoho_country = _country_iso(profile.get("Pais"))
+    zoho_phone = profile.get("Phone") or ""
+
+    # Sync country + phone back to user_profile in Postgres so the inbox list
+    # shows the correct flag (list reads from DB, detail reads from Zoho).
+    # Fire-and-forget: doesn't block the response.
+    async def _sync_profile():
+        try:
+            pool = await postgres_store.get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE public.conversations
+                    SET user_profile = user_profile
+                        || jsonb_build_object('country', $1::text)
+                        || CASE WHEN $2 != '' THEN jsonb_build_object('phone', $2::text) ELSE '{}'::jsonb END,
+                        updated_at = now()
+                    WHERE user_profile->>'email' = $3
+                      AND (user_profile->>'country' IS NULL
+                           OR user_profile->>'country' != $1)
+                    """,
+                    zoho_country,
+                    zoho_phone,
+                    email,
+                )
+        except Exception as e:
+            logger.warning("user_profile_country_sync_failed", email=email, error=str(e))
+
+    import asyncio as _asyncio
+    _asyncio.ensure_future(_sync_profile())
+
     return {
         "zoho_id": profile.get("id"),
         "name": profile.get("Full_Name"),
@@ -1356,7 +1389,7 @@ async def get_contact(email: str):
         "last_name": profile.get("Last_Name"),
         "email": profile.get("Email"),
         "phone": profile.get("Phone"),
-        "country": _country_iso(profile.get("Pais")),
+        "country": zoho_country,
         "country_name": profile.get("Pais"),
         "professional": {
             "profession": profile.get("Profesi_n"),

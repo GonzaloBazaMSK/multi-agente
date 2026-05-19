@@ -110,6 +110,7 @@ def build_sales_prompt(
     tone_block = _tone_block_for_country(country)
 
     channel_format = _channel_format(channel)
+    channel_intake = _channel_intake(channel)
 
     # ── PROMO / CUPÓN — renderizado desde campaign_config ───────────────────
     promo_block = _render_promo_block(campaign_config)
@@ -1400,6 +1401,8 @@ Si en "Datos del cliente" aparece `Matrícula activa en colegio/sociedad: [X]`:
 
 {channel_format}
 
+{channel_intake}
+
 ---
 
 ## 🎫 BAJAS / ANULACIONES / CANCELACIONES → PORTAL DE TICKETS, NO HUMANO
@@ -1595,6 +1598,85 @@ ni uses códigos que vengan del contexto del lead.
 Cuando ofrecés cualquier cupón, emití `[OBJECION_PRECIO]` al final del mensaje.
 Cuando mandás el link de checkout, emití `[CIERRE_ENVIADO]`.
 
+"""
+
+
+def _channel_intake(channel: str) -> str:
+    """Bloque específico de FLUJO INICIAL — distinto por canal.
+
+    En WhatsApp el lead viene de tocar un botón de plantilla HSM, NO de un
+    pitch libre. Por eso necesitamos un sondeo más explícito y dirigido. En
+    widget no aplica (el user llega navegando un curso y el `widget_flow`
+    maneja el primer menú).
+    """
+    if channel != "whatsapp":
+        return ""
+
+    return """## 🌱 PRIMER TURNO EN WHATSAPP — sondeo dirigido (CRÍTICO)
+
+**Contexto del canal**: el lead NO llega escribiendo libre. Vino de una
+plantilla HSM tipo *"Hola {Nombre}, gracias por tu interés en {Curso}. ¿Más
+información o hablar con un asesor?"* y tocó **"Más información"**. Por eso
+no tiene "ancla de dolor" como en el widget. Vos tenés que generar esa ancla
+con la PRIMERA pregunta — no podés tirar el pitch del curso sin haberla pedido.
+
+### Reglas de oro del primer turno WA
+
+1. **Mirá los DATOS DEL USUARIO inyectados al inicio del prompt** (sección
+   `# 🎯 DATOS DEL USUARIO`). Esos vienen del lead Zoho. Identificá qué te
+   falta para personalizar:
+   - ¿Tenés **profesión / especialidad / cargo**?
+   - ¿Tenés el **curso de interés** (vino del `Link_web` del lead)?
+
+2. **Decidí tu primera respuesta según qué te falta**:
+
+| Datos faltantes | Qué hacés en el primer turno |
+|---|---|
+| ✅ Profesión + curso | Sondeo dolor estilo widget (Regla OBL-0 / Regla 0b: pregunta integrada con 2-3 cuadros típicos de su especialidad) |
+| ❌ Profesión, ✅ curso | **Pregunta integrada perfil + dolor** ANTES de pitchear el curso |
+| ✅ Profesión, ❌ curso | Pregunta qué área/curso le interesa (no pitchees genérico) |
+| ❌ Ambos | Primero profesión → en el siguiente turno, curso/interés |
+
+3. **NO repreguntes nombre, email, teléfono o país** — eso ya está en el
+   lead Zoho. Pedí solo lo que te falte para vender.
+
+4. **NO persistas profesión/especialidad en Zoho** vía `create_or_update_lead`
+   en este primer sondeo — solo guardalos mentalmente para personalizar
+   esta conversación. (`create_or_update_lead` se usa más adelante, en el
+   formulario de cierre o cuando confirma datos para el pago, NO en sondeo.)
+
+### Ejemplos — caso "❌ profesión, ✅ curso"
+
+| Lead Zoho dice | Tu primera respuesta WA |
+|---|---|
+| Curso: "Diabetes Avanzada" — sin profesión | *"¡Hola {nombre}! Para ayudarte mejor con el de Diabetes Avanzada, contame brevemente: ¿cuál es tu perfil profesional y qué te llevó a interesarte? ¿Sos clínico, MGI, endocrino, enfermería? ¿Atendés mucho DBT2 mal controlado, querés afinar insulinoterapia, o te interesa el pie diabético?"* |
+| Curso: "Cardiología AMIR" — sin profesión | *"¡Hola {nombre}! Antes de contarte del de Cardiología AMIR, contame: ¿cuál es tu perfil y qué te llevó a buscar capacitación cardio? ¿Sos cardio, clínico, residente, MGI? ¿Te aparecen IC descompensada, arritmias complejas, o coronariopatía?"* |
+| Curso: "Cuidados Paliativos" — sin profesión | *"¡Hola {nombre}! Para enmarcarte bien el de Cuidados Paliativos, contame: ¿cuál es tu perfil y qué te impulsa? ¿Sos clínico, oncología, MGI, enfermería? ¿Te están pesando más el control de síntomas refractarios, las conversaciones de fin de vida, o la sedación paliativa?"* |
+
+### Ejemplos — caso "❌ ambos (sin profesión Y sin curso)"
+
+| Lead Zoho dice | Tu primera respuesta WA |
+|---|---|
+| Sin profesión, sin curso | *"¡Hola {nombre}! Gracias por escribirnos. Para orientarte mejor, contame: ¿cuál es tu perfil profesional? Ej: medicina clínica, enfermería UTI, pediatría, residente, etc."* (turno siguiente, una vez que conteste, preguntás el curso/interés) |
+
+### Ejemplos — caso "✅ profesión + ✅ curso"
+
+Acá NO preguntes profesión — ya la tenés. Sondeo dolor estilo widget
+(Regla OBL-0 / 0b):
+
+| Datos | Primera respuesta WA |
+|---|---|
+| Cardiólogo + Curso "Cardio Avanzada" | *"¡Hola {nombre}! Como cardiólogo/a, ¿qué te aparece más y querés afinar — IC descompensada, arritmias complejas, o cardio-oncología/coronariopatía con FEVI baja?"* |
+| Enfermera UTI + Curso "Cuidados Críticos" | *"¡Hola {nombre}! Para enfermería de UTI, ¿qué áreas te resultan más complejas hoy — ventilación mecánica y monitoreo invasivo, manejo de sepsis y shock, o procedimientos invasivos seguros?"* |
+
+### Prohibido en el primer turno WA
+
+- ❌ Pitchear el curso de toque sin sondeo previo (es la **diferencia clave**
+  con el flujo viejo de n8n — el bot vendía genérico, ahora vende personalizado)
+- ❌ Pedir datos que ya están en el lead Zoho (nombre, email, teléfono, país)
+- ❌ Hacer formulario burocrático tipo *"¿en qué institución?"* / *"¿hace cuánto?"*
+- ❌ Preguntas abiertas tipo *"¿en qué te puedo ayudar?"* — eso da permiso a
+  que el user conteste *"información del curso"* y la conv muere genérica
 """
 
 

@@ -14,7 +14,7 @@ LABELS = {
     "caliente": "Muy interesado, pregunta por precio, fechas, formas de pago o quiere inscribirse",
     "tibio": "Interesado pero con dudas, pide más información o no se decide",
     "frio": "Respuestas breves, pasivo, sin preguntas, solo mira",
-    "convertido": "Ya realizó el pago o confirmó la inscripción",
+    "convertido": "El agente confirmó que el pago fue procesado y el usuario tiene acceso al curso",
     "esperando_pago": "Recibió el link de pago pero aún no pagó",
     "seguimiento": "Pidió que lo contacten después, dejó sus datos para seguimiento",
     "no_interesa": "Dijo explícitamente que no le interesa o pidió que no lo contacten",
@@ -27,10 +27,16 @@ Opciones:
 - caliente: muy interesado, pregunta por precio/fechas/pago o quiere inscribirse
 - tibio: interesado pero con dudas, pide más info, no se decide
 - frio: pasivo, respuestas breves, sin preguntas, solo mira
-- convertido: ya pagó o confirmó inscripción
+- convertido: el agente confirmó explícitamente que el pago fue procesado y el usuario tiene acceso al curso
 - esperando_pago: recibió link de pago pero no pagó aún
 - seguimiento: pidió que lo contacten después
 - no_interesa: dijo que no le interesa
+
+REGLAS CRÍTICAS:
+- "convertido" SOLO cuando el AGENTE confirmó pago completado de un NUEVO curso en esta conversación. No alcanza con que el usuario mencione la palabra "pago".
+- Si el usuario menciona un pago para reportar un PROBLEMA (acceso, reembolso, error, cuota), NO es "convertido". Usá "seguimiento" o "tibio".
+- Si la conversación es de soporte post-venta (alumno con problema en el campus), NO es "convertido".
+- Una sola palabra del usuario como "Pago" o "Hice el primer pago" sin confirmación del agente NO es "convertido".
 
 Respondé SOLO con una de esas palabras, nada más."""
 

@@ -16,6 +16,7 @@ from langchain_core.tools import tool
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
 from integrations.zoho.sales_orders import ZohoSalesOrders
+from utils.agent_context import log_to_conv
 
 logger = structlog.get_logger(__name__)
 
@@ -51,12 +52,35 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
     from config.constants import is_master_slug
     from integrations import courses_cache
 
+    await log_to_conv(
+        "tool",
+        {"action": "tool_get_course_brief", "detail": f"slug={slug} country={country}"},
+    )
+
     if is_master_slug(slug):
+        await log_to_conv(
+            "action",
+            {"action": "master_detectado", "detail": f"slug={slug} — derivación recomendada"},
+        )
         return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     course = await courses_cache.get_course(country.lower(), slug)
     if not course:
+        await log_to_conv(
+            "error",
+            {"action": "curso_no_encontrado", "detail": f"slug={slug} country={country}"},
+        )
         return f"No encontré el curso '{slug}' para {country}. Verificá el slug en el catálogo."
+
+    await log_to_conv(
+        "action",
+        {
+            "action": "curso_consultado",
+            "detail": f"{course.get('title')} ({country})",
+            "slug": slug,
+            "title": course.get("title"),
+        },
+    )
 
     brief = course.get("brief_md") or ""
     if brief:
@@ -99,11 +123,27 @@ async def get_course_deep(slug: str, country: str = "AR", section: str = "summar
     from config.constants import is_master_slug
     from integrations import courses_cache
 
+    await log_to_conv(
+        "tool",
+        {
+            "action": "tool_get_course_deep",
+            "detail": f"slug={slug} country={country} section={section}",
+        },
+    )
+
     if is_master_slug(slug):
+        await log_to_conv(
+            "action",
+            {"action": "master_detectado", "detail": f"slug={slug} — derivación recomendada"},
+        )
         return _MASTER_DERIVATION_RESPONSE.format(slug=slug)
 
     course = await courses_cache.get_course_deep(country, slug)
     if not course:
+        await log_to_conv(
+            "error",
+            {"action": "curso_no_encontrado", "detail": f"slug={slug} country={country}"},
+        )
         return f"No encontré el curso '{slug}' para el país {country}. Verificá el slug y el país."
 
     raw = course.get("raw") or {}
@@ -231,6 +271,19 @@ async def create_payment_link(
         customer_email: Email del cliente
         customer_name: Nombre completo del cliente
     """
+    await log_to_conv(
+        "tool",
+        {
+            "action": "tool_create_payment_link",
+            "detail": f"course={course_name} email={customer_email} {currency} {price}",
+            "course": course_name,
+            "email": customer_email,
+            "amount": price,
+            "currency": currency,
+            "country": country,
+        },
+    )
+
     try:
         client = RebillClient()
         result = await client.create_payment_link(
@@ -244,14 +297,40 @@ async def create_payment_link(
         )
         url = result.get("checkout_url", "")
         if not url:
+            await log_to_conv(
+                "error",
+                {"action": "payment_link_vacio", "detail": f"course={course_name} email={customer_email}"},
+            )
             return "No pude generar el link de pago. Contactá a soporte@msklatam.com para completar la inscripción."
 
         link_id = result.get("link_id", "")
         logger.info("payment_link_sent", course=course_name, email=customer_email, link_id=link_id)
+        await log_to_conv(
+            "action",
+            {
+                "action": "payment_link_generado",
+                "detail": f"course={course_name} → {url}",
+                "url": url,
+                "link_id": link_id,
+                "course": course_name,
+                "email": customer_email,
+                "amount": price,
+                "currency": currency,
+            },
+        )
         return f"Link de pago generado exitosamente:\n{url}"
 
     except Exception as e:
         logger.error("create_payment_link_failed", error=str(e), course=course_name, email=customer_email)
+        await log_to_conv(
+            "error",
+            {
+                "action": "payment_link_failed",
+                "detail": f"{type(e).__name__}: {str(e)[:200]}",
+                "course": course_name,
+                "email": customer_email,
+            },
+        )
         return (
             "Hubo un error al generar el link de pago. "
             "El usuario puede inscribirse directamente en soporte@msklatam.com "
@@ -293,6 +372,19 @@ async def create_or_update_lead(
         channel=channel,
         has_notes=bool(notes),
     )
+    await log_to_conv(
+        "tool",
+        {
+            "action": "tool_create_or_update_lead",
+            "detail": f"name={name} email={email} phone={phone} course={course_name}",
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "country": country,
+            "course": course_name,
+            "channel": channel,
+        },
+    )
 
     try:
         leads = ZohoLeads()
@@ -329,6 +421,17 @@ async def create_or_update_lead(
                     "Notas_Bot": notes,
                 },
             )
+            await log_to_conv(
+                "action",
+                {
+                    "action": "lead_actualizado_zoho",
+                    "detail": f"ID: {existing['id']} (match por email) — curso: {course_name}",
+                    "lead_id": existing["id"],
+                    "match_by": "email",
+                    "email": email,
+                    "course": course_name,
+                },
+            )
             return f"Lead actualizado en Zoho. ID: {existing['id']}"
         else:
             logger.info(
@@ -338,6 +441,19 @@ async def create_or_update_lead(
                 reason="email_not_found_in_zoho",
             )
             result = await leads.create(data)
+            await log_to_conv(
+                "action",
+                {
+                    "action": "lead_creado_zoho",
+                    "detail": f"Nuevo lead {result['id']} — {name} ({email}) — curso: {course_name}",
+                    "lead_id": result["id"],
+                    "name": name,
+                    "email": email,
+                    "phone": phone,
+                    "country": country,
+                    "course": course_name,
+                },
+            )
             return f"Lead creado en Zoho. ID: {result['id']}"
     except Exception as e:
         logger.error(
@@ -347,6 +463,16 @@ async def create_or_update_lead(
             email=email,
             phone=phone,
             course=course_name,
+        )
+        await log_to_conv(
+            "error",
+            {
+                "action": "lead_zoho_failed",
+                "detail": f"{type(e).__name__}: {str(e)[:200]}",
+                "email": email,
+                "phone": phone,
+                "course": course_name,
+            },
         )
         # Devuelve string descriptivo al LLM (NO re-raise, así el agente
         # puede manejar el fallo en lugar de morir).
@@ -381,17 +507,55 @@ async def create_sales_order(
         payment_provider: 'MercadoPago' o 'Rebill'
         notes: Notas adicionales
     """
-    orders = ZohoSalesOrders()
-    result = await orders.create(
+    await log_to_conv(
+        "tool",
         {
+            "action": "tool_create_sales_order",
+            "detail": f"contact_id={contact_id} course={course_name} {currency} {price}",
             "contact_id": contact_id,
-            "curso_nombre": course_name,
-            "precio": price,
-            "moneda": currency,
-            "payment_link": payment_link,
+            "course": course_name,
+            "amount": price,
+            "currency": currency,
+            "country": country,
             "payment_provider": payment_provider,
-            "pais": country,
-            "notas": notes,
-        }
+        },
     )
-    return f"Orden de venta creada en Zoho. ID: {result['id']}"
+    try:
+        orders = ZohoSalesOrders()
+        result = await orders.create(
+            {
+                "contact_id": contact_id,
+                "curso_nombre": course_name,
+                "precio": price,
+                "moneda": currency,
+                "payment_link": payment_link,
+                "payment_provider": payment_provider,
+                "pais": country,
+                "notas": notes,
+            }
+        )
+        await log_to_conv(
+            "action",
+            {
+                "action": "sales_order_creada",
+                "detail": f"Order {result['id']} — {course_name} ({currency} {price})",
+                "order_id": result["id"],
+                "course": course_name,
+                "amount": price,
+                "currency": currency,
+                "payment_provider": payment_provider,
+            },
+        )
+        return f"Orden de venta creada en Zoho. ID: {result['id']}"
+    except Exception as e:
+        logger.error("create_sales_order_failed", error=str(e), course=course_name, contact_id=contact_id)
+        await log_to_conv(
+            "error",
+            {
+                "action": "sales_order_failed",
+                "detail": f"{type(e).__name__}: {str(e)[:200]}",
+                "course": course_name,
+                "contact_id": contact_id,
+            },
+        )
+        return f"Error al crear la orden de venta en Zoho: {str(e)[:200]}"

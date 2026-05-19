@@ -34,9 +34,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel
 
 from agents.sales.agent import build_sales_agent
+from config.constants import Channel
 from integrations.stt import transcribe_bytes
 from integrations.zoho.leads import ZohoLeads
 from memory.conversation_store import get_conversation_store
+from models.message import Message, MessageRole
+from utils.agent_context import current_channel, current_session_id
+from utils.conv_events import log_event
 
 logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/sales/whatsapp", tags=["sales-whatsapp"])
@@ -458,7 +462,14 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
 
     Devuelve `{text, context, skip_response}` compatible con el Custom Code
     de Botmaker — el código ya espera ese shape.
+
+    Persistencia:
+    - Crea/obtiene conversation en Postgres (channel=WHATSAPP, external_id=phone).
+    - Guarda user + bot messages en la conv (para que aparezca en el inbox).
+    - Loggea eventos a `conv_events:{conv.id}` para la pestaña "Log de eventos".
     """
+    import time as _time
+
     logger.info(
         "sales_whatsapp_webhook_received",
         msg_id=payload.msgId,
@@ -472,70 +483,158 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         logger.info("sales_whatsapp_duplicate_msgid", msg_id=payload.msgId)
         return BotmakerResponse(skip_response=True)
 
-    # 1. Validaciones mínimas + procesamiento audio/imagen.
+    # 1. Validaciones mínimas.
     if not payload.phone:
         raise HTTPException(status_code=400, detail="missing phone")
 
+    # 2. Crear/obtener conversation Postgres — necesario para que aparezca
+    #    en el inbox + tener el conv_id para el log de eventos.
+    #    external_id = phone (mismo patrón que channels/whatsapp.py).
+    iso2_country = _iso2_from_pais(payload.Pais or "")
+    store = await get_conversation_store()
+    conversation, is_new = await store.get_or_create(
+        channel=Channel.WHATSAPP,
+        external_id=payload.phone,
+        country=iso2_country,
+    )
+    conv_id = str(conversation.id)
+
+    # Bindea structlog ctx con conv_id para que cualquier logger.info() del request
+    # incluya este campo automáticamente.
+    structlog.contextvars.bind_contextvars(conversation_id=conv_id)
+
+    # ContextVars para que las tools del agente puedan emitir log_events
+    # con el session_id correcto sin recibirlo como argumento.
+    current_session_id.set(conv_id)
+    current_channel.set("whatsapp")
+
+    # Actualizar profile básico de la conv con el nombre/email del payload.
+    profile_dirty = False
+    if payload.Full_Name and not conversation.user_profile.name:
+        conversation.user_profile.name = payload.Full_Name
+        profile_dirty = True
+    if payload.Email and not conversation.user_profile.email:
+        conversation.user_profile.email = payload.Email
+        profile_dirty = True
+    if not conversation.user_profile.phone:
+        conversation.user_profile.phone = payload.phone
+        profile_dirty = True
+    if profile_dirty:
+        await store.save(conversation)
+
+    if is_new:
+        await log_event(
+            conv_id,
+            "info",
+            {
+                "action": "conv_iniciada",
+                "detail": f"Nueva conversación WhatsApp desde Botmaker · lead Zoho {payload.leadId or '(s/d)'}",
+                "channel": "whatsapp",
+            },
+        )
+
+    # ──────────── Procesamiento de audio / imagen ────────────
     user_msg = payload.userMessage or ""
 
-    # Audio: si llega audioUrl o el marcador __audio__, descargar y transcribir.
     if payload.audioUrl or user_msg == "__audio__":
-        if payload.audioUrl:
-            transcribed = await _transcribe_audio_url(payload.audioUrl)
-        else:
-            transcribed = ""
+        await log_event(conv_id, "info", {"action": "audio_recibido", "detail": "Voice note recibida — transcribiendo con Whisper"})
+        transcribed = await _transcribe_audio_url(payload.audioUrl) if payload.audioUrl else ""
         if transcribed:
             user_msg = transcribed
-            logger.info(
-                "sales_whatsapp_audio_replaced_msg",
-                phone=payload.phone,
-                chars=len(transcribed),
+            await log_event(
+                conv_id,
+                "action",
+                {
+                    "action": "audio_transcripto",
+                    "detail": f"«{transcribed[:120]}{'…' if len(transcribed) > 120 else ''}»",
+                    "chars": len(transcribed),
+                },
             )
         else:
+            await log_event(conv_id, "error", {"source": "stt", "error": "Transcripción Whisper falló"})
             return BotmakerResponse(
                 text="Recibí tu audio pero no logré transcribirlo. ¿Me lo escribís en texto, por favor? Así te ayudo mejor 🙏",
                 context={},
             )
 
-    # Imagen: si llega imageUrl o el marcador __image__, describirla con GPT-4o vision.
     elif payload.imageUrl or user_msg == "__image__":
-        if payload.imageUrl:
-            description = await _describe_image_url(payload.imageUrl)
-        else:
-            description = ""
+        await log_event(conv_id, "info", {"action": "imagen_recibida", "detail": "Imagen recibida — analizando con GPT-4o vision"})
+        description = await _describe_image_url(payload.imageUrl) if payload.imageUrl else ""
         if description:
             user_msg = description
-            logger.info(
-                "sales_whatsapp_image_replaced_msg",
-                phone=payload.phone,
-                chars=len(description),
+            await log_event(
+                conv_id,
+                "action",
+                {
+                    "action": "imagen_descripta",
+                    "detail": description[:200],
+                },
             )
         else:
+            await log_event(conv_id, "error", {"source": "vision", "error": "Análisis GPT-4o vision falló"})
             return BotmakerResponse(
                 text="Recibí tu imagen pero no logré procesarla. ¿Me contás por texto qué necesitás? 🙏",
                 context={},
             )
 
-    # Si después de todo no hay nada que procesar, abortar.
     if not user_msg:
         return BotmakerResponse(skip_response=True)
 
-    # 2. Fetch lead Zoho (best-effort: si falla, seguimos con fallback del payload).
+    # Loggear el msg del usuario que se va a procesar.
+    await log_event(
+        conv_id,
+        "info",
+        {
+            "action": "msg_recibido",
+            "detail": f"«{user_msg[:120]}{'…' if len(user_msg) > 120 else ''}»",
+            "msg": user_msg[:300],
+        },
+    )
+    # Persistir user msg en la conversación.
+    try:
+        user_message = Message(role=MessageRole.USER, content=user_msg)
+        await store.append_message(conversation, user_message)
+    except Exception as e:
+        logger.warning("sales_whatsapp_user_msg_persist_failed", error=str(e))
+
+    # ──────────── Fetch lead Zoho ────────────
     lead: dict | None = None
     if payload.leadId:
         try:
             zl = ZohoLeads()
             lead = await zl.get(payload.leadId)
-            if not lead:
+            if lead:
+                await log_event(
+                    conv_id,
+                    "action",
+                    {
+                        "action": "zoho_lead_fetched",
+                        "detail": f"Lead {payload.leadId} traído de Zoho · curso={lead.get('curso_nombre_plantilla', '—')}",
+                        "lead_id": payload.leadId,
+                    },
+                )
+            else:
                 logger.warning("sales_whatsapp_lead_not_found", lead_id=payload.leadId)
+                await log_event(conv_id, "error", {"source": "zoho", "error": f"Lead {payload.leadId} no encontrado en Zoho"})
         except Exception as e:
             logger.warning("sales_whatsapp_zoho_fetch_failed", lead_id=payload.leadId, error=str(e))
+            await log_event(conv_id, "error", {"source": "zoho", "error": f"Fetch lead falló: {str(e)[:200]}"})
 
     user_profile = _build_user_profile(lead or {}, payload)
     country = user_profile["country"]
     page_slug = user_profile["curso_slug"]
 
-    # 3. Construir agente (system prompt completo + catálogo + brief del curso).
+    # ──────────── Build + invocar agente ────────────
+    await log_event(
+        conv_id,
+        "intent",
+        {
+            "intent": "sales",
+            "agent": "sales",
+            "msg": f"País={country} · curso={page_slug or '(sin slug)'}",
+        },
+    )
+
     try:
         agent = await build_sales_agent(
             country=country,
@@ -545,32 +644,74 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         )
     except Exception as e:
         logger.error("sales_whatsapp_build_agent_failed", error=str(e), country=country, slug=page_slug)
-        # Fallback: devolvemos un mensaje genérico para que Botmaker derive.
+        await log_event(conv_id, "error", {"source": "build_sales_agent", "error": str(e)[:300]})
         return BotmakerResponse(
             text="Tuve un problema técnico al procesar tu consulta. Te paso con un asesor académico.",
             context={"derivarConAsesor": True},
         )
 
-    # 4. Historial.
     history = await _load_history(payload.phone)
     messages_in = history + [HumanMessage(content=user_msg)]
 
-    # 5. Invocar agente.
+    invoke_start = _time.perf_counter()
     try:
         result = await agent.ainvoke({"messages": messages_in})
         bot_msg = result["messages"][-1]
         raw_response = bot_msg.content if hasattr(bot_msg, "content") else str(bot_msg)
     except Exception as e:
         logger.error("sales_whatsapp_agent_invoke_failed", error=str(e), phone=payload.phone)
+        await log_event(conv_id, "error", {"source": "agent_invoke", "error": str(e)[:300]})
         return BotmakerResponse(
             text="Disculpame, tuve un problema procesando tu mensaje. Probá escribirme de nuevo en un minuto.",
             context={},
         )
+    invoke_ms = round((_time.perf_counter() - invoke_start) * 1000)
 
-    # 6. Parsear tags y limpiar texto.
     clean_text, ctx = _parse_tags(raw_response)
 
-    # 7. Guardar en historial (best-effort).
+    # Loggear tags emitidos (si los hay) — el agente firmó la respuesta.
+    tags_active = [k for k in ("derivarConAsesor", "cierreEnviado", "objecionPrecio", "cargarTicket") if ctx.get(k)]
+    await log_event(
+        conv_id,
+        "action",
+        {
+            "action": "agente_respondio",
+            "detail": f"sales · {invoke_ms}ms · {len(clean_text)} chars · tags={','.join(tags_active) or '—'}",
+            "duration_ms": invoke_ms,
+            "tags": tags_active,
+            "response_preview": clean_text[:200],
+        },
+    )
+
+    # Eventos específicos por tag — para que sea súper visible en el log.
+    if ctx.get("cierreEnviado"):
+        await log_event(conv_id, "action", {"action": "cierre_enviado", "detail": "Bot mandó link de checkout"})
+    if ctx.get("objecionPrecio"):
+        await log_event(conv_id, "action", {"action": "cupon_ofrecido", "detail": "Bot ofreció cupón por objeción de precio (BOT15/BOT20)"})
+    if ctx.get("derivarConAsesor"):
+        motivo = ctx.get("motivoDerivacion") or "generico"
+        override_email = ctx.get("asesorEmailOverride") or ""
+        await log_event(
+            conv_id,
+            "action",
+            {
+                "action": "derivacion_solicitada",
+                "detail": f"Motivo: {motivo}" + (f" → asesor: {override_email}" if override_email else ""),
+                "motivo": motivo,
+                "asesor_email": override_email,
+            },
+        )
+    if ctx.get("cargarTicket"):
+        await log_event(conv_id, "action", {"action": "ticket_portal_sugerido", "detail": "Bot dirigió al lead al portal de tickets"})
+
+    # Persistir bot msg en la conversación.
+    try:
+        bot_message = Message(role=MessageRole.ASSISTANT, content=clean_text, metadata={"agent": "sales"})
+        await store.append_message(conversation, bot_message)
+    except Exception as e:
+        logger.warning("sales_whatsapp_bot_msg_persist_failed", error=str(e))
+
+    # Historial Redis (memoria conversacional rápida del agente).
     try:
         await _append_history(payload.phone, user_msg, clean_text)
     except Exception as e:
@@ -580,12 +721,14 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         "sales_whatsapp_response_ready",
         phone=payload.phone,
         lead_id=payload.leadId,
+        conv_id=conv_id,
         country=country,
         slug=page_slug,
         derivar=ctx.get("derivarConAsesor"),
         cierre=ctx.get("cierreEnviado"),
         objecion=ctx.get("objecionPrecio"),
         text_len=len(clean_text),
+        invoke_ms=invoke_ms,
     )
 
     return BotmakerResponse(text=clean_text, context=ctx, skip_response=False)

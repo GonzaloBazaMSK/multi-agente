@@ -1418,10 +1418,46 @@ class AssignBody(BaseModel):
 
 @router.post("/conversations/{conv_id}/assign")
 async def assign(conv_id: str, body: AssignBody):
+    # Resolver nombre del agente ANTES de mutar para que el log diga
+    # "Asignada a Gonzalo Baza" y no "agent_id=uuid...".
+    agent_name: str | None = None
+    agent_email: str | None = None
+    if body.agent_id:
+        try:
+            from integrations.supabase_client import get_profile_by_id
+
+            prof = await get_profile_by_id(body.agent_id)
+            if prof:
+                agent_name = prof.get("name") or prof.get("email")
+                agent_email = prof.get("email")
+        except Exception as e:
+            logger.debug("assign_lookup_profile_failed", agent_id=body.agent_id, error=str(e))
+
     await cm.assign(conv_id, body.agent_id)
+    from utils.conv_events import log_event
     from utils.inbox_jobs import log_action
 
-    await log_action("system", "assign", conv_id, {"agent_id": body.agent_id})
+    await log_action("system", "assign", conv_id, {"agent_id": body.agent_id, "agent_name": agent_name})
+
+    # Evento visible en el "Log de eventos" del inbox.
+    if body.agent_id:
+        await log_event(
+            conv_id,
+            "action",
+            {
+                "action": "conv_asignada",
+                "detail": f"Asignada a {agent_name or body.agent_id}",
+                "agent_id": body.agent_id,
+                "agent_name": agent_name,
+                "agent_email": agent_email,
+            },
+        )
+    else:
+        await log_event(
+            conv_id,
+            "action",
+            {"action": "conv_desasignada", "detail": "Sin agente asignado"},
+        )
 
     # Notificación al agente asignado — fire-and-forget, no falla el assign
     # si la notif no se puede crear (ver utils/notifications.py:notify).
@@ -1467,9 +1503,19 @@ class ClassifyBody(BaseModel):
 @router.post("/conversations/{conv_id}/classify")
 async def classify(conv_id: str, body: ClassifyBody):
     await cm.classify(conv_id, body.lifecycle)
+    from utils.conv_events import log_event
     from utils.inbox_jobs import log_action
 
     await log_action("system", "classify", conv_id, {"lifecycle": body.lifecycle})
+    await log_event(
+        conv_id,
+        "action",
+        {
+            "action": "lifecycle_cambiado",
+            "detail": f"Lifecycle → {body.lifecycle}",
+            "lifecycle": body.lifecycle,
+        },
+    )
     return {"ok": True}
 
 
@@ -1571,9 +1617,19 @@ async def label_set(conv_id: str, body: LabelBody):
         pass
 
     # Audit log
+    from utils.conv_events import log_event
     from utils.inbox_jobs import log_action
 
     await log_action("system", "label", conv_id, {"label": body.label})
+    await log_event(
+        conv_id,
+        "action",
+        {
+            "action": "label_cambiado",
+            "detail": f"Etiqueta IA → {body.label}",
+            "label": body.label,
+        },
+    )
     return {"ok": True}
 
 
@@ -1717,6 +1773,17 @@ class BotBody(BaseModel):
 @router.post("/conversations/{conv_id}/bot")
 async def bot_toggle(conv_id: str, body: BotBody):
     await cm.set_bot_paused(conv_id, body.paused)
+    from utils.conv_events import log_event
+
+    await log_event(
+        conv_id,
+        "action",
+        {
+            "action": "bot_pausado" if body.paused else "bot_reanudado",
+            "detail": "Bot pausado por humano" if body.paused else "Bot reanudado",
+            "paused": body.paused,
+        },
+    )
     return {"ok": True}
 
 
@@ -1737,10 +1804,35 @@ async def tags(conv_id: str, body: TagsBody):
 @router.post("/conversations/{conv_id}/takeover")
 async def takeover(conv_id: str, body: AssignBody):
     """Tomar control humano: pausa bot + asigna al agente + saca needs_human."""
+    agent_name: str | None = None
+    agent_email: str | None = None
     if body.agent_id:
+        try:
+            from integrations.supabase_client import get_profile_by_id
+
+            prof = await get_profile_by_id(body.agent_id)
+            if prof:
+                agent_name = prof.get("name") or prof.get("email")
+                agent_email = prof.get("email")
+        except Exception as e:
+            logger.debug("takeover_lookup_profile_failed", agent_id=body.agent_id, error=str(e))
         await cm.assign(conv_id, body.agent_id)
     await cm.set_bot_paused(conv_id, True)
     await cm.set_needs_human(conv_id, False)
+
+    from utils.conv_events import log_event
+
+    await log_event(
+        conv_id,
+        "action",
+        {
+            "action": "takeover_humano",
+            "detail": f"{agent_name or 'Agente'} tomó la conversación (bot pausado)",
+            "agent_id": body.agent_id,
+            "agent_name": agent_name,
+            "agent_email": agent_email,
+        },
+    )
     return {"ok": True}
 
 

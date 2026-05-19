@@ -555,6 +555,15 @@ async def route_message(
     # Bind conversation_id to structlog context for end-to-end tracing
     if conversation_id:
         structlog.contextvars.bind_contextvars(conversation_id=str(conversation_id))
+        # ContextVars para que las @tools loguen al inbox sin recibir el sid
+        # como argumento (el LLM no lo pasa en tool calls).
+        try:
+            from utils.agent_context import current_channel, current_session_id
+
+            current_session_id.set(str(conversation_id))
+            current_channel.set(channel or "")
+        except Exception:
+            pass
 
     # El flow-builder Drawflow y `agents/flow_runner.py` se eliminaron: el
     # runner nunca se invocaba en producción (0 sesiones con `flow_state:*` en

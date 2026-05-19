@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   ExternalLink, Sparkles, ArrowRight, DollarSign, AlertCircle, Copy,
   ChevronDown, ChevronUp, FileText, Calendar, CreditCard, TrendingUp,
-  Phone as PhoneIcon, Activity,
+  Phone as PhoneIcon, Activity, Bot, User as UserIcon, Wrench, Tag, Link2,
+  MessageSquare, Mic, Image as ImageIcon, ShieldAlert, Send, ClipboardCheck,
+  UserCheck, PauseCircle, PlayCircle, Ticket, Percent,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar } from "@/components/ui/avatar";
@@ -359,7 +361,7 @@ export function ContactPanel({ contact, conversationId = null }: Props) {
 
 type ConvEvent = {
   ts: string;
-  type: "intent" | "action" | "error" | "info";
+  type: "intent" | "action" | "error" | "info" | "tool";
   intent?: string;
   agent?: string;
   msg?: string;
@@ -367,7 +369,39 @@ type ConvEvent = {
   detail?: string;
   source?: string;
   error?: string;
+  // Cualquier otra clave del payload (lead_id, url, agent_name, etc.)
+  [key: string]: unknown;
 };
+
+// Icono visual según el tipo+action del evento. Cae a Activity si no matchea.
+function eventIcon(e: ConvEvent) {
+  const a = (e.action ?? "").toLowerCase();
+  if (e.type === "error") return <ShieldAlert className="w-3.5 h-3.5 text-danger" />;
+  if (e.type === "intent") return <Sparkles className="w-3.5 h-3.5 text-info" />;
+  if (e.type === "tool" || a.startsWith("tool_")) return <Wrench className="w-3.5 h-3.5 text-info" />;
+  if (a.startsWith("lead_")) return <UserCheck className="w-3.5 h-3.5 text-success" />;
+  if (a.includes("payment_link") || a.includes("link_pago")) return <Link2 className="w-3.5 h-3.5 text-success" />;
+  if (a.startsWith("sales_order")) return <ClipboardCheck className="w-3.5 h-3.5 text-success" />;
+  if (a === "msg_recibido") return <MessageSquare className="w-3.5 h-3.5 text-fg-dim" />;
+  if (a === "agente_respondio") return <Bot className="w-3.5 h-3.5 text-info" />;
+  if (a === "audio_recibido" || a === "audio_transcripto") return <Mic className="w-3.5 h-3.5 text-info" />;
+  if (a === "imagen_recibida" || a === "imagen_descripta") return <ImageIcon className="w-3.5 h-3.5 text-info" />;
+  if (a === "conv_asignada" || a === "conv_desasignada") return <UserCheck className="w-3.5 h-3.5 text-success" />;
+  if (a === "takeover_humano") return <UserIcon className="w-3.5 h-3.5 text-warn" />;
+  if (a === "bot_pausado") return <PauseCircle className="w-3.5 h-3.5 text-warn" />;
+  if (a === "bot_reanudado") return <PlayCircle className="w-3.5 h-3.5 text-success" />;
+  if (a === "cierre_enviado") return <Send className="w-3.5 h-3.5 text-success" />;
+  if (a === "cupon_ofrecido") return <Percent className="w-3.5 h-3.5 text-success" />;
+  if (a === "derivacion_solicitada") return <ArrowRight className="w-3.5 h-3.5 text-warn" />;
+  if (a === "ticket_portal_sugerido") return <Ticket className="w-3.5 h-3.5 text-info" />;
+  if (a === "lifecycle_cambiado" || a === "label_cambiado") return <Tag className="w-3.5 h-3.5 text-info" />;
+  if (a === "conv_iniciada") return <PlayCircle className="w-3.5 h-3.5 text-info" />;
+  if (e.type === "action") return <Activity className="w-3.5 h-3.5 text-success" />;
+  return <Activity className="w-3.5 h-3.5 text-fg-dim" />;
+}
+
+// Claves "técnicas" del evento que NO mostramos en el detalle JSON expandido.
+const _HIDDEN_KEYS = new Set(["ts", "type", "action", "detail", "msg", "intent", "agent", "source", "error"]);
 
 function ConversationEvents({ conversationId }: { conversationId: string }) {
   const { data, isLoading } = useQuery<{ events: ConvEvent[]; count: number }>({
@@ -376,6 +410,9 @@ function ConversationEvents({ conversationId }: { conversationId: string }) {
     refetchInterval: 10_000, // refresca cada 10s para timeline en vivo
     staleTime: 5_000,
   });
+
+  // Set de índices expandidos — click en una fila la abre / cierra.
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
 
   const events = (data?.events ?? []).slice().reverse(); // más reciente primero
 
@@ -386,38 +423,68 @@ function ConversationEvents({ conversationId }: { conversationId: string }) {
       ) : events.length === 0 ? (
         <div className="text-[11px] text-fg-dim">Sin eventos registrados.</div>
       ) : (
-        <ul className="space-y-1.5 text-[11px] max-h-[320px] overflow-y-auto scroll-thin pr-1">
+        <ul className="space-y-1 text-[11px] max-h-[420px] overflow-y-auto scroll-thin pr-1">
           {events.map((e, i) => {
             const time = new Date(e.ts).toLocaleTimeString("es-AR", {
               hour: "2-digit",
               minute: "2-digit",
               second: "2-digit",
             });
-            const dotClass =
-              e.type === "error"
-                ? "bg-danger"
-                : e.type === "intent"
-                  ? "bg-info"
-                  : e.type === "action"
-                    ? "bg-success"
-                    : "bg-fg-dim";
             const main =
               e.type === "intent"
                 ? `intent: ${e.intent ?? "-"} → ${e.agent ?? "-"}`
-                : e.type === "action"
-                  ? `${e.action ?? "action"}${e.detail ? ` — ${e.detail}` : ""}`
-                  : e.type === "error"
-                    ? `${e.source ?? "error"}: ${e.error ?? ""}`
-                    : (e.detail ?? e.action ?? "info");
+                : e.type === "error"
+                  ? `${e.source ?? e.action ?? "error"}: ${e.error ?? e.detail ?? ""}`
+                  : `${e.action ?? e.type}${e.detail ? ` — ${e.detail}` : ""}`;
+
+            // Payload "extra" para mostrar al expandir (excluye claves base).
+            const extras: [string, unknown][] = Object.entries(e).filter(
+              ([k, v]) => !_HIDDEN_KEYS.has(k) && v !== null && v !== undefined && v !== "",
+            );
+            const hasDetails = extras.length > 0 || !!e.msg;
+            const isOpen = !!expanded[i];
 
             return (
-              <li key={i} className="flex items-start gap-2">
-                <span className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${dotClass}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-fg break-words">{main}</div>
-                  {e.msg && <div className="text-fg-dim text-[10px] truncate">{e.msg}</div>}
-                  <div className="text-fg-dim text-[10px]">{time}</div>
+              <li
+                key={i}
+                className={`rounded-md border border-border/40 hover:border-border bg-card/40 transition-colors ${
+                  hasDetails ? "cursor-pointer" : ""
+                }`}
+                onClick={() => hasDetails && setExpanded((s) => ({ ...s, [i]: !s[i] }))}
+              >
+                <div className="flex items-start gap-2 px-2 py-1.5">
+                  <div className="mt-0.5 shrink-0">{eventIcon(e)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-fg break-words leading-tight">{main}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-fg-dim text-[10px]">{time}</span>
+                      {hasDetails && (
+                        <span className="text-fg-dim text-[10px]">
+                          {isOpen ? "▾ ocultar" : "▸ ver detalle"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
+                {isOpen && hasDetails && (
+                  <div className="px-2 pb-2 pl-7 space-y-1 border-t border-border/30 pt-1.5">
+                    {e.msg && (
+                      <div className="text-fg-dim text-[10px] italic break-words">"{e.msg}"</div>
+                    )}
+                    {extras.length > 0 && (
+                      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
+                        {extras.map(([k, v]) => (
+                          <React.Fragment key={k}>
+                            <dt className="text-fg-dim font-mono">{k}</dt>
+                            <dd className="text-fg break-all">
+                              {typeof v === "object" ? JSON.stringify(v) : String(v)}
+                            </dd>
+                          </React.Fragment>
+                        ))}
+                      </dl>
+                    )}
+                  </div>
+                )}
               </li>
             );
           })}

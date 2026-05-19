@@ -53,6 +53,23 @@ async def get_profile(email: str) -> dict | None:
         return None
 
 
+async def get_profile_by_id(profile_id: str) -> dict | None:
+    """Obtiene perfil por id (uuid). Devuelve None si no existe."""
+    if not profile_id:
+        return None
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{SUPABASE_URL}/rest/v1/profiles",
+            headers=_headers(),
+            params={"id": f"eq.{profile_id}", "select": "id,email,name,role"},
+            timeout=10,
+        )
+        data = resp.json()
+        if isinstance(data, list) and data:
+            return data[0]
+        return None
+
+
 async def list_profiles() -> list:
     async with httpx.AsyncClient() as client:
         resp = await client.get(

@@ -39,6 +39,7 @@ if _settings_boot.sentry_dsn:
 
 from api.admin import router as admin_router
 from api.admin_courses import router as admin_courses_router
+from api.admin_leads_audit import router as admin_leads_audit_router
 from api.admin_prompts import router as admin_prompts_router
 from api.auth import router as auth_router
 from api.autonomous import router as autonomous_router
@@ -325,6 +326,7 @@ def create_app() -> FastAPI:
     app.include_router(inbox_api_router)  # /api/inbox/*
     app.include_router(admin_router)  # /api/admin/{status,channels-status}
     app.include_router(admin_courses_router)  # /api/admin/courses/*
+    app.include_router(admin_leads_audit_router)  # /api/admin/leads/{id}/audit + /api/admin/zoho/{module}/{id}/audit
     app.include_router(admin_prompts_router)  # /api/admin/prompts/*
     app.include_router(widget_config_router)  # /api/admin/widget-config/*
     app.include_router(redis_admin_router)  # /api/admin/redis/*

@@ -89,7 +89,14 @@ _COUNTRY_TO_ISO2 = {
 
 
 class BotmakerPayload(BaseModel):
-    """Payload que envía el Custom Code de Botmaker."""
+    """Payload que envía el Custom Code de Botmaker.
+
+    Acepta campos extra (`extra="allow"`) para que puedas inspeccionar en el
+    log lo que Botmaker realmente está mandando — útil para descubrir cuáles
+    campos del Custom Code llegan al backend.
+    """
+
+    model_config = {"extra": "allow"}
 
     # Identificadores del mensaje
     msgId: str | None = None
@@ -598,6 +605,16 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         lead_id=payload.leadId,
         user_msg_len=len(payload.userMessage),
     )
+    # 🔍 DEBUG TEMPORAL — log del payload COMPLETO para ver qué Botmaker envía.
+    # Sacar este log una vez verificado qué llegó (no queremos PII permanente en logs).
+    try:
+        logger.info(
+            "sales_whatsapp_payload_debug",
+            payload_keys=sorted(payload.model_dump(exclude_none=False).keys()),
+            payload_full=payload.model_dump(exclude_none=False),
+        )
+    except Exception:
+        pass
 
     # 0. Dedup por msgId (anti-bucle si Botmaker reintenta el webhook).
     if await _is_duplicate_msgid(payload.msgId or ""):

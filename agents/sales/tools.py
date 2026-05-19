@@ -296,14 +296,18 @@ async def create_or_update_lead(
 
     try:
         leads = ZohoLeads()
-        existing = await leads.search_by_phone(phone) if phone else None
+        # 🔑 Match por EMAIL (no por teléfono).
+        # Razón: cada email distinto debe crear un lead nuevo aunque el
+        # teléfono coincida con uno viejo (mismo dispositivo, distinta persona).
+        # Search por phone generaba falsos UPDATE y perdíamos los nuevos emails.
+        existing = await leads.search_by_email(email) if email else None
 
         data = {
             "name": name,
             "phone": phone,
             "email": email,
             "country": country,
-            "curso_de_interes": course_name,
+            "curso_de_interes": course_name,  # Va a `Description` en el create (ZohoLeads.create)
             "canal_origen": channel,
             "notas": notes,
         }
@@ -312,18 +316,27 @@ async def create_or_update_lead(
             logger.info(
                 "create_or_update_lead_path_update",
                 existing_lead_id=existing.get("id"),
-                phone=phone,
+                email=email,
+                match_by="email",
             )
+            # Actualizar SOLO los campos que pueden cambiar entre turnos
+            # (curso de interés + notas). Lead_Source / Ad_Account / Status
+            # del lead original NO se sobrescriben.
             await leads.update(
                 existing["id"],
                 {
-                    "Curso_de_Interes": course_name,
+                    "Description": course_name,  # FIX: antes era "Curso_de_Interes" (campo inexistente)
                     "Notas_Bot": notes,
                 },
             )
             return f"Lead actualizado en Zoho. ID: {existing['id']}"
         else:
-            logger.info("create_or_update_lead_path_create", phone=phone, email=email)
+            logger.info(
+                "create_or_update_lead_path_create",
+                email=email,
+                phone=phone,
+                reason="email_not_found_in_zoho",
+            )
             result = await leads.create(data)
             return f"Lead creado en Zoho. ID: {result['id']}"
     except Exception as e:

@@ -282,31 +282,65 @@ async def create_or_update_lead(
         channel: Canal de origen (WhatsApp, Widget Web)
         notes: Notas adicionales
     """
-    leads = ZohoLeads()
-    existing = await leads.search_by_phone(phone) if phone else None
+    # Log de entrada — visibilidad cuándo el LLM dispara la tool.
+    logger.info(
+        "create_or_update_lead_called",
+        name=name,
+        phone=phone,
+        email=email,
+        country=country,
+        course=course_name,
+        channel=channel,
+        has_notes=bool(notes),
+    )
 
-    data = {
-        "name": name,
-        "phone": phone,
-        "email": email,
-        "country": country,
-        "curso_de_interes": course_name,
-        "canal_origen": channel,
-        "notas": notes,
-    }
+    try:
+        leads = ZohoLeads()
+        existing = await leads.search_by_phone(phone) if phone else None
 
-    if existing:
-        await leads.update(
-            existing["id"],
-            {
-                "Curso_de_Interes": course_name,
-                "Notas_Bot": notes,
-            },
+        data = {
+            "name": name,
+            "phone": phone,
+            "email": email,
+            "country": country,
+            "curso_de_interes": course_name,
+            "canal_origen": channel,
+            "notas": notes,
+        }
+
+        if existing:
+            logger.info(
+                "create_or_update_lead_path_update",
+                existing_lead_id=existing.get("id"),
+                phone=phone,
+            )
+            await leads.update(
+                existing["id"],
+                {
+                    "Curso_de_Interes": course_name,
+                    "Notas_Bot": notes,
+                },
+            )
+            return f"Lead actualizado en Zoho. ID: {existing['id']}"
+        else:
+            logger.info("create_or_update_lead_path_create", phone=phone, email=email)
+            result = await leads.create(data)
+            return f"Lead creado en Zoho. ID: {result['id']}"
+    except Exception as e:
+        logger.error(
+            "create_or_update_lead_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            email=email,
+            phone=phone,
+            course=course_name,
         )
-        return f"Lead actualizado en Zoho. ID: {existing['id']}"
-    else:
-        result = await leads.create(data)
-        return f"Lead creado en Zoho. ID: {result['id']}"
+        # Devuelve string descriptivo al LLM (NO re-raise, así el agente
+        # puede manejar el fallo en lugar de morir).
+        return (
+            f"Error al registrar el lead en Zoho ({type(e).__name__}): {str(e)[:200]}. "
+            "Continuá la conversación normalmente — un asesor humano podrá registrarlo después."
+        )
 
 
 @tool

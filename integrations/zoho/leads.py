@@ -35,33 +35,83 @@ class ZohoLeads:
                 }
             ]
         }
+        # Log de intento (antes del POST) — útil para debug cuando Zoho devuelve 401/duplicate
+        logger.info(
+            "zoho_lead_create_attempt",
+            email=data.get("email"),
+            phone=data.get("phone"),
+            country=data.get("country"),
+            curso=data.get("curso_de_interes"),
+        )
         headers = await self._auth.auth_headers()
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self._base}/Leads",
-                json=payload,
-                headers={**headers, "Content-Type": "application/json"},
-                timeout=15,
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    f"{self._base}/Leads",
+                    json=payload,
+                    headers={**headers, "Content-Type": "application/json"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+        except httpx.HTTPStatusError as e:
+            # Zoho devuelve detalle del error en el body — incluirlo en el log.
+            body_excerpt = (e.response.text or "")[:500]
+            logger.error(
+                "zoho_lead_create_failed",
+                status=e.response.status_code,
+                body=body_excerpt,
+                email=data.get("email"),
+                phone=data.get("phone"),
             )
-            resp.raise_for_status()
-            result = resp.json()
+            raise
+        except Exception as e:
+            logger.error(
+                "zoho_lead_create_failed",
+                error=str(e),
+                email=data.get("email"),
+                phone=data.get("phone"),
+            )
+            raise
 
         lead_id = result["data"][0]["details"]["id"]
-        logger.info("zoho_lead_created", lead_id=lead_id)
+        logger.info("zoho_lead_created", lead_id=lead_id, email=data.get("email"))
         return {"id": lead_id, **result["data"][0]}
 
     async def update(self, lead_id: str, data: dict) -> dict:
+        """Actualiza un Lead existente. Loggea inicio + resultado para visibilidad."""
+        logger.info(
+            "zoho_lead_update_attempt",
+            lead_id=lead_id,
+            fields=list(data.keys()),
+        )
         payload = {"data": [{"id": lead_id, **data}]}
         headers = await self._auth.auth_headers()
-        async with httpx.AsyncClient() as client:
-            resp = await client.put(
-                f"{self._base}/Leads",
-                json=payload,
-                headers={**headers, "Content-Type": "application/json"},
-                timeout=15,
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.put(
+                    f"{self._base}/Leads",
+                    json=payload,
+                    headers={**headers, "Content-Type": "application/json"},
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                result = resp.json()
+        except httpx.HTTPStatusError as e:
+            body_excerpt = (e.response.text or "")[:500]
+            logger.error(
+                "zoho_lead_update_failed",
+                lead_id=lead_id,
+                status=e.response.status_code,
+                body=body_excerpt,
             )
-            resp.raise_for_status()
-        return resp.json()
+            raise
+        except Exception as e:
+            logger.error("zoho_lead_update_failed", lead_id=lead_id, error=str(e))
+            raise
+
+        logger.info("zoho_lead_updated", lead_id=lead_id, fields=list(data.keys()))
+        return result
 
     async def get(self, lead_id: str) -> dict | None:
         """

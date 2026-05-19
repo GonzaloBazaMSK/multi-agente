@@ -16,7 +16,7 @@ from langchain_core.tools import tool
 from integrations.payments.rebill import RebillClient
 from integrations.zoho.leads import ZohoLeads
 from integrations.zoho.sales_orders import ZohoSalesOrders
-from utils.agent_context import log_to_conv
+from utils.agent_context import log_to_conv, masters_handoff_requested
 
 logger = structlog.get_logger(__name__)
 
@@ -392,6 +392,16 @@ async def create_or_update_lead(
             "brand": brand,
         },
     )
+
+    # Si el lead es de Másters, marcar el ContextVar para que el endpoint
+    # del canal (widget/whatsapp) dispare el handoff al asesor académico.
+    # Esto reemplaza la dependencia del tag textual `[DERIVAR_MASTERS_VANESA]`
+    # que el LLM emite de forma inconsistente.
+    if (brand or "").strip().lower() == "master":
+        try:
+            masters_handoff_requested.set(True)
+        except Exception:
+            pass
 
     try:
         leads = ZohoLeads()

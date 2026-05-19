@@ -231,13 +231,24 @@ def _parse_tags(ai_text: str) -> tuple[str, dict]:
     """
     tags = set(_TAGS_PATTERN.findall(ai_text or ""))
     clean = _TAGS_PATTERN.sub("", ai_text or "").strip()
+    # Anonimizar el nombre del asesor si se le escapó al LLM (el prompt
+    # pide no nombrarlo pero los LLMs fallan).
+    clean = re.sub(r"\b[Vv]ane[ss]+a(\s+Hern[áa]ndez)?\b", "un asesor académico", clean)
     clean = _format_for_whatsapp(clean)
 
-    # `derivarConAsesor` se activa con cualquiera de los dos handoffs.
+    # `derivarConAsesor` se activa con cualquiera de los dos handoffs (tag
+    # textual del LLM) o con el flag mecánico del ContextVar (setea la tool
+    # `create_or_update_lead` cuando recibe brand="Master").
     # `asesorEmailOverride` solo se setea para Másters → permite que el
-    # Custom Code Botmaker haga `user.set('asesorEmail', ...)` y rutee a
-    # Vanesa en lugar del owner del lead.
-    is_masters = "DERIVAR_MASTERS_VANESA" in tags
+    # Custom Code Botmaker haga `user.set('asesorEmail', ...)` y rutee al
+    # asesor de Másters en lugar del owner del lead.
+    try:
+        from utils.agent_context import masters_handoff_requested
+
+        _flag_masters = masters_handoff_requested.get()
+    except Exception:
+        _flag_masters = False
+    is_masters = ("DERIVAR_MASTERS_VANESA" in tags) or _flag_masters
     is_generic = "DERIVAR_HUMANO" in tags
     return clean, {
         "derivarConAsesor": is_masters or is_generic,

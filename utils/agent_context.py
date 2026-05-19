@@ -34,6 +34,16 @@ current_session_id: ContextVar[str] = ContextVar("current_session_id", default="
 # en qué contexto están y ajusten su comportamiento si hace falta.
 current_channel: ContextVar[str] = ContextVar("current_channel", default="")
 
+# Flag de handoff a Másters. Lo setea la tool `create_or_update_lead`
+# cuando recibe `brand="Master"`. El widget/whatsapp endpoint lo lee post-
+# ejecución del agente y dispara la asignación al asesor + pausa bot +
+# needs_human. Es la señal MECÁNICA (no depende de que el LLM emita el tag
+# textual `[DERIVAR_MASTERS_VANESA]`, que es frágil — el LLM suele
+# reformular o saltearlo).
+masters_handoff_requested: ContextVar[bool] = ContextVar(
+    "masters_handoff_requested", default=False
+)
+
 
 async def log_to_conv(event_type: str, data: dict) -> None:
     """

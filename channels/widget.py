@@ -1437,9 +1437,20 @@ async def process_widget_message(
 
     response_text = result["response"]
     # Detectar tags ANTES de strippearlos — necesario para acciones automáticas
-    # (asignar a Vanesa cuando es DERIVAR_MASTERS_VANESA, etc.).
+    # (asignar al asesor de Másters cuando es DERIVAR_MASTERS_VANESA, etc.).
     _raw_response = response_text
-    _wants_masters_vanesa = "[DERIVAR_MASTERS_VANESA]" in _raw_response
+    _tag_masters = "[DERIVAR_MASTERS_VANESA]" in _raw_response
+    # Señal MECÁNICA del ContextVar — la tool `create_or_update_lead` lo setea
+    # cuando recibe brand="Master". Mucho más confiable que parsear el tag
+    # textual del LLM (que suele reformular la respuesta y omitirlo).
+    try:
+        from utils.agent_context import masters_handoff_requested
+
+        _flag_masters = masters_handoff_requested.get()
+    except Exception:
+        _flag_masters = False
+    _wants_masters_vanesa = _tag_masters or _flag_masters
+
     # Stripear tags internos que el prompt emite para WhatsApp/Botmaker
     # pero que no deben llegar al usuario del widget.
     response_text = _re.sub(
@@ -1447,35 +1458,43 @@ async def process_widget_message(
         "",
         response_text,
     ).strip()
+    # Anonimizar el nombre del asesor si se le escapó al LLM (defensa en
+    # profundidad — el prompt ya pide no nombrarlo, pero los LLMs fallan).
+    response_text = _re.sub(
+        r"\b[Vv]ane[ss]+a(\s+Hern[áa]ndez)?\b",
+        "un asesor académico",
+        response_text,
+    )
     handoff = result["handoff_requested"]
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]
 
-    # ── Handoff Másters → Vanesa Hernández ──────────────────────────────────────
-    # Cuando el bot emite [DERIVAR_MASTERS_VANESA] (post-recolección de los 3
-    # datos + create_or_update_lead con brand=Master), asignamos la conv a
-    # Vanesa, pausamos el bot y marcamos lifecycle=hot. Si Vanesa no existe
-    # como profile en Supabase, igual pausamos + needs_human para que un
-    # supervisor la levante.
+    # ── Handoff Másters → asesor académico de Másters ──────────────────────────
+    # Disparado por: (1) tag `[DERIVAR_MASTERS_VANESA]` que el LLM emite, o
+    # (2) ContextVar `masters_handoff_requested` que setea la tool
+    # `create_or_update_lead` cuando recibe brand="Master" (señal mecánica,
+    # robusta — no depende del texto del LLM).
+    # Acciones: asignar al asesor, pausar bot, needs_human, lifecycle=hot.
     if _wants_masters_vanesa:
         try:
             from integrations.supabase_client import get_profile
             from memory import conversation_meta as cm
 
-            vanesa_email = "vanessahernandez@msklatam.com"
-            vanesa_profile = await get_profile(vanesa_email)
-            vanesa_id = (vanesa_profile or {}).get("id")
-            vanesa_name = (vanesa_profile or {}).get("name") or "Vanesa Hernández"
+            # Email del asesor de Másters — config interna, NO se muestra al user.
+            masters_advisor_email = "vanessahernandez@msklatam.com"
+            advisor_profile = await get_profile(masters_advisor_email)
+            advisor_id = (advisor_profile or {}).get("id")
+            advisor_name = (advisor_profile or {}).get("name") or ""
 
             conv_id_str = str(conversation.id)
-            if vanesa_id:
-                await cm.assign(conv_id_str, vanesa_id)
-                # Notif in-app para Vanesa
+            if advisor_id:
+                await cm.assign(conv_id_str, advisor_id)
+                # Notif in-app al asesor de Másters.
                 try:
                     from utils.notifications import notify
 
                     await notify(
-                        vanesa_id,
+                        advisor_id,
                         "conv_assigned",
                         {
                             "conversation_id": conv_id_str,
@@ -1497,16 +1516,17 @@ async def process_widget_message(
                 session_id,
                 "action",
                 {
-                    "action": "derivacion_masters_vanesa",
+                    "action": "derivacion_masters",
                     "detail": (
-                        f"Conv asignada a {vanesa_name} + bot pausado + needs_human"
-                        if vanesa_id
-                        else "Vanesa NO existe como profile — bot pausado + needs_human (sin asignación)"
+                        f"Conv asignada al asesor de Másters ({advisor_name or masters_advisor_email}) + bot pausado + needs_human"
+                        if advisor_id
+                        else f"Asesor {masters_advisor_email} NO existe como profile — bot pausado + needs_human (sin asignación)"
                     ),
-                    "vanesa_assigned": bool(vanesa_id),
-                    "agent_id": vanesa_id,
-                    "agent_email": vanesa_email,
-                    "agent_name": vanesa_name,
+                    "advisor_assigned": bool(advisor_id),
+                    "trigger": "tag" if _tag_masters else "tool_flag",
+                    "agent_id": advisor_id,
+                    "agent_email": masters_advisor_email,
+                    "agent_name": advisor_name,
                 },
             )
         except Exception as e:

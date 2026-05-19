@@ -411,16 +411,27 @@ async def create_or_update_lead(
                 email=email,
                 match_by="email",
             )
-            # Actualizar SOLO los campos que pueden cambiar entre turnos
-            # (curso de interés + notas). Lead_Source / Ad_Account / Status
-            # del lead original NO se sobrescriben.
-            await leads.update(
-                existing["id"],
-                {
-                    "Description": course_name,  # FIX: antes era "Curso_de_Interes" (campo inexistente)
-                    "Notas_Bot": notes,
-                },
-            )
+            # Decisión: PISAR TODOS los campos del lead — datos de contacto,
+            # Lead_Source / Ad_Account / Lead_Status / país. El último contacto
+            # gana. Se pierde la atribución original pero queda 100% sincronizado
+            # con la conversación más reciente.
+            # Partir el name en First_Name / Last_Name (mismo split que `ZohoLeads.create`).
+            _parts = (name or "").strip().split(" ", 1)
+            _first = _parts[0] if _parts else ""
+            _last = _parts[1] if len(_parts) > 1 else (_first or "Sin nombre")
+            update_payload = {
+                "First_Name": _first,
+                "Last_Name": _last,
+                "Phone": phone or "",
+                "Email": email or "",
+                "Pais": ZohoLeads._normalize_pais(country or "Argentina"),
+                "Lead_Source": "Widget",
+                "Lead_Status": "Atención BOT IA",
+                "Ad_Account": "Widget",
+                "Description": course_name,
+                "Notas_Bot": notes,
+            }
+            await leads.update(existing["id"], update_payload)
             await log_to_conv(
                 "action",
                 {

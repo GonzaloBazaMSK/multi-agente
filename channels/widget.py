@@ -1436,6 +1436,10 @@ async def process_widget_message(
     )
 
     response_text = result["response"]
+    # Detectar tags ANTES de strippearlos — necesario para acciones automáticas
+    # (asignar a Vanesa cuando es DERIVAR_MASTERS_VANESA, etc.).
+    _raw_response = response_text
+    _wants_masters_vanesa = "[DERIVAR_MASTERS_VANESA]" in _raw_response
     # Stripear tags internos que el prompt emite para WhatsApp/Botmaker
     # pero que no deben llegar al usuario del widget.
     response_text = _re.sub(
@@ -1446,6 +1450,72 @@ async def process_widget_message(
     handoff = result["handoff_requested"]
     handoff_reason = result["handoff_reason"]
     agent_used = result["agent_used"]
+
+    # ── Handoff Másters → Vanesa Hernández ──────────────────────────────────────
+    # Cuando el bot emite [DERIVAR_MASTERS_VANESA] (post-recolección de los 3
+    # datos + create_or_update_lead con brand=Master), asignamos la conv a
+    # Vanesa, pausamos el bot y marcamos lifecycle=hot. Si Vanesa no existe
+    # como profile en Supabase, igual pausamos + needs_human para que un
+    # supervisor la levante.
+    if _wants_masters_vanesa:
+        try:
+            from integrations.supabase_client import get_profile
+            from memory import conversation_meta as cm
+
+            vanesa_email = "vanessahernandez@msklatam.com"
+            vanesa_profile = await get_profile(vanesa_email)
+            vanesa_id = (vanesa_profile or {}).get("id")
+            vanesa_name = (vanesa_profile or {}).get("name") or "Vanesa Hernández"
+
+            conv_id_str = str(conversation.id)
+            if vanesa_id:
+                await cm.assign(conv_id_str, vanesa_id)
+                # Notif in-app para Vanesa
+                try:
+                    from utils.notifications import notify
+
+                    await notify(
+                        vanesa_id,
+                        "conv_assigned",
+                        {
+                            "conversation_id": conv_id_str,
+                            "client_name": user_name or "lead Máster",
+                            "queue": "masters",
+                            "channel": "widget",
+                        },
+                    )
+                except Exception as e:
+                    logger.debug("masters_notif_failed", error=str(e))
+            await cm.set_bot_paused(conv_id_str, True)
+            await cm.set_needs_human(conv_id_str, True)
+            try:
+                await cm.classify(conv_id_str, "hot")
+            except Exception:
+                pass
+
+            await log_event(
+                session_id,
+                "action",
+                {
+                    "action": "derivacion_masters_vanesa",
+                    "detail": (
+                        f"Conv asignada a {vanesa_name} + bot pausado + needs_human"
+                        if vanesa_id
+                        else "Vanesa NO existe como profile — bot pausado + needs_human (sin asignación)"
+                    ),
+                    "vanesa_assigned": bool(vanesa_id),
+                    "agent_id": vanesa_id,
+                    "agent_email": vanesa_email,
+                    "agent_name": vanesa_name,
+                },
+            )
+        except Exception as e:
+            logger.error("masters_handoff_failed", error=str(e), conv_id=str(conversation.id))
+            await log_event(
+                session_id,
+                "error",
+                {"source": "masters_handoff", "error": str(e)[:300]},
+            )
 
     # Si hay handoff pero estamos fuera de horario laboral, sustituimos la
     # respuesta por el mensaje de fuera de horario (el handoff sigue activo

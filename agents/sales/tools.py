@@ -347,6 +347,7 @@ async def create_or_update_lead(
     course_name: str,
     channel: str = "WhatsApp",
     notes: str = "",
+    brand: str = "",
 ) -> str:
     """
     Crea o actualiza un Lead en Zoho CRM.
@@ -360,6 +361,10 @@ async def create_or_update_lead(
         course_name: Nombre del curso de interés
         channel: Canal de origen (WhatsApp, Widget Web)
         notes: Notas adicionales
+        brand: Marca del curso. Para los 6 Másters premium (Urgencias, Cuidados
+            Paliativos, Imagen Clínica/Ecografía, Rehabilitación/Fisioterapia,
+            Salud Familiar, Medicina Estética) pasar brand="Master". Para
+            cursos normales dejar vacío.
     """
     # Log de entrada — visibilidad cuándo el LLM dispara la tool.
     logger.info(
@@ -376,13 +381,15 @@ async def create_or_update_lead(
         "tool",
         {
             "action": "tool_create_or_update_lead",
-            "detail": f"name={name} email={email} phone={phone} course={course_name}",
+            "detail": f"name={name} email={email} phone={phone} course={course_name}"
+            + (f" brand={brand}" if brand else ""),
             "name": name,
             "email": email,
             "phone": phone,
             "country": country,
             "course": course_name,
             "channel": channel,
+            "brand": brand,
         },
     )
 
@@ -402,6 +409,7 @@ async def create_or_update_lead(
             "curso_de_interes": course_name,  # Va a `Description` en el create (ZohoLeads.create)
             "canal_origen": channel,
             "notas": notes,
+            "brand": brand,  # "Master" para Másters, "" para cursos normales
         }
 
         if existing:
@@ -428,6 +436,7 @@ async def create_or_update_lead(
                 "Lead_Source": "Widget",
                 "Lead_Status": "Atención BOT IA",
                 "Ad_Account": "Widget",
+                "Brand": brand or "",
                 "Description": course_name,
                 "Notas_Bot": notes,
             }

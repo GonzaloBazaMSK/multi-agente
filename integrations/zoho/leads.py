@@ -99,6 +99,10 @@ class ZohoLeads:
                     "Lead_Source": "Widget",
                     "Lead_Status": "Atención BOT IA",
                     "Ad_Account": "Widget",
+                    # `Brand` (picklist en Zoho) — para Másters va "Master".
+                    # Para cursos normales lo dejamos en blanco (se setea desde
+                    # el lead nuevo el default de la picklist).
+                    "Brand": data.get("brand", ""),
                     "Description": data.get("curso_de_interes", ""),
                     "Notas_Bot": data.get("notas", ""),
                 }

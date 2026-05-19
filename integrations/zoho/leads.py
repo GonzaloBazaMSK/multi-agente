@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import structlog
 
@@ -6,6 +8,24 @@ from config.settings import get_settings
 from .auth import ZohoAuth
 
 logger = structlog.get_logger(__name__)
+
+# TTL del cache de leads en Redis. 1h = balance entre ahorrar GETs a Zoho y
+# que los datos no queden tan stale. Se invalida manualmente en `update()`
+# y en cualquier otro punto donde el lead se modifique.
+_LEAD_CACHE_TTL = 3600
+_LEAD_CACHE_PREFIX = "zoho_lead:"
+
+
+async def _get_redis():
+    """Lazy import del cliente Redis compartido. Devuelve None si Redis cae,
+    así el cache se degrada a no-op en lugar de romper el get."""
+    try:
+        from memory.conversation_store import get_conversation_store
+
+        store = await get_conversation_store()
+        return store._redis
+    except Exception:
+        return None
 
 
 class ZohoLeads:
@@ -184,18 +204,39 @@ class ZohoLeads:
             raise
 
         logger.info("zoho_lead_updated", lead_id=lead_id, fields=list(data.keys()))
+        # Invalidar cache para que el próximo `get()` traiga los datos frescos.
+        await self.invalidate_cache(lead_id)
         return result
 
-    async def get(self, lead_id: str) -> dict | None:
+    async def get(self, lead_id: str, use_cache: bool = True) -> dict | None:
         """
         Obtiene un Lead de Zoho por ID. Devuelve el dict crudo de Zoho
         (con `id`, `First_Name`, `Email`, `Pais`, `Programa.name`,
         `curso_nombre_plantilla`, `Link_checkout`, etc.).
 
         Devuelve None si el lead no existe (404).
+
+        Cache: Redis `zoho_lead:{lead_id}` con TTL 1h. Se invalida
+        automáticamente en `update()`. Pasá `use_cache=False` para forzar
+        re-fetch (útil en debug o si sospechás staleness).
         """
         if not lead_id:
             return None
+
+        key = f"{_LEAD_CACHE_PREFIX}{lead_id}"
+        redis = await _get_redis() if use_cache else None
+
+        # Hit cache → devolver del Redis sin tocar Zoho.
+        if redis is not None:
+            try:
+                cached = await redis.get(key)
+                if cached:
+                    logger.debug("zoho_lead_cache_hit", lead_id=lead_id)
+                    return json.loads(cached.decode() if isinstance(cached, bytes) else cached)
+            except Exception as e:
+                # Cache jodido → caer al fetch fresh, no romper.
+                logger.debug("zoho_lead_cache_read_failed", lead_id=lead_id, error=str(e))
+
         headers = await self._auth.auth_headers()
         async with httpx.AsyncClient() as client:
             resp = await client.get(
@@ -208,7 +249,33 @@ class ZohoLeads:
             resp.raise_for_status()
             data = resp.json()
         rows = data.get("data") or []
-        return rows[0] if rows else None
+        lead = rows[0] if rows else None
+
+        # Cache miss → guardar el resultado (incluso si es None? NO — no cacheo
+        # 404s para que un lead recién creado se vea apenas existe).
+        if lead and redis is not None:
+            try:
+                await redis.set(key, json.dumps(lead, ensure_ascii=False), ex=_LEAD_CACHE_TTL)
+                logger.debug("zoho_lead_cache_set", lead_id=lead_id)
+            except Exception as e:
+                logger.debug("zoho_lead_cache_write_failed", lead_id=lead_id, error=str(e))
+
+        return lead
+
+    @staticmethod
+    async def invalidate_cache(lead_id: str) -> None:
+        """Borra el cache Redis de un lead. Llamar después de un update/delete
+        que cambie campos relevantes para el bot."""
+        if not lead_id:
+            return
+        redis = await _get_redis()
+        if redis is None:
+            return
+        try:
+            await redis.delete(f"{_LEAD_CACHE_PREFIX}{lead_id}")
+            logger.debug("zoho_lead_cache_invalidated", lead_id=lead_id)
+        except Exception as e:
+            logger.debug("zoho_lead_cache_invalidate_failed", lead_id=lead_id, error=str(e))
 
     async def search_by_phone(self, phone: str) -> dict | None:
         headers = await self._auth.auth_headers()

@@ -47,6 +47,21 @@ HISTORY_TTL_SECONDS = 3 * 24 * 3600  # 3 días
 HISTORY_MAX_TURNS = 20  # últimos 10 turnos user+bot
 DEDUP_TTL_SECONDS = 86400  # 24h
 
+# ── Debouncing ──────────────────────────────────────────────────────────────
+# Cuando el lead manda varios mensajes en cascada, los acumulamos en un
+# bucket Redis y respondemos UNA sola vez con todo junto. El primer request
+# de la cascada toma el lock y queda esperando; los siguientes solo pushean
+# su msg al bucket y devuelven skip_response (Botmaker no manda nada).
+#
+#   DEBOUNCE_WAIT_S  = ventana de quiet antes de procesar (se resetea con
+#                       cada msg nuevo que entra al bucket).
+#   DEBOUNCE_MAX_S   = cap total — si el debouncing dura más, fuerza el
+#                       procesamiento (margen restante = timeout Botmaker).
+#                       Botmaker timeout = 20s. Dejamos 8s para LLM.
+DEBOUNCE_WAIT_S = 2.0
+DEBOUNCE_MAX_S = 12.0
+DEBOUNCE_LOCK_TTL = 30  # max secs que un request puede tener el lock
+
 
 # Mapa país (Zoho lo guarda como string) → ISO-2.
 _COUNTRY_TO_ISO2 = {
@@ -298,6 +313,104 @@ async def _append_history(phone: str, user_msg: str, bot_msg: str) -> None:
     await pipe.execute()
 
 
+# ── Debounce helpers ─────────────────────────────────────────────────────────
+
+
+def _bucket_key(phone: str) -> str:
+    return f"wa_bucket:{phone}"
+
+
+def _bucket_lock_key(phone: str) -> str:
+    return f"wa_bucket_lock:{phone}"
+
+
+async def _bucket_push(phone: str, user_msg: str) -> None:
+    """Agrega un mensaje al bucket del lead. El bucket vive como Redis list."""
+    if not phone or not user_msg:
+        return
+    store = await get_conversation_store()
+    r = store._redis
+    key = _bucket_key(phone)
+    pipe = r.pipeline()
+    pipe.rpush(key, json.dumps({"msg": user_msg, "ts": _now_ts()}))
+    pipe.expire(key, 60)  # auto-expire por si algo se cuelga
+    await pipe.execute()
+
+
+async def _bucket_try_lock(phone: str) -> bool:
+    """Intenta tomar el lock del bucket. True = este request procesa la cascada,
+    False = otro ya lo tiene y este request solo aportó su msg al bucket."""
+    store = await get_conversation_store()
+    r = store._redis
+    # SET NX EX — atómico.
+    return bool(await r.set(_bucket_lock_key(phone), "1", nx=True, ex=DEBOUNCE_LOCK_TTL))
+
+
+async def _bucket_release(phone: str) -> None:
+    store = await get_conversation_store()
+    r = store._redis
+    try:
+        await r.delete(_bucket_lock_key(phone))
+    except Exception:
+        pass
+
+
+async def _bucket_drain(phone: str) -> list[str]:
+    """Saca todos los mensajes del bucket y borra la lista. Devuelve los msgs
+    en orden de llegada."""
+    store = await get_conversation_store()
+    r = store._redis
+    key = _bucket_key(phone)
+    pipe = r.pipeline()
+    pipe.lrange(key, 0, -1)
+    pipe.delete(key)
+    raw, _ = await pipe.execute()
+    out = []
+    for item in raw or []:
+        try:
+            data = json.loads(item.decode() if isinstance(item, bytes) else item)
+            msg = data.get("msg", "")
+            if msg:
+                out.append(msg)
+        except Exception:
+            pass
+    return out
+
+
+async def _bucket_size(phone: str) -> int:
+    store = await get_conversation_store()
+    r = store._redis
+    try:
+        return int(await r.llen(_bucket_key(phone)))
+    except Exception:
+        return 0
+
+
+def _now_ts() -> float:
+    import time as _t
+
+    return _t.time()
+
+
+async def _debounce_wait(phone: str) -> None:
+    """Espera hasta que pasen DEBOUNCE_WAIT_S sin que entren mensajes nuevos
+    al bucket. Cap total = DEBOUNCE_MAX_S."""
+    import asyncio
+    import time as _t
+
+    start = _t.monotonic()
+    last_size = await _bucket_size(phone)
+    while True:
+        if _t.monotonic() - start >= DEBOUNCE_MAX_S:
+            logger.info("debounce_cap_reached", phone=phone, secs=DEBOUNCE_MAX_S)
+            return
+        await asyncio.sleep(DEBOUNCE_WAIT_S)
+        size = await _bucket_size(phone)
+        if size == last_size:
+            return  # nada nuevo durante la ventana → cerramos
+        last_size = size
+
+
 async def _convert_audio_to_mp3(audio_bytes: bytes, src_ext: str = ".ogg") -> bytes:
     """
     Convierte audio (OGG/Opus de WhatsApp, AMR, etc.) a MP3 vía ffmpeg.
@@ -478,8 +591,6 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
     - `dedup:{msgId}` en Redis (anti-loop, TTL 24h).
     Esto refleja el comportamiento del workflow n8n original.
     """
-    import time as _time
-
     logger.info(
         "sales_whatsapp_webhook_received",
         msg_id=payload.msgId,
@@ -530,6 +641,47 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
 
     if not user_msg:
         return BotmakerResponse(skip_response=True)
+
+    # ──────────── Debouncing ────────────
+    # Acumulamos en bucket Redis. El primer request de la cascada toma el lock
+    # y queda esperando (DEBOUNCE_WAIT_S sin nuevos msgs, cap DEBOUNCE_MAX_S).
+    # Los siguientes solo aportan su msg y devuelven skip_response.
+    await _bucket_push(payload.phone, user_msg)
+    got_lock = await _bucket_try_lock(payload.phone)
+    if not got_lock:
+        logger.info("sales_whatsapp_debounce_yielded", phone=payload.phone, msg_id=payload.msgId)
+        return BotmakerResponse(skip_response=True)
+
+    try:
+        await _debounce_wait(payload.phone)
+        # Drain — combina todos los msgs del bucket en un único turno.
+        msgs = await _bucket_drain(payload.phone)
+        if not msgs:
+            # Edge case: el bucket quedó vacío entre el wait y el drain
+            # (otro proceso lo drenó). Usamos el msg original.
+            msgs = [user_msg]
+        # Si llegó 1 solo, usar tal cual. Si llegaron varios, unir con saltos
+        # para que el LLM vea claramente que son mensajes separados del lead.
+        if len(msgs) == 1:
+            user_msg = msgs[0]
+        else:
+            user_msg = "\n".join(msgs)
+            logger.info(
+                "sales_whatsapp_debounce_combined",
+                phone=payload.phone,
+                msgs_count=len(msgs),
+                combined_chars=len(user_msg),
+            )
+
+        return await _process_message_and_respond(payload, user_msg)
+    finally:
+        await _bucket_release(payload.phone)
+
+
+async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) -> BotmakerResponse:
+    """Procesa el mensaje (Zoho fetch + agente + tags) y devuelve la response
+    para Botmaker. Esta función asume que user_msg ya está combinado/debounceado."""
+    import time as _time
 
     # ──────────── Fetch lead Zoho ────────────
     lead: dict | None = None

@@ -653,7 +653,7 @@ function Card({
       )}
 
       <Link
-        href={`/inbox?c=${conv.id}`}
+        href={`/inbox?conv=${conv.id}`}
         className="inline-flex items-center gap-1 text-[10px] text-accent hover:underline pl-6"
       >
         Abrir en inbox <ArrowRight className="w-2.5 h-2.5" />
@@ -687,7 +687,7 @@ function Card({
           })}
           <div className="border-t border-border mt-1 pt-1 px-2 py-1">
             <Link
-              href={`/inbox?c=${conv.id}`}
+              href={`/inbox?conv=${conv.id}`}
               className="text-[11px] text-accent hover:underline flex items-center gap-1"
               onClick={() => setMenuOpen(false)}
             >

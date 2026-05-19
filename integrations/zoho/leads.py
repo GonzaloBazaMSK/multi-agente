@@ -13,6 +13,73 @@ class ZohoLeads:
         self._auth = ZohoAuth()
         self._base = get_settings().zoho_base_url
 
+    @staticmethod
+    def _normalize_pais(value: str) -> str:
+        """
+        Normaliza el valor del campo `Pais` (picklist en Zoho) a uno de los
+        nombres válidos en español. Si llega ISO-2 (ej. "AR") lo mapea al
+        nombre completo. Si ya está en español, lo devuelve igual.
+
+        Si llega algo no reconocido, devuelve "Argentina" como fallback
+        (más probable error: que el field quede vacío).
+        """
+        if not value:
+            return "Argentina"
+        v = str(value).strip()
+        # Mapa ISO-2 → nombre picklist Zoho. Mantener en sync con la picklist
+        # configurada en el módulo Leads de Zoho CRM.
+        iso2_to_name = {
+            "AR": "Argentina",
+            "BO": "Bolivia",
+            "CL": "Chile",
+            "CO": "Colombia",
+            "CR": "Costa Rica",
+            "EC": "Ecuador",
+            "ES": "España",
+            "GT": "Guatemala",
+            "HN": "Honduras",
+            "MX": "México",
+            "NI": "Nicaragua",
+            "PA": "Panamá",
+            "PE": "Perú",
+            "PY": "Paraguay",
+            "SV": "El Salvador",
+            "UY": "Uruguay",
+            "VE": "Venezuela",
+            "DO": "República Dominicana",
+            "PR": "Puerto Rico",
+        }
+        # ISO-2 (2 chars en mayúscula): mapear.
+        if len(v) == 2 and v.upper() in iso2_to_name:
+            return iso2_to_name[v.upper()]
+        # Normalización suave para coincidir con la picklist (sin tildes ni mayúsculas).
+        canon = v.lower().replace("á", "a").replace("é", "e").replace("í", "i").replace("ó", "o").replace("ú", "u")
+        name_lookup = {
+            "argentina": "Argentina",
+            "bolivia": "Bolivia",
+            "chile": "Chile",
+            "colombia": "Colombia",
+            "costa rica": "Costa Rica",
+            "ecuador": "Ecuador",
+            "espana": "España",
+            "guatemala": "Guatemala",
+            "honduras": "Honduras",
+            "mexico": "México",
+            "nicaragua": "Nicaragua",
+            "panama": "Panamá",
+            "peru": "Perú",
+            "paraguay": "Paraguay",
+            "el salvador": "El Salvador",
+            "uruguay": "Uruguay",
+            "venezuela": "Venezuela",
+            "republica dominicana": "República Dominicana",
+            "puerto rico": "Puerto Rico",
+        }
+        if canon in name_lookup:
+            return name_lookup[canon]
+        # Fallback: devolver tal cual (puede ser un nombre nuevo de la picklist).
+        return v
+
     async def create(self, data: dict) -> dict:
         """
         Crea un Lead en Zoho CRM.
@@ -26,7 +93,9 @@ class ZohoLeads:
                     "First_Name": data.get("first_name", ""),
                     "Phone": data.get("phone", ""),
                     "Email": data.get("email", ""),
-                    "Country": data.get("country", "Argentina"),
+                    # `Pais` es el API name real en Zoho (picklist en español).
+                    # `Country` quedaba vacío porque ese field NO existe en el módulo.
+                    "Pais": self._normalize_pais(data.get("country", "Argentina")),
                     "Lead_Source": "Widget",
                     "Lead_Status": "Atención BOT IA",
                     "Ad_Account": "Widget",

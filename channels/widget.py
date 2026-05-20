@@ -160,6 +160,7 @@ async def _build_user_context(
     user_courses: str = "",
     page_slug: str = "",
     log_events: bool = True,
+    is_authenticated: bool = False,
 ) -> tuple[list[str], dict]:
     """
     Construye la lista de líneas de contexto del usuario a partir de:
@@ -217,6 +218,26 @@ async def _build_user_context(
             {
                 "action": "usuario_anonimo",
                 "detail": "Sin email — usuario anónimo, sin búsqueda en CRM",
+            },
+        )
+        return lines, signals
+
+    # 🔒 Guard de autenticación — bloquea lookups CRM para anónimos
+    # que escribieron su email en el chat. Sin esto, cualquiera podría
+    # consultar la cuenta de otro alumno poniendo su email.
+    # Cuando `is_authenticated=False`, devolvemos solo info no-PII (página +
+    # curso de interés) — el bot puede usar el email para crear lead nuevo
+    # via `create_or_update_lead` pero NO accede a la ficha del contacto.
+    if not is_authenticated:
+        await _log_event(
+            session_id,
+            "info",
+            {
+                "action": "usuario_no_autenticado",
+                "detail": (
+                    f"Email '{user_email}' presente pero usuario NO autenticado en sitio MSK. "
+                    "Saltando lookups CRM (Supabase/Zoho Contacts/Cobranzas) por privacidad."
+                ),
             },
         )
         return lines, signals
@@ -751,6 +772,10 @@ async def generate_greeting_stateless(
     # cada visita anónima a la página).
     ephemeral_sid = "greeting-ephemeral"
 
+    # `generate_greeting_stateless` se llama desde el frontend al cargar la
+    # página. Si `user_email` viene poblado significa que msk-front detectó
+    # sesión activa → tratamos como autenticado para que el saludo pueda
+    # personalizarse con datos del CRM.
     ctx_lines, _signals = await _build_user_context(
         user_email,
         store,
@@ -758,6 +783,7 @@ async def generate_greeting_stateless(
         user_courses,
         page_slug,
         log_events=False,
+        is_authenticated=bool(user_email),
     )
 
     # Si el frontend mandó user_name pero el CRM no devolvió nombre, usarlo como fallback
@@ -895,6 +921,23 @@ async def process_widget_message(
 
     # Bind conversation_id to structlog context for end-to-end tracing
     structlog.contextvars.bind_contextvars(conversation_id=str(conversation.id))
+
+    # ── 🔒 AUTENTICACIÓN del visitante ─────────────────────────────────────────
+    # `req.user_email` viene poblado SI Y SOLO SI el sitio msk-front detectó
+    # sesión activa en msklatam.com y nos pasó el email del visitante logueado.
+    # Si llega vacío → visitante anónimo (puede después escribir un email en el
+    # chat pero NO lo tratamos como autenticado).
+    #
+    # Las tools sensibles (get_student_info, etc.) leen este flag via
+    # `utils.agent_context.current_user_authenticated` y bloquean el acceso a
+    # PII si está en False. Ver utils/agent_context.py + post_sales/tools.py.
+    is_authenticated_user = bool(user_email)
+    try:
+        from utils.agent_context import current_user_authenticated
+
+        current_user_authenticated.set(is_authenticated_user)
+    except Exception as _e:
+        logger.debug("set_auth_contextvar_failed", error=str(_e))
 
     # Si acabamos de crear la conv y el front envió el saludo que mostró,
     # lo persistimos como primer bot msg para que quede en el historial
@@ -1064,9 +1107,15 @@ async def process_widget_message(
             },
         )
 
-        # Enriquecer contexto para personalizar el saludo
+        # Enriquecer contexto para personalizar el saludo. Solo cargamos
+        # PII del CRM si el usuario está autenticado (fuente: req.user_email).
         ctx_lines, _signals = await _build_user_context(
-            user_email, store, session_id, user_courses, page_slug
+            user_email,
+            store,
+            session_id,
+            user_courses,
+            page_slug,
+            is_authenticated=is_authenticated_user,
         )
         ctx = "\n".join(ctx_lines) if ctx_lines else ""
 
@@ -1309,7 +1358,12 @@ async def process_widget_message(
     # ENRIQUECIMIENTO de contexto (siempre antes de llamar al agente)
     # ─────────────────────────────────────────────────────────────────────────
     user_context_lines, user_signals = await _build_user_context(
-        user_email, store, session_id, user_courses, page_slug
+        user_email,
+        store,
+        session_id,
+        user_courses,
+        page_slug,
+        is_authenticated=is_authenticated_user,
     )
 
     # ── Sincronizar datos del CRM al perfil de la conversación ──────────────

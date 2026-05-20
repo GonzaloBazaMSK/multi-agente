@@ -44,6 +44,19 @@ masters_handoff_requested: ContextVar[bool] = ContextVar(
     "masters_handoff_requested", default=False
 )
 
+# Flag: ¿el usuario está autenticado en el sitio MSK?
+# Lo setea el endpoint del canal (widget) en función de la fuente del email:
+#   - Email vino en `req.user_email` del payload inicial (lo pasa msk-front
+#     porque el visitante tiene sesión activa en msklatam.com) → True
+#   - Email lo tipeó el usuario en el chat (collected_email del widget_flow)
+#     → False (es anónimo "diciendo ser X" — no podemos confiar para PII)
+#
+# Las tools de post_venta (get_student_info) deben rechazar el acceso a info
+# de cuenta cuando este flag es False. Ver agents/post_sales/tools.py.
+current_user_authenticated: ContextVar[bool] = ContextVar(
+    "current_user_authenticated", default=False
+)
+
 
 async def log_to_conv(event_type: str, data: dict) -> None:
     """

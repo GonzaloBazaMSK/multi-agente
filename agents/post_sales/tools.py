@@ -20,8 +20,27 @@ from langchain_core.tools import tool
 from integrations.zoho.collections import ZohoCollections
 from integrations.zoho.contacts import ZohoContacts
 from integrations.zoho.sales_orders import ZohoSalesOrders
+from utils.agent_context import current_user_authenticated, log_to_conv
 
 logger = structlog.get_logger(__name__)
+
+
+# Mensaje que ve el LLM cuando intenta acceder a info de cuenta sin auth.
+# Pensado para que el LLM tenga instrucciones claras de qué decirle al user
+# (no traduzca el mensaje técnico).
+_UNAUTH_MESSAGE = (
+    "⛔ ACCESO DENEGADO — el usuario NO está autenticado en el sitio MSK. "
+    "NO podemos darle información de cuenta (cursos, vencimientos, accesos, pagos) "
+    "de NADIE, ni siquiera si el usuario dice ser dueño del email.\n\n"
+    "Acciones a hacer EN ESTE TURNO:\n"
+    "1. NO inventes datos de cuenta. NO digas «no encontré» (suena a que buscaste).\n"
+    "2. Pedile al user que inicie sesión en https://msklatam.com para que podamos "
+    "acceder a su información personal.\n"
+    "3. Si el user dice que NO PUEDE INICIAR SESIÓN, ayudalo con tips de recuperación "
+    "(olvidé mi contraseña, probar modo incógnito, limpiar caché, etc.) — SIN dar "
+    "datos específicos de la cuenta.\n"
+    "4. Si nada funciona, derivá al portal de tickets: https://ayuda.msklatam.com/portal/es/newticket"
+)
 
 
 @tool
@@ -30,11 +49,27 @@ async def get_student_info(email: str = "", phone: str = "", contact_id: str = "
     Obtiene información del alumno: cursos inscriptos, estado de acceso y pagos.
     Prioridad de búsqueda: contact_id > email > phone.
 
+    🔒 REQUIERE QUE EL USUARIO ESTÉ AUTENTICADO en el sitio MSK. Si está anónimo
+    (vino por widget sin sesión activa), la tool rechaza y devuelve un mensaje
+    para que el LLM pida login.
+
     Args:
         email: Email del alumno (forma preferida de identificación)
         phone: Teléfono del alumno (con código de país)
         contact_id: ID del contacto en Zoho (si ya se conoce)
     """
+    # 🔒 Guard de autenticación — bloquea acceso a info de cuenta para anónimos.
+    # El flag lo setea el endpoint del canal (widget) según la fuente del email.
+    if not current_user_authenticated.get():
+        await log_to_conv(
+            "error",
+            {
+                "action": "get_student_info_unauth",
+                "detail": f"Bloqueado por guard — anónimo intentó acceder a cuenta · email={email or '(s/d)'}",
+            },
+        )
+        return _UNAUTH_MESSAGE
+
     contacts = ZohoContacts()
     orders = ZohoSalesOrders()
 

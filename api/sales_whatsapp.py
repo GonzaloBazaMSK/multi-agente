@@ -792,6 +792,7 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
                 synthetic=not bool(payload.templateText),
                 chars=len(template_context),
                 has_offer_data=bool(user_profile.get("descuento") or user_profile.get("cuotas")),
+                preview=template_context[:120],
             )
 
     messages_in = history + [HumanMessage(content=user_msg)]

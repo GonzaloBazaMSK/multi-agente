@@ -121,6 +121,16 @@ class BotmakerPayload(BaseModel):
     Especialidad: str = ""
     Lugar_de_trabajo: str = ""
 
+    # Datos de la oferta HSM — usados en el fallback sintético cuando Zoho
+    # no los retorna (o cuando el lead fetch falla). El Custom Code los envía
+    # porque ya los tiene como vars de conversación vía TEMPLATE_VARS.
+    curso_nombre_plantilla: str = ""
+    Descuento: str = ""
+    Cuotas: str = ""
+    Precio_cuota: str = ""
+    Cup_n_de_descuento: str = ""
+    valido_hasta: str = ""
+
     # Asesor / Owner del lead (para handoff)
     ownerEmail: str = ""
     ownerName: str = ""
@@ -198,13 +208,19 @@ def _build_user_profile(lead: dict, fallback_payload: BotmakerPayload) -> dict:
         "colegios": colegios_names,
         "owner_email": owner_email,
         "owner_name": owner_name,
-        "curso_nombre": pick("curso_nombre_plantilla") or programa_name,
+        "curso_nombre": pick("curso_nombre_plantilla", "curso_nombre_plantilla") or programa_name,
         "curso_slug": _extract_slug(pick("Link_web")),
         "link_checkout": pick("Link_checkout"),
         "link_web": pick("Link_web"),
         "link_temario": pick("Link_temario"),
         "link_certificaciones": pick("Certificaciones"),
         "cursos_consultados": pick("Cursos_consultados"),
+        # Datos de la oferta que el lead vio en la HSM
+        "descuento": pick("Descuento", "Descuento"),
+        "cuotas": pick("Cuotas", "Cuotas"),
+        "precio_cuota": pick("Precio_cuota", "Precio_cuota"),
+        "cupon": pick("Cup_n_de_descuento", "Cup_n_de_descuento"),
+        "valido_hasta": pick("valido_hasta", "valido_hasta"),
     }
 
 
@@ -731,14 +747,41 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
     #     del lead: curso, nombre, datos de oferta si existen.
     if not history:
         template_context = payload.templateText
-        if not template_context:
+        if template_context:
+            # templateText puede venir como JSON (callService serializa TEMPLATE_VARS)
+            # o como texto plano (implementaciones futuras con texto real de Botmaker).
+            if template_context.startswith("{"):
+                try:
+                    hsm_data = json.loads(template_context)
+                    # Convertir el dict de vars a un string legible para el LLM.
+                    # Solo incluir campos con valor; el formato es clave: valor.
+                    lines = [f"{k}: {v}" for k, v in hsm_data.items() if v and v != ""]
+                    template_context = "Datos de la campaña enviada al lead:\n" + "\n".join(lines)
+                except Exception:
+                    pass  # Si falla el parse, usar el string tal cual
+        else:
+            # Fallback sintético cuando Botmaker no envió hsm_text_sent.
+            # Usa los datos de Zoho / payload individuales ya parseados en user_profile.
             parts = []
             nombre = user_profile.get("first_name") or user_profile.get("full_name") or ""
             curso = user_profile.get("curso_nombre") or ""
-            if nombre and curso:
-                parts.append(f"Hola {nombre}! Te contactamos por el {curso}.")
-            elif curso:
+            descuento = user_profile.get("descuento") or ""
+            cuotas = user_profile.get("cuotas") or ""
+            precio_cuota = user_profile.get("precio_cuota") or ""
+            cupon = user_profile.get("cupon") or ""
+            valido_hasta = user_profile.get("valido_hasta") or ""
+            if nombre:
+                parts.append(f"Hola {nombre}!")
+            if curso:
                 parts.append(f"Te contactamos por el {curso}.")
+            if descuento:
+                parts.append(f"Descuento ofrecido: {descuento}%.")
+            if cuotas and precio_cuota:
+                parts.append(f"{cuotas} cuotas de {precio_cuota}.")
+            if cupon:
+                parts.append(f"Cupón disponible: {cupon}.")
+            if valido_hasta:
+                parts.append(f"Válido hasta: {valido_hasta}.")
             if parts:
                 template_context = " ".join(parts)
         if template_context:
@@ -748,6 +791,7 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
                 phone=payload.phone,
                 synthetic=not bool(payload.templateText),
                 chars=len(template_context),
+                has_offer_data=bool(user_profile.get("descuento") or user_profile.get("cuotas")),
             )
 
     messages_in = history + [HumanMessage(content=user_msg)]

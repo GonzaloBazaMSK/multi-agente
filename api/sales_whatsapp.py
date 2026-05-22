@@ -89,12 +89,7 @@ _COUNTRY_TO_ISO2 = {
 
 
 class BotmakerPayload(BaseModel):
-    """Payload que envía el Custom Code de Botmaker.
-
-    Acepta campos extra (`extra="allow"`) para que puedas inspeccionar en el
-    log lo que Botmaker realmente está mandando — útil para descubrir cuáles
-    campos del Custom Code llegan al backend.
-    """
+    """Payload que envía el Custom Code de Botmaker."""
 
     model_config = {"extra": "allow"}
 
@@ -108,6 +103,12 @@ class BotmakerPayload(BaseModel):
 
     # Identificador del Lead Zoho (REQUERIDO)
     leadId: str = ""
+
+    # Texto literal de la HSM que el lead recibió antes de responder.
+    # Lo setea el flow de Botmaker en `user.get('hsm_text_sent')` antes de
+    # enviar la plantilla. El backend lo inyecta como primer AIMessage cuando
+    # no hay historial previo, para que el agente tenga el contexto completo.
+    templateText: str = ""
 
     # Datos opcionales del lead (Botmaker los pasa como fallback —
     # el backend igual re-fetcha de Zoho con leadId).
@@ -604,17 +605,8 @@ async def sales_whatsapp_webhook(payload: BotmakerPayload) -> BotmakerResponse:
         phone=payload.phone,
         lead_id=payload.leadId,
         user_msg_len=len(payload.userMessage),
+        has_template_text=bool(payload.templateText),
     )
-    # 🔍 DEBUG TEMPORAL — log del payload COMPLETO para ver qué Botmaker envía.
-    # Sacar este log una vez verificado qué llegó (no queremos PII permanente en logs).
-    try:
-        logger.info(
-            "sales_whatsapp_payload_debug",
-            payload_keys=sorted(payload.model_dump(exclude_none=False).keys()),
-            payload_full=payload.model_dump(exclude_none=False),
-        )
-    except Exception:
-        pass
 
     # 0. Dedup por msgId (anti-bucle si Botmaker reintenta el webhook).
     if await _is_duplicate_msgid(payload.msgId or ""):
@@ -731,6 +723,33 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
         )
 
     history = await _load_history(payload.phone)
+
+    # Primer turno: inyectar contexto de la HSM como AIMessage para que el agente
+    # sepa qué vio el lead antes de responder.
+    #   - Si Botmaker mandó el texto real (templateText) → usarlo tal cual.
+    #   - Si no (caso más común hoy) → construir contexto sintético con los datos
+    #     del lead: curso, nombre, datos de oferta si existen.
+    if not history:
+        template_context = payload.templateText
+        if not template_context:
+            parts = []
+            nombre = user_profile.get("first_name") or user_profile.get("full_name") or ""
+            curso = user_profile.get("curso_nombre") or ""
+            if nombre and curso:
+                parts.append(f"Hola {nombre}! Te contactamos por el {curso}.")
+            elif curso:
+                parts.append(f"Te contactamos por el {curso}.")
+            if parts:
+                template_context = " ".join(parts)
+        if template_context:
+            history = [AIMessage(content=template_context)]
+            logger.info(
+                "sales_whatsapp_template_context_injected",
+                phone=payload.phone,
+                synthetic=not bool(payload.templateText),
+                chars=len(template_context),
+            )
+
     messages_in = history + [HumanMessage(content=user_msg)]
 
     invoke_start = _time.perf_counter()

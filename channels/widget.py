@@ -919,6 +919,12 @@ async def process_widget_message(
         country=country,
     )
 
+    # Si la conv ya existía y el frontend manda un país distinto (o el guardado
+    # inicial quedó en "AR" por default), actualizarlo para que el inbox list
+    # muestre la bandera correcta sin necesidad de abrir el detalle.
+    if not is_new and country and conversation.user_profile.country != country:
+        conversation.user_profile.country = country
+
     # Bind conversation_id to structlog context for end-to-end tracing
     structlog.contextvars.bind_contextvars(conversation_id=str(conversation.id))
 

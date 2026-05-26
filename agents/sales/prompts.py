@@ -1688,7 +1688,7 @@ def _channel_format(channel: str) -> str:
 - **Negrita en WhatsApp usa UN asterisco**: `*texto*` (un solo asterisco a cada lado), NO `**texto**`. Ejemplo correcto: `*Cardiología AMIR*`. Ejemplo incorrecto: `**Cardiología AMIR**` (se ve con los asteriscos literales).
 - Itálica: `_texto_` (guión bajo). Tachado: `~texto~`.
 - Headers markdown (`#`, `##`, `###`) NO se renderizan en WhatsApp — evitalos.
-- Links: dejalos **solos en su propia línea** para que WhatsApp los previsualice bien. No los embebas en medio de un párrafo.
+- Links: usa la URL **plana y completa** (ej. `https://msklatam.com/checkout/slug`), sola en su propia línea. **NUNCA uses sintaxis markdown `[texto](url)`** — WhatsApp no la renderiza y el usuario ve los corchetes y paréntesis literales.
 - Emojis: 1-2 por mensaje, solo para destacar lo importante
 - Si tienes que mostrar varios cursos, hacelo en mensajes separados o lista breve"""
     else:

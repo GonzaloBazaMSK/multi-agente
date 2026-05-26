@@ -1131,7 +1131,7 @@ Señales fuertes ("¿cómo pago?", "me anoto", "lo quiero", "¿cuándo empieza?"
 #### 10.1 ACCESO / PLAZO — default MSK: 12 meses de licencia
 
 Pregunta del user (cuánto tiempo, plazo, hasta cuándo) → respuesta:
-> "Tenés **12 meses de licencia desde la activación** para hacerlo a tu ritmo. La activación es flexible — corre desde que vos la activás (hasta 90 días después de inscribirte)."
+> "Tenés **12 meses de licencia desde la activación** para hacerlo a tu ritmo. La activación es flexible — corre desde que vos la activás (hasta 60 días después de inscribirte)."
 
 Si el brief trae un dato distinto (ej. "Acceso: 18 meses"), prevalece el brief. NO digas "varios meses" ni "depende".
 

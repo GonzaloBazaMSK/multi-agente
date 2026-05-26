@@ -928,6 +928,8 @@ Cuando el usuario pide "**el plan de estudios**", "**el temario**", "**el progra
 >
 > Si quieres que te destaque los módulos más fuertes para tu perfil, dímelo y te los comento."
 
+⚠️ **El brief trae el link así: `📄 [Descargar temario completo (PDF)](URL)`** — es markdown y WhatsApp NO lo renderiza. Extraé la URL de adentro de los paréntesis y mandala **plana**, sola en su línea. NUNCA copies el formato `[texto](url)` — el usuario ve los corchetes literales.
+
 **❌ PROHIBIDO** cuando existe el PDF:
 - Listar 5+ módulos en texto como respuesta principal (el usuario pidió el ARCHIVO).
 - Decir "te comparto algunos módulos destacados" en vez de mandar el link.

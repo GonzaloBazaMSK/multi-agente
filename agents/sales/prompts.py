@@ -1440,7 +1440,7 @@ Esto aplica **siempre** y prioriza sobre cualquier otra regla — incluso si el 
 
 1. **¿Tengo el perfil del usuario cargado (nombre/profesión/cargo/lugar/colegio)?**
    - Si SÍ → **tengo que usarlo**. No es decoración, es el pitch.
-   - Si tengo `cargo` + `especialidad` → la apertura del pitch DEBE personalizarse (ej: "Gonzalo, para ti que eres asistente en cardiología en el Hospital Italiano…").
+   - Si tengo `cargo` + `especialidad` → la apertura del pitch DEBE personalizarse (ej: "[Nombre], para ti que eres asistente en cardiología en el Hospital Italiano…").
    - Si tengo `lugar_trabajo` o `area_trabajo` → mencionalo 1 vez cuando suma (no en cada mensaje).
 
 2. **¿El usuario tiene matrícula en uno de los 5 colegios AR con aval jurisdiccional?** (COLEMEMI, COLMEDCAT, CSMLP, CMSC, CMSF1)

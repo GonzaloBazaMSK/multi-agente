@@ -228,7 +228,7 @@ def _build_priority_profile_header(
         "",
         "Este es el perfil del usuario con el que estás hablando AHORA MISMO. ",
         "**NO es contexto opcional — es lo que te permite vender.** Usá estos datos en:",
-        "  (a) la LÍNEA DE APERTURA del pitch ('Gonzalo, para vos que sos [cargo] en [área]…')",
+        "  (a) la LÍNEA DE APERTURA del pitch ('[Nombre], para vos que sos [cargo] en [área]…')",
         "  (b) la mención de certificaciones jurisdiccionales (nombrá SU colegio, no la lista de 5)",
         "  (c) la adaptación del registro técnico según cargo/profesión",
         "",

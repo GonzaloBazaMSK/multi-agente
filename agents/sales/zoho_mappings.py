@@ -432,8 +432,9 @@ def map_especialidad(text: str, profesion_zoho: str) -> tuple[str, str]:
     text_norm = _norm(text)
 
     # 1. Aliases explícitos (mayor prioridad — mapean jerga / abreviaturas)
+    # Normalizar la clave del alias también para evitar fallos por acentos
     for alias, value in aliases.items():
-        if alias in text_norm:
+        if _norm(alias) in text_norm:
             return value, ""
 
     # 2. Match exacto contra la picklist (normalizado)

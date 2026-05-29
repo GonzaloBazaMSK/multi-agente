@@ -151,6 +151,21 @@ async def build_sales_agent(
     )
     system_prompt = (priority_header + base_prompt) if priority_header else base_prompt
 
+    # --- STEP 3b: inyectar bloque de contexto de campaña (CTWA o Caso 1 HSM) ---
+    # Va AL INICIO del prompt (antes del priority header + base) para que sea
+    # lo primero que lee el LLM. Estos bloques definen el FLOW que debe seguir.
+    up = user_profile or {}
+    if up.get("ctwa"):
+        campaign_ctx = _build_ctwa_context_block(up)
+        system_prompt = campaign_ctx + "\n\n---\n\n" + system_prompt
+    elif up.get("curso_nombre") and not up.get("profession") and not up.get("specialty"):
+        # Caso 1: lead tiene nombre + curso pero sin perfil profesional →
+        # viene de una HSM que pedía la profesión. El bot debe recolectar el
+        # perfil antes de pitchear.
+        campaign_ctx = _build_hsm_reply_context_block(up)
+        if campaign_ctx:
+            system_prompt = campaign_ctx + "\n\n---\n\n" + system_prompt
+
     # Inyectar alerta de Máster cuando el page_slug es un Máster premium.
     # Va AL INICIO (antes del priority_header) para que sea lo primero que lee el LLM.
     if _master_page:
@@ -193,6 +208,94 @@ async def build_sales_agent(
         prompt=SystemMessage(content=system_prompt),
     )
     return agent
+
+
+def _build_ctwa_context_block(user_profile: dict) -> str:
+    """
+    Bloque de instrucciones para conversaciones CTWA (Click-to-WhatsApp).
+    El usuario llegó desde un anuncio Meta sin lead previo en Zoho.
+    El bot debe recolectar datos en 3 turnos antes de pitchear.
+    """
+    curso = user_profile.get("curso_nombre") or "nuestro programa"
+    ad_id = user_profile.get("ctwa_ad_id") or ""
+    ad_name = user_profile.get("ctwa_ad_name") or curso
+    lead_id_social = user_profile.get("ctwa_lead_id_social") or ""
+
+    return f"""# 🎯 CONTEXTO CTWA — LEAD INBOUND DESDE ANUNCIO META
+
+El usuario llegó desde un anuncio de WhatsApp para el curso: *{curso}*.
+NO tenemos ningún dato de esta persona todavía (sin nombre, sin email, sin profesión).
+
+## SCRIPT OBLIGATORIO — Seguí este orden estricto. NO saltees ni combines pasos.
+
+### TURNO 1 — respuesta al primer mensaje del usuario:
+Respondé EXACTAMENTE este texto (reemplazando el nombre del curso):
+
+"¡Hola! 👋
+Gracias por interesarte en el {curso} de MSK.
+Antes de compartirte los detalles del programa, ¿me pasás tu nombre completo y correo electrónico?
+Con eso puedo registrar tu consulta y orientarte mejor según tu perfil profesional."
+
+### TURNO 2 — el usuario compartió nombre + email:
+Respondé EXACTAMENTE este texto:
+
+"¡Gracias!
+Para orientarte mejor con la información del {curso}, ¿me indicás cuál es tu profesión y en qué especialidad o área te desempeñás?"
+
+### TURNO 3 — el usuario compartió profesión + especialidad:
+1. Evaluá si su perfil matchea con el curso *{curso}*.
+2. Si matchea → pitch directo del curso.
+3. Si no matchea → ofrecé máximo 2 alternativas del catálogo que sí le sirvan.
+4. Llamá `create_or_update_lead` con estos parámetros OBLIGATORIOS:
+   - lead_status="No habilitado"
+   - lead_source="Facebook"
+   - ad_account="Facebook"
+   - ad_id="{ad_id}"
+   - ad_name="{ad_name}"
+   - tipo_de_lead="Paid"
+   - brand="campaña-agente"
+   - lead_id_social="{lead_id_social}"
+
+## REGLAS CTWA (no negociables):
+- El país ya lo tenemos del número de teléfono. NO lo preguntes.
+- NO crees el lead hasta tener nombre + email + profesión los tres juntos.
+- lead_status="No habilitado" es OBLIGATORIO — evita que Zoho dispare otra plantilla a este contacto.
+- En Turno 1 y Turno 2 NO expliques nada del curso — solo recolectá los datos.
+- Si el usuario pregunta algo del curso antes de dar sus datos → contestá brevemente y volvé a pedir los datos que faltan."""
+
+
+def _build_hsm_reply_context_block(user_profile: dict) -> str:
+    """
+    Bloque de contexto para Caso 1: lead existe en Zoho con nombre + curso
+    pero sin profesión/especialidad. El lead está respondiendo a una HSM
+    que le preguntó su perfil profesional.
+    """
+    nombre = user_profile.get("first_name") or user_profile.get("full_name") or ""
+    curso = user_profile.get("curso_nombre") or ""
+    if not curso:
+        return ""
+
+    nombre_txt = f" ({nombre})" if nombre else ""
+
+    return f"""# 🎯 CONTEXTO — RESPUESTA A PLANTILLA HSM
+
+Este lead{nombre_txt} recibió una plantilla de WhatsApp que le preguntó su profesión y especialidad para el curso *{curso}*.
+Ya tenemos en el CRM: nombre y email. NO tenemos: profesión ni especialidad.
+
+## QUÉ HACER:
+
+**Si el primer mensaje del usuario contiene su profesión o especialidad:**
+→ Extraela y evaluá el match con el curso *{curso}*.
+→ Si matchea → pitch directo.
+→ Si no matchea → ofrecé máximo 2 alternativas del catálogo que le sirvan mejor.
+
+**Si el primer mensaje es un saludo u otra cosa que no responde la pregunta:**
+→ Reconocé el saludo + pedí amablemente la profesión/especialidad para poder orientarlo.
+
+## REGLAS:
+- NO le pidas nombre ni email — ya los tenemos.
+- NO pitchees el curso antes de conocer el perfil profesional.
+- Cuando tengas el perfil, evaluá objetivamente si ese curso le sirve o hay algo mejor."""
 
 
 def _build_priority_profile_header(

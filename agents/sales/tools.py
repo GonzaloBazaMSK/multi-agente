@@ -348,6 +348,13 @@ async def create_or_update_lead(
     channel: str = "WhatsApp",
     notes: str = "",
     brand: str = "",
+    lead_status: str = "Atención BOT IA",
+    lead_source: str = "Widget",
+    ad_account: str = "Widget",
+    ad_id: str = "",
+    ad_name: str = "",
+    tipo_de_lead: str = "",
+    lead_id_social: str = "",
 ) -> str:
     """
     Crea o actualiza un Lead en Zoho CRM.
@@ -365,6 +372,14 @@ async def create_or_update_lead(
             Paliativos, Imagen Clínica/Ecografía, Rehabilitación/Fisioterapia,
             Salud Familiar, Medicina Estética) pasar brand="Master". Para
             cursos normales dejar vacío.
+        lead_status: Estado del lead en Zoho. Para leads CTWA usar "No habilitado"
+            (evita que Zoho dispare otra plantilla). Default "Atención BOT IA".
+        lead_source: Fuente del lead. "Facebook" para CTWA, "Widget" default.
+        ad_account: Cuenta de anuncio. "Facebook" para CTWA, "Widget" default.
+        ad_id: ID del anuncio Meta (referralSourceId). Solo para CTWA.
+        ad_name: Nombre/headline del anuncio Meta (referralHeadline). Solo para CTWA.
+        tipo_de_lead: "Paid" para leads de campañas pagas. Vacío por defecto.
+        lead_id_social: ID de click CTWA (referralCtwaClid). Solo para CTWA.
     """
     # Log de entrada — visibilidad cuándo el LLM dispara la tool.
     logger.info(
@@ -420,6 +435,13 @@ async def create_or_update_lead(
             "canal_origen": channel,
             "notas": notes,
             "brand": brand,  # "Master" para Másters, "" para cursos normales
+            "lead_status": lead_status,
+            "lead_source": lead_source,
+            "ad_account": ad_account,
+            "ad_id": ad_id,
+            "ad_name": ad_name,
+            "tipo_de_lead": tipo_de_lead,
+            "lead_id_social": lead_id_social,
         }
 
         if existing:
@@ -443,13 +465,21 @@ async def create_or_update_lead(
                 "Phone": phone or "",
                 "Email": email or "",
                 "Pais": ZohoLeads._normalize_pais(country or "Argentina"),
-                "Lead_Source": "Widget",
-                "Lead_Status": "Atención BOT IA",
-                "Ad_Account": "Widget",
+                "Lead_Source": lead_source,
+                "Lead_Status": lead_status,
+                "Ad_Account": ad_account,
                 "Brand": brand or "",
                 "Description": course_name,
                 "Notas_Bot": notes,
             }
+            if ad_id:
+                update_payload["Ad_ID"] = ad_id
+            if ad_name:
+                update_payload["Ad_Name"] = ad_name
+            if tipo_de_lead:
+                update_payload["Tipo_de_lead"] = tipo_de_lead
+            if lead_id_social:
+                update_payload["Lead_ID_social"] = lead_id_social
             await leads.update(existing["id"], update_payload)
             await log_to_conv(
                 "action",

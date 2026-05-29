@@ -135,6 +135,15 @@ class BotmakerPayload(BaseModel):
     ownerEmail: str = ""
     ownerName: str = ""
 
+    # Datos del anuncio CTWA (Click-to-WhatsApp). Presentes solo cuando el
+    # usuario llega desde un anuncio Meta sin lead previo en Zoho.
+    # referralHeadline = título del anuncio (identifica el curso).
+    # referralSourceId  = ID del anuncio en Meta.
+    # referralCtwaClid  = click tracking ID de Meta.
+    referralHeadline: str = ""
+    referralSourceId: str = ""
+    referralCtwaClid: str = ""
+
 
 class BotmakerResponse(BaseModel):
     """Response que el Custom Code de Botmaker espera."""
@@ -150,6 +159,44 @@ class BotmakerResponse(BaseModel):
 def _iso2_from_pais(pais: str, fallback: str = "AR") -> str:
     """Mapea Zoho `Pais` string → ISO-2 (AR/MX/CL/...). Default AR."""
     return _COUNTRY_TO_ISO2.get((pais or "").lower().strip(), fallback)
+
+
+# Prefijos internacionales → ISO-2. Orden importa: prefijos más largos primero
+# para evitar que "+598" (UY) matchee "+59" antes que "+593" (EC).
+_PHONE_PREFIXES: list[tuple[str, str]] = [
+    ("+598", "UY"),
+    ("+595", "PY"),
+    ("+593", "EC"),
+    ("+591", "BO"),
+    ("+507", "PA"),
+    ("+505", "NI"),
+    ("+504", "HN"),
+    ("+503", "SV"),
+    ("+502", "GT"),
+    ("+549", "AR"),  # Argentina con 9 (móvil)
+    ("+521", "MX"),  # México con 1 (móvil)
+    ("+54",  "AR"),
+    ("+52",  "MX"),
+    ("+51",  "PE"),
+    ("+57",  "CO"),
+    ("+56",  "CL"),
+    ("+58",  "VE"),
+    ("+34",  "ES"),
+    ("+1787", "PR"),
+    ("+1809", "DO"),
+    ("+1829", "DO"),
+    ("+1849", "DO"),
+]
+
+
+def _country_from_phone(phone: str, fallback: str = "AR") -> str:
+    """Detecta país ISO-2 a partir del prefijo del número de teléfono.
+    Usado para leads CTWA que no tienen Zoho lead asociado."""
+    p = (phone or "").strip()
+    for prefix, iso2 in _PHONE_PREFIXES:
+        if p.startswith(prefix):
+            return iso2
+    return fallback
 
 
 def _extract_slug(link_web: str) -> str:
@@ -723,6 +770,42 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
     country = user_profile["country"]
     page_slug = user_profile["curso_slug"]
 
+    # ──────────── Detección CTWA ────────────
+    # Condición: no hay lead Zoho (leadId vacío) pero sí datos del anuncio Meta.
+    # En este caso el bot sigue un script de recolección de datos antes de pitchear.
+    is_ctwa = not payload.leadId and bool(payload.referralHeadline)
+    if is_ctwa:
+        ctwa_country = _country_from_phone(payload.phone)
+        country = ctwa_country
+        user_profile["country"] = ctwa_country
+        user_profile["curso_nombre"] = payload.referralHeadline
+        user_profile["ctwa"] = True
+        user_profile["ctwa_ad_id"] = payload.referralSourceId
+        user_profile["ctwa_ad_name"] = payload.referralHeadline
+        user_profile["ctwa_lead_id_social"] = payload.referralCtwaClid
+        # Guardar datos del anuncio en Redis para que el tool los use al crear el lead.
+        try:
+            store = await get_conversation_store()
+            await store._redis.set(
+                f"ctwa_data:{payload.phone}",
+                json.dumps({
+                    "headline": payload.referralHeadline,
+                    "source_id": payload.referralSourceId,
+                    "ctwa_clid": payload.referralCtwaClid,
+                    "country": ctwa_country,
+                }, ensure_ascii=False),
+                ex=7 * 24 * 3600,
+            )
+        except Exception as e:
+            logger.warning("sales_whatsapp_ctwa_redis_save_failed", error=str(e))
+        logger.info(
+            "sales_whatsapp_ctwa_detected",
+            phone=payload.phone,
+            headline=payload.referralHeadline,
+            source_id=payload.referralSourceId,
+            country=ctwa_country,
+        )
+
     # ──────────── Build + invocar agente ────────────
     try:
         agent = await build_sales_agent(
@@ -742,10 +825,12 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
 
     # Primer turno: inyectar contexto de la HSM como AIMessage para que el agente
     # sepa qué vio el lead antes de responder.
+    #   - CTWA: no hay HSM previa → no inyectar nada. El agente arranca directo
+    #     con el script de recolección de datos.
     #   - Si Botmaker mandó el texto real (templateText) → usarlo tal cual.
     #   - Si no (caso más común hoy) → construir contexto sintético con los datos
     #     del lead: curso, nombre, datos de oferta si existen.
-    if not history:
+    if not history and not is_ctwa:
         template_context = payload.templateText
         if template_context:
             # templateText puede venir como JSON (callService serializa TEMPLATE_VARS)

@@ -116,9 +116,13 @@ class ZohoLeads:
                     # `Pais` es el API name real en Zoho (picklist en español).
                     # `Country` quedaba vacío porque ese field NO existe en el módulo.
                     "Pais": self._normalize_pais(data.get("country", "Argentina")),
-                    "Lead_Source": "Widget",
-                    "Lead_Status": "Atención BOT IA",
-                    "Ad_Account": "Widget",
+                    "Lead_Source": data.get("lead_source", "Widget"),
+                    "Lead_Status": data.get("lead_status", "Atención BOT IA"),
+                    "Ad_Account": data.get("ad_account", "Widget"),
+                    "Ad_ID": data.get("ad_id", ""),
+                    "Ad_Name": data.get("ad_name", ""),
+                    "Tipo_de_lead": data.get("tipo_de_lead", ""),
+                    "Lead_ID_social": data.get("lead_id_social", ""),
                     # `Brand` (picklist en Zoho) — para Másters va "Master".
                     # Para cursos normales lo dejamos en blanco (se setea desde
                     # el lead nuevo el default de la picklist).

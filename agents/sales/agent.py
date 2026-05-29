@@ -466,7 +466,11 @@ def _format_course_context(
     que confunde al LLM). Solo se incluye el perfil dentro del course context
     cuando NO hay priority header (ej: llamada sin user_profile pero con curso).
     """
+    import re as _re
     brief = course.get("brief_md") or ""
+    # Convertir links markdown [texto](URL) → URL plana antes de inyectar al LLM.
+    # Evita que el LLM copie el formato [texto](url) que WhatsApp no renderiza.
+    brief = _re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\2', brief)
     slug = course.get("slug") or ""
     title = course.get("title") or ""
     country_code = (course.get("country") or "").upper()

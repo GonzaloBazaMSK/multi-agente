@@ -82,8 +82,12 @@ async def get_course_brief(slug: str, country: str = "AR") -> str:
         },
     )
 
+    import re as _re
     brief = course.get("brief_md") or ""
     if brief:
+        # Convertir links markdown [texto](URL) → URL plana.
+        # Evita que el LLM copie el formato [texto](url) que WhatsApp no renderiza.
+        brief = _re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'\2', brief)
         return brief
 
     # Fallback mínimo si no tiene brief

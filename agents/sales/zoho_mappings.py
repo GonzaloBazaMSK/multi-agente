@@ -143,6 +143,9 @@ _ALIASES_MEDICO: dict[str, str] = {
     "orl": "Otorrinolaringología",
     "reumatol": "Reumatología",
     "artritis": "Reumatología",
+    "auditoría": "Auditoría y administración sanitaria",
+    "auditoria": "Auditoría y administración sanitaria",
+    "auditor ": "Auditoría y administración sanitaria",
     "laboratorio": "Auditoría y administración sanitaria",
     "colon": "Coloproctología",
     "recto": "Coloproctología",
@@ -224,12 +227,17 @@ _ALIASES_MEDICO: dict[str, str] = {
 }
 
 _ALIASES_ENFERMERIA: dict[str, str] = {
+    # UCI pediátrica ANTES del genérico "uci" para evitar falso match
+    "ucip": "Enfermería en cuidados intensivos pediátricos y neonatales",
+    "utin": "Enfermería en cuidados intensivos pediátricos y neonatales",
+    "uci pediatr": "Enfermería en cuidados intensivos pediátricos y neonatales",
+    "uci neonat": "Enfermería en cuidados intensivos pediátricos y neonatales",
+    "intensivos pediatr": "Enfermería en cuidados intensivos pediátricos y neonatales",
+    "cuidados intensivos pediatr": "Enfermería en cuidados intensivos pediátricos y neonatales",
     "uci": "Enfermería en cuidados intensivos de adultos",
     "uti": "Enfermería en cuidados intensivos de adultos",
     "terapia intensiva adultos": "Enfermería en cuidados intensivos de adultos",
     "cuidados intensivos adultos": "Enfermería en cuidados intensivos de adultos",
-    "ucip": "Enfermería en cuidados intensivos pediátricos y neonatales",
-    "utin": "Enfermería en cuidados intensivos pediátricos y neonatales",
     "neonat": "Enfermería neonatal",
     "pediátr": "Enfermería pediátrica",
     "pediatr": "Enfermería pediátrica",

@@ -367,29 +367,30 @@ def _map_profesion_to_zoho(text: str) -> str:
     if any(w in t for w in ["enfermero", "enfermera", "enfermería", "enfermeria", "lic. en enf", "licenciado en enf", "licenciada en enf"]):
         return "Personal de enfermería"
 
-    # Tecnología Médica
-    if any(w in t for w in ["tecnólogo", "tecnologo", "tecnología médica", "tecnologia medica", "técnico en imagen", "tecnico en imagen", "radiólogo técnico", "radiologo tecnico"]):
+    # Tecnología Médica — raíz "tecnólog" cubre masculino/femenino
+    if any(w in t for w in ["tecnólog", "tecnolag", "tecnolog", "tecnología médica", "tecnologia medica", "técnico en imagen", "tecnico en imagen", "radiólogo técnico", "radiologo tecnico"]):
         return "Tecnología Médica"
 
-    # Técnico universitario
-    if any(w in t for w in ["técnico universitario", "tecnico universitario", "técnico superior", "tecnico superior"]):
+    # Técnico universitario — cubre "técnico en X", "tecnicatura", "técnico superior"
+    if any(w in t for w in ["técnico universitario", "tecnico universitario", "técnico superior", "tecnico superior", "tecnicatura", "técnico en ", "tecnico en "]):
         return "Técnico universitario"
 
     # Licenciado de la salud (profesiones no médicas del área salud)
     if any(w in t for w in [
         "nutricionista", "nutrición", "nutricion",
-        "kinesiólogo", "kinesióloga", "kinesiologo", "kinesiologia", "kinesióloga",
+        "kinesiólog", "kinesialog", "kinesiolog",  # raíz cubre masc/fem
         "fisioterapeuta", "fisioterapia",
-        "fonoaudiólogo", "fonoaudióloga", "fonoaudiologo", "fonoaudiologia",
-        "psicólogo", "psicóloga", "psicologo", "psicologia",
+        "fonoaudiólog", "fonoaudiolog",
+        "psicólog", "psicolog",
         "terapista", "terapia ocupacional",
-        "bioquímico", "bioquimica",
-        "farmacéutico", "farmaceutico", "farmacia",
-        "odontólogo", "odontóloga", "odontologo", "odontologia", "dentista",
-        "optometrista", "óptico",
-        "obstétrica", "obstétrico", "obstetricia",
+        "bioquímico", "bioquímica", "bioquimico", "bioquimica",
+        "farmacéut", "farmaceut", "farmacia",  # raíz cubre masc/fem
+        "odontólog", "odontalog", "odontolog", "dentista",
+        "optometrista", "óptico", "optico",
+        "obstétrica", "obstétrico", "obstétric", "obstetricia",
         "trabajador social", "trabajo social",
         "lic.", "licenciado", "licenciada",
+        "podólog", "podolag", "podolog",
     ]):
         return "Licenciado de la salud"
 

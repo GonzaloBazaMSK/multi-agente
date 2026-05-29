@@ -100,6 +100,18 @@ class ZohoLeads:
         # Fallback: devolver tal cual (puede ser un nombre nuevo de la picklist).
         return v
 
+    @staticmethod
+    def _build_notas(data: dict) -> str:
+        """Combina texto libre de profesión + notas del bot en Notas_Bot."""
+        parts = []
+        raw = data.get("profesion_raw") or ""
+        if raw:
+            parts.append(f"Profesión declarada: {raw}")
+        notas = data.get("notas") or ""
+        if notas:
+            parts.append(notas)
+        return " | ".join(parts) if parts else ""
+
     async def create(self, data: dict) -> dict:
         """
         Crea un Lead en Zoho CRM.
@@ -128,7 +140,9 @@ class ZohoLeads:
                     # el lead nuevo el default de la picklist).
                     "Brand": data.get("brand", ""),
                     "Description": data.get("curso_de_interes", ""),
-                    "Notas_Bot": data.get("notas", ""),
+                    "Profesion": data.get("profesion", ""),
+                    "Especialidad": data.get("especialidad", ""),
+                    "Notas_Bot": self._build_notas(data),
                 }
             ]
         }

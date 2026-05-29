@@ -342,6 +342,98 @@ async def create_payment_link(
         )
 
 
+def _map_profesion_to_zoho(text: str) -> str:
+    """Mapea texto libre de profesión a los valores válidos de la picklist Zoho."""
+    t = (text or "").lower().strip()
+    if not t:
+        return "Otra profesión"
+
+    # Residente — va antes de médico porque "residente de cardiología" es Residente
+    if "residente" in t:
+        return "Residente"
+
+    # Estudiante
+    if any(w in t for w in ["estudiante", "alumno", "alumna", "cursando", "estudiando"]):
+        return "Estudiante"
+
+    # Auxiliar de enfermería — va antes de enfermería general
+    if any(w in t for w in ["auxiliar de enferm", "aux. enferm", "aux enferm"]):
+        return "Auxiliar de enfermería"
+
+    # Personal de enfermería
+    if any(w in t for w in ["enfermero", "enfermera", "enfermería", "enfermeria", "lic. en enf", "licenciado en enf", "licenciada en enf"]):
+        return "Personal de enfermería"
+
+    # Tecnología Médica
+    if any(w in t for w in ["tecnólogo", "tecnologo", "tecnología médica", "tecnologia medica", "técnico en imagen", "tecnico en imagen", "radiólogo técnico", "radiologo tecnico"]):
+        return "Tecnología Médica"
+
+    # Técnico universitario
+    if any(w in t for w in ["técnico universitario", "tecnico universitario", "técnico superior", "tecnico superior"]):
+        return "Técnico universitario"
+
+    # Licenciado de la salud (profesiones no médicas del área salud)
+    if any(w in t for w in [
+        "nutricionista", "nutrición", "nutricion",
+        "kinesiólogo", "kinesióloga", "kinesiologo", "kinesiologia", "kinesióloga",
+        "fisioterapeuta", "fisioterapia",
+        "fonoaudiólogo", "fonoaudióloga", "fonoaudiologo", "fonoaudiologia",
+        "psicólogo", "psicóloga", "psicologo", "psicologia",
+        "terapista", "terapia ocupacional",
+        "bioquímico", "bioquimica",
+        "farmacéutico", "farmaceutico", "farmacia",
+        "odontólogo", "odontóloga", "odontologo", "odontologia", "dentista",
+        "optometrista", "óptico",
+        "obstétrica", "obstétrico", "obstetricia",
+        "trabajador social", "trabajo social",
+        "lic.", "licenciado", "licenciada",
+    ]):
+        return "Licenciado de la salud"
+
+    # Personal médico (amplio — cualquier especialidad médica)
+    if any(w in t for w in [
+        "médico", "medico", "médica", "medica",
+        "doctor", "doctora", "dr.", "dra.",
+        "cirujano", "cirujana",
+        "cardiólogo", "cardióloga", "cardiologo",
+        "neurólogo", "neuróloga", "neurologo",
+        "pediatra",
+        "clínico", "clínica", "clinico",
+        "internista", "medicina interna",
+        "ginecólogo", "ginecóloga", "ginecologo", "ginecología",
+        "dermatólogo", "dermatologo", "dermatología",
+        "psiquiatra", "psiquiatría",
+        "traumatólogo", "traumatologo", "traumatología",
+        "urólogo", "urologo", "urología",
+        "oftalmólogo", "oftalmologo", "oftalmología",
+        "otorrinolaringólogo", "otorrino",
+        "anestesiólogo", "anestesista", "anestesiología",
+        "radiólogo", "radiologo", "radiología",
+        "oncólogo", "oncologo", "oncología",
+        "gastroenterólogo", "gastroenterologo",
+        "nefrólogo", "nefrologo", "nefrología",
+        "reumatólogo", "reumatologo", "reumatología",
+        "endocrinólogo", "endocrinologo",
+        "infectólogo", "infectologo",
+        "hematólogo", "hematologo",
+        "neumólogo", "neumologo", "neumología",
+        "hepatólogo", "hepatologo",
+        "obstetra", "tocólogo",
+        "médico general", "medico general",
+        "médico de familia", "medicina familiar",
+        "emergentólogo", "emergenciólogo", "urgenciólogo",
+        "intensivista", "terapia intensiva", "uci",
+        "flebólogo", "flebologa",
+    ]):
+        return "Personal médico"
+
+    # Fuerza pública
+    if any(w in t for w in ["policía", "policia", "militar", "gendarmería", "gendarmeria", "bombero", "fuerza pública", "fuerza publica"]):
+        return "Fuerza pública"
+
+    return "Otra profesión"
+
+
 @tool
 async def create_or_update_lead(
     name: str,
@@ -359,6 +451,8 @@ async def create_or_update_lead(
     ad_name: str = "",
     tipo_de_lead: str = "",
     lead_id_social: str = "",
+    profesion: str = "",
+    especialidad: str = "",
 ) -> str:
     """
     Crea o actualiza un Lead en Zoho CRM.
@@ -384,6 +478,9 @@ async def create_or_update_lead(
         ad_name: Nombre/headline del anuncio Meta (referralHeadline). Solo para CTWA.
         tipo_de_lead: "Paid" para leads de campañas pagas. Vacío por defecto.
         lead_id_social: ID de click CTWA (referralCtwaClid). Solo para CTWA.
+        profesion: Profesión del usuario en texto libre (ej. "médico cardiólogo").
+            Se mapea automáticamente a la picklist de Zoho.
+        especialidad: Especialidad o área del usuario (ej. "Cardiología"). Texto libre.
     """
     # Log de entrada — visibilidad cuándo el LLM dispara la tool.
     logger.info(
@@ -430,6 +527,8 @@ async def create_or_update_lead(
         # Search por phone generaba falsos UPDATE y perdíamos los nuevos emails.
         existing = await leads.search_by_email(email) if email else None
 
+        profesion_zoho = _map_profesion_to_zoho(profesion) if profesion else ""
+
         data = {
             "name": name,
             "phone": phone,
@@ -446,6 +545,9 @@ async def create_or_update_lead(
             "ad_name": ad_name,
             "tipo_de_lead": tipo_de_lead,
             "lead_id_social": lead_id_social,
+            "profesion": profesion_zoho,
+            "profesion_raw": profesion,  # texto libre para Notas_Bot
+            "especialidad": especialidad,
         }
 
         if existing:
@@ -463,6 +565,14 @@ async def create_or_update_lead(
             _parts = (name or "").strip().split(" ", 1)
             _first = _parts[0] if _parts else ""
             _last = _parts[1] if len(_parts) > 1 else (_first or "Sin nombre")
+            # Armar notas combinando texto libre de profesión + notas del bot
+            _notas_parts = []
+            if profesion:
+                _notas_parts.append(f"Profesión declarada: {profesion}")
+            if notes:
+                _notas_parts.append(notes)
+            _notas_combined = " | ".join(_notas_parts) if _notas_parts else notes
+
             update_payload = {
                 "First_Name": _first,
                 "Last_Name": _last,
@@ -474,8 +584,12 @@ async def create_or_update_lead(
                 "Ad_Account": ad_account,
                 "Brand": brand or "",
                 "Description": course_name,
-                "Notas_Bot": notes,
+                "Notas_Bot": _notas_combined,
             }
+            if profesion_zoho:
+                update_payload["Profesion"] = profesion_zoho
+            if especialidad:
+                update_payload["Especialidad"] = especialidad
             if ad_id:
                 update_payload["Ad_ID"] = ad_id
             if ad_name:

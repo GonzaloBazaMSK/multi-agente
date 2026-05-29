@@ -261,10 +261,21 @@ Hacé DOS cosas en este turno:
 
 ## REGLAS CTWA (no negociables):
 - El país ya lo tenemos del número de teléfono. NO lo preguntes.
-- NO crees el lead hasta tener nombre + email + profesión los tres juntos.
 - lead_status="No habilitado" es OBLIGATORIO — evita que Zoho dispare otra plantilla a este contacto.
 - En Turno 1 y Turno 2 NO expliques nada del curso — solo recolectá los datos.
-- Si el usuario pregunta algo del curso antes de dar sus datos → contestá brevemente y volvé a pedir los datos que faltan."""
+- Si el usuario pregunta algo del curso antes de dar sus datos → contestá brevemente y volvé a pedir los datos que faltan.
+
+## SI EL USUARIO SE NIEGA A DAR SUS DATOS:
+- No insistas más de una vez. Respetá su decisión.
+- Continuá la conversación igual: pedí al menos la profesión para orientarlo.
+- Igualmente registrá el contacto llamando `create_or_update_lead` con lo que tengas:
+    - name="Contacto WA" (si no dio nombre)
+    - email="" (si no dio email)
+    - phone={{teléfono del usuario}} (siempre disponible)
+    - más los parámetros CTWA obligatorios de arriba
+- Si en algún momento el usuario muestra interés fuerte (pregunta precio, cómo inscribirse, pide el link de pago) → pedí el email de forma natural:
+    "Para enviarte el link de inscripción necesito tu correo. ¿Me lo pasás?"
+- Si en ese momento da el email → actualizá el lead llamando `create_or_update_lead` de nuevo con el email y nombre reales."""
 
 
 def _build_hsm_reply_context_block(user_profile: dict) -> str:

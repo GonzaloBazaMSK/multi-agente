@@ -191,8 +191,11 @@ _PHONE_PREFIXES: list[tuple[str, str]] = [
 
 def _country_from_phone(phone: str, fallback: str = "AR") -> str:
     """Detecta país ISO-2 a partir del prefijo del número de teléfono.
+    Acepta el número con o sin '+' inicial (Botmaker a veces lo stripea).
     Usado para leads CTWA que no tienen Zoho lead asociado."""
     p = (phone or "").strip()
+    if p and p[0].isdigit():
+        p = "+" + p
     for prefix, iso2 in _PHONE_PREFIXES:
         if p.startswith(prefix):
             return iso2

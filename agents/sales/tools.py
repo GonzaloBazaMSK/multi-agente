@@ -342,6 +342,9 @@ async def create_payment_link(
         )
 
 
+from agents.sales.zoho_mappings import map_especialidad as _map_especialidad_zoho
+
+
 def _map_profesion_to_zoho(text: str) -> str:
     """Mapea texto libre de profesión a los valores válidos de la picklist Zoho."""
     t = (text or "").lower().strip()
@@ -453,6 +456,9 @@ async def create_or_update_lead(
     lead_id_social: str = "",
     profesion: str = "",
     especialidad: str = "",
+    otra_profesion: str = "",
+    carrera_estudio: str = "",
+    anio_estudio: str = "",
 ) -> str:
     """
     Crea o actualiza un Lead en Zoho CRM.
@@ -481,6 +487,11 @@ async def create_or_update_lead(
         profesion: Profesión del usuario en texto libre (ej. "médico cardiólogo").
             Se mapea automáticamente a la picklist de Zoho.
         especialidad: Especialidad o área del usuario (ej. "Cardiología"). Texto libre.
+            Se mapea a la picklist de Zoho según la profesión detectada.
+        otra_profesion: Texto libre cuando profesion="Otra profesión". Va al campo
+            Otra_profesion de Zoho.
+        carrera_estudio: Solo para Estudiante — carrera que está cursando.
+        anio_estudio: Solo para Estudiante — año o nivel de cursada.
     """
     # Log de entrada — visibilidad cuándo el LLM dispara la tool.
     logger.info(
@@ -528,6 +539,7 @@ async def create_or_update_lead(
         existing = await leads.search_by_email(email) if email else None
 
         profesion_zoho = _map_profesion_to_zoho(profesion) if profesion else ""
+        especialidad_zoho, otra_especialidad = _map_especialidad_zoho(especialidad, profesion_zoho)
 
         data = {
             "name": name,
@@ -546,8 +558,12 @@ async def create_or_update_lead(
             "tipo_de_lead": tipo_de_lead,
             "lead_id_social": lead_id_social,
             "profesion": profesion_zoho,
-            "profesion_raw": profesion,  # texto libre para Notas_Bot
-            "especialidad": especialidad,
+            "profesion_raw": profesion,
+            "especialidad": especialidad_zoho,
+            "otra_especialidad": otra_especialidad,
+            "otra_profesion": otra_profesion,
+            "carrera_estudio": carrera_estudio,
+            "anio_estudio": anio_estudio,
         }
 
         if existing:
@@ -588,8 +604,16 @@ async def create_or_update_lead(
             }
             if profesion_zoho:
                 update_payload["Profesion"] = profesion_zoho
-            if especialidad:
-                update_payload["Especialidad"] = especialidad
+            if especialidad_zoho:
+                update_payload["Especialidad"] = especialidad_zoho
+            if otra_especialidad:
+                update_payload["Otra_especialidad"] = otra_especialidad
+            if otra_profesion:
+                update_payload["Otra_profesion"] = otra_profesion
+            if carrera_estudio:
+                update_payload["Carrera_de_estudio"] = carrera_estudio
+            if anio_estudio:
+                update_payload["Año_de_estudio"] = anio_estudio
             if ad_id:
                 update_payload["Ad_ID"] = ad_id
             if ad_name:

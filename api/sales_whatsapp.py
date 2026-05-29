@@ -774,9 +774,31 @@ async def _process_message_and_respond(payload: BotmakerPayload, user_msg: str) 
     page_slug = user_profile["curso_slug"]
 
     # ──────────── Detección CTWA ────────────
-    # Condición: no hay lead Zoho (leadId vacío) pero sí datos del anuncio Meta.
-    # En este caso el bot sigue un script de recolección de datos antes de pitchear.
+    # Condición primaria: no hay lead Zoho (leadId vacío) + datos del anuncio Meta.
+    # Condición secundaria: leadId vacío + sin referralHeadline pero hay ctwa_data
+    # guardado en Redis de un turno anterior (Botmaker solo manda referral en el
+    # primer mensaje del usuario — los siguientes llegan sin ese campo).
     is_ctwa = not payload.leadId and bool(payload.referralHeadline)
+    if not is_ctwa and not payload.leadId:
+        try:
+            _store = await get_conversation_store()
+            _ctwa_raw = await _store._redis.get(f"ctwa_data:{payload.phone}")
+            if _ctwa_raw:
+                _ctwa_stored = json.loads(
+                    _ctwa_raw.decode() if isinstance(_ctwa_raw, bytes) else _ctwa_raw
+                )
+                if _ctwa_stored.get("headline"):
+                    is_ctwa = True
+                    payload.referralHeadline = _ctwa_stored["headline"]
+                    payload.referralSourceId = _ctwa_stored.get("source_id", "")
+                    payload.referralCtwaClid = _ctwa_stored.get("ctwa_clid", "")
+                    logger.info(
+                        "sales_whatsapp_ctwa_restored_from_redis",
+                        phone=payload.phone,
+                        headline=payload.referralHeadline,
+                    )
+        except Exception as _e:
+            logger.debug("sales_whatsapp_ctwa_redis_restore_failed", error=str(_e))
     if is_ctwa:
         ctwa_country = _country_from_phone(payload.phone)
         country = ctwa_country

@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/v1/sales/whatsapp", tags=["sales-whatsapp"])
 
 # ── Constantes ──────────────────────────────────────────────────────────────
 HISTORY_TTL_SECONDS = 3 * 24 * 3600  # 3 días
-HISTORY_MAX_TURNS = 20  # últimos 10 turnos user+bot
+HISTORY_MAX_TURNS = 80  # últimos 40 turnos user+bot (conversaciones largas de ventas)
 DEDUP_TTL_SECONDS = 86400  # 24h
 
 # ── Debouncing ──────────────────────────────────────────────────────────────

@@ -220,6 +220,7 @@ def _build_ctwa_context_block(user_profile: dict) -> str:
     ad_id = user_profile.get("ctwa_ad_id") or ""
     ad_name = user_profile.get("ctwa_ad_name") or curso
     lead_id_social = user_profile.get("ctwa_lead_id_social") or ""
+    phone = user_profile.get("phone") or ""
 
     return f"""# 🎯 CONTEXTO CTWA — LEAD INBOUND DESDE ANUNCIO META
 
@@ -242,18 +243,22 @@ Respondé EXACTAMENTE este texto:
 "¡Gracias!
 Para orientarte mejor con la información del {curso}, ¿me indicás cuál es tu profesión y en qué especialidad o área te desempeñás?"
 
-### TURNO 2.5 — el usuario dio profesión pero SIN especialidad:
-Si el usuario responde con su profesión pero NO menciona especialidad ni área, y su profesión es
-*Personal médico*, *Residente* o *Personal de enfermería* → pedí la especialidad antes de continuar:
+### TURNO 2.5 — el usuario dio profesión pero SIN especialidad o carrera:
+Según la profesión detectada, pedí la info faltante antes de evaluar el match:
 
-"¿Y en qué especialidad o área te desempeñás? Así puedo ver si el [curso] está bien orientado para vos."
+**Personal médico / Residente / Personal de enfermería / Auxiliar de enfermería / Técnico universitario / Tecnología Médica / Licenciado de la salud / Fuerza pública:**
+→ "¿Y en qué especialidad o área te desempeñás? Así puedo ver si el {curso} está bien orientado para vos."
 
-Para *Auxiliar de enfermería*, *Estudiante*, *Técnico universitario*, *Tecnología Médica*, *Licenciado de la salud*, *Fuerza pública* u *Otra profesión* → podés continuar sin especialidad, es menos determinante para el match.
+**Estudiante** (si no dio carrera ni año):
+→ "¿Qué carrera estudiás y en qué año estás?" (pasá esos datos a `carrera_estudio` y `anio_estudio` en la tool)
+
+**Otra profesión** → podés continuar sin especialidad.
 
 ### TURNO 3 — el usuario compartió profesión + especialidad (o profesión sin necesidad de especialidad):
 Hacé DOS cosas en este turno:
 
 **Acción de fondo** (invisible para el usuario): llamá `create_or_update_lead` con:
+   - phone="{phone}"  ← número real del usuario (NO cambiar este valor)
    - lead_status="No habilitado"
    - lead_source="Facebook"
    - ad_account="Facebook"
@@ -262,6 +267,10 @@ Hacé DOS cosas en este turno:
    - tipo_de_lead="Paid"
    - brand="campaña-agente"
    - lead_id_social="{lead_id_social}"
+   - profesion= lo que dijo el usuario (texto libre)
+   - especialidad= especialidad o área que mencionó (texto libre)
+   - carrera_estudio= solo si es Estudiante
+   - anio_estudio= solo si es Estudiante
 
 **Respuesta al usuario**: el mensaje que recibe tiene que ser el PITCH completo del curso o las alternativas. NUNCA respondas con "quedó registrado" / "te registré" / "he registrado tu interés" — eso es el output interno de la tool, no lo que le decís al usuario.
 - Si su perfil matchea con *{curso}* → pitch directo y completo.
@@ -279,7 +288,7 @@ Hacé DOS cosas en este turno:
 - Igualmente registrá el contacto llamando `create_or_update_lead` con lo que tengas:
     - name="Contacto WA" (si no dio nombre)
     - email="" (si no dio email)
-    - phone={{teléfono del usuario}} (siempre disponible)
+    - phone="{phone}"  ← número real del usuario (NO cambiar)
     - más los parámetros CTWA obligatorios de arriba
 - Si en algún momento el usuario muestra interés fuerte (pregunta precio, cómo inscribirse, pide el link de pago) → pedí el email de forma natural:
     "Para enviarte el link de inscripción necesito tu correo. ¿Me lo pasás?"
